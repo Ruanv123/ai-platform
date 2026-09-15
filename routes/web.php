@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Channels\WhatsAppController;
+use App\Http\Controllers\Channels\WhatsAppWebhookController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\Knowledge\AgentController;
 use App\Http\Controllers\Knowledge\CollectionController;
@@ -13,6 +14,9 @@ use App\Http\Middleware\RedirectIfUserHasTeam;
 use Illuminate\Support\Facades\Route;
 
 Route::inertia('/', 'welcome')->name('home');
+
+Route::match(['get', 'post'], 'webhooks/whatsapp', [WhatsAppWebhookController::class, 'handle'])
+    ->name('webhooks.whatsapp');
 
 Route::middleware(['auth', RedirectIfUserHasTeam::class])->group(function () {
     Route::get('onboarding/company', [CompanyController::class, 'create'])->name('onboarding.company');
