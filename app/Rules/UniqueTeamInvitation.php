@@ -4,6 +4,7 @@ namespace App\Rules;
 
 use App\Models\Team;
 use App\Models\TeamInvitation;
+use App\Models\User;
 use Closure;
 use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Translation\PotentiallyTranslatedString;
@@ -30,6 +31,17 @@ class UniqueTeamInvitation implements ValidationRule
 
         if ($isMember) {
             $fail(__('This user is already a member of the team.'));
+
+            return;
+        }
+
+        $belongsToAnotherTeam = User::query()
+            ->whereRaw('LOWER(email) = ?', [$email])
+            ->whereHas('teams')
+            ->exists();
+
+        if ($belongsToAnotherTeam) {
+            $fail(__('Esta pessoa já pertence a outra Empresa.'));
 
             return;
         }

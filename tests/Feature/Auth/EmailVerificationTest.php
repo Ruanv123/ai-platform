@@ -12,7 +12,7 @@ test('email verification feature is disabled', function () {
 });
 
 test('unverified users can access authenticated pages', function () {
-    $user = User::factory()->unverified()->create();
+    $user = User::factory()->unverified()->withTeam()->create();
 
     $response = $this
         ->actingAs($user)

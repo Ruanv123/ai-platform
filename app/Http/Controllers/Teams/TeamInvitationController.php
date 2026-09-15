@@ -22,7 +22,7 @@ class TeamInvitationController extends Controller
      */
     public function store(CreateTeamInvitationRequest $request): RedirectResponse
     {
-        $team = $request->user()->currentTeam;
+        $team = $request->user()->company();
 
         abort_if(! $team, 404);
         Gate::authorize('inviteMember', $team);
@@ -47,7 +47,7 @@ class TeamInvitationController extends Controller
      */
     public function destroy(Request $request, TeamInvitation $invitation): RedirectResponse
     {
-        $team = $request->user()->currentTeam;
+        $team = $request->user()->company();
 
         abort_if(! $team || $invitation->team_id !== $team->id, 404);
 

@@ -4,10 +4,28 @@ export type Team = {
     id: number;
     name: string;
     slug: string;
-    isPersonal: boolean;
+    segment?: string | null;
+    website?: string | null;
+    businessDescription?: string | null;
+    productsServices?: string | null;
+    targetAudience?: string | null;
+    businessHours?: Record<string, {
+        enabled?: boolean | string;
+        open?: string | null;
+        close?: string | null;
+    }> | null;
+    timezone?: string | null;
+    phone?: string | null;
+    publicEmail?: string | null;
+    address?: string | null;
     role?: TeamRole;
     roleLabel?: string;
     isCurrent?: boolean;
+};
+
+export type CompanyOption = {
+    value: string;
+    label: string;
 };
 
 export type TeamMember = {

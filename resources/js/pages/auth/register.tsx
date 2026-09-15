@@ -29,6 +29,13 @@ export default function Register({ passwordRules, teamInvitation }: Props) {
                 {({ processing, errors }) => (
                     <>
                         {teamInvitation && (
+                            <input
+                                type="hidden"
+                                name="invitation"
+                                value={teamInvitation.code}
+                            />
+                        )}
+                        {teamInvitation && (
                             <TeamInvitationAlert
                                 invitation={teamInvitation}
                                 action="Register"

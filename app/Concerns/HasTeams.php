@@ -17,6 +17,14 @@ use Illuminate\Support\Collection;
 trait HasTeams
 {
     /**
+     * Get the user's only Empresa.
+     */
+    public function company(): ?Team
+    {
+        return $this->teams()->first();
+    }
+
+    /**
      * Get all of the teams the user belongs to.
      *
      * @return BelongsToMany<Team, $this>
@@ -63,16 +71,6 @@ trait HasTeams
     public function currentTeam(): BelongsTo
     {
         return $this->belongsTo(Team::class, 'current_team_id');
-    }
-
-    /**
-     * Get the user's personal team.
-     */
-    public function personalTeam(): ?Team
-    {
-        return $this->ownedTeams()
-            ->where('teams.is_personal', true)
-            ->first();
     }
 
     /**
@@ -150,7 +148,6 @@ trait HasTeams
             id: $team->id,
             name: $team->name,
             slug: $team->slug,
-            isPersonal: $team->is_personal,
             role: $role?->value,
             roleLabel: $role?->label(),
             isCurrent: $this->isCurrentTeam($team),

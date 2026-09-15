@@ -4,6 +4,7 @@ namespace App\Models;
 
 use App\Concerns\GeneratesUniqueTeamSlugs;
 use App\Enums\TeamRole;
+use App\Models\Collection as TeamCollection;
 use Database\Factories\TeamFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Collection;
@@ -17,16 +18,39 @@ use Illuminate\Support\Carbon;
 /**
  * @property int $id
  * @property string $name
+ * @property string|null $segment
+ * @property string|null $website
+ * @property string|null $business_description
+ * @property string|null $products_services
+ * @property string|null $target_audience
+ * @property array<string, array{enabled?: bool, open?: string|null, close?: string|null}>|null $business_hours
+ * @property string|null $timezone
+ * @property string|null $phone
+ * @property string|null $public_email
+ * @property string|null $address
  * @property string $slug
- * @property bool $is_personal
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
  * @property Carbon|null $deleted_at
  * @property-read Collection<int, TeamInvitation> $invitations
+ * @property-read Collection<int, TeamCollection> $collections
  * @property-read Collection<int, Membership> $memberships
  * @property-read Collection<int, User> $members
  */
-#[Fillable(['name', 'slug', 'is_personal'])]
+#[Fillable([
+    'name',
+    'segment',
+    'website',
+    'business_description',
+    'products_services',
+    'target_audience',
+    'business_hours',
+    'timezone',
+    'phone',
+    'public_email',
+    'address',
+    'slug',
+])]
 class Team extends Model
 {
     /** @use HasFactory<TeamFactory> */
@@ -96,6 +120,16 @@ class Team extends Model
     }
 
     /**
+     * Get the knowledge collections for this Empresa.
+     *
+     * @return HasMany<TeamCollection, $this>
+     */
+    public function collections(): HasMany
+    {
+        return $this->hasMany(TeamCollection::class);
+    }
+
+    /**
      * Get the attributes that should be cast.
      *
      * @return array<string, string>
@@ -103,7 +137,7 @@ class Team extends Model
     protected function casts(): array
     {
         return [
-            'is_personal' => 'boolean',
+            'business_hours' => 'array',
         ];
     }
 

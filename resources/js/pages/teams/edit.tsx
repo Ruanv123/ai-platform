@@ -24,9 +24,10 @@ import {
     TooltipTrigger,
 } from '@/components/ui/tooltip';
 import { useInitials } from '@/hooks/use-initials';
-import { edit, update } from '@/routes/teams';
+import { edit, update } from '@/routes/company';
 import { update as updateMember } from '@/routes/teams/members';
 import type {
+    CompanyOption,
     RoleOption,
     Team,
     TeamInvitation,
@@ -40,6 +41,9 @@ type Props = {
     invitations: TeamInvitation[];
     permissions: TeamPermissions;
     availableRoles: RoleOption[];
+    segments: CompanyOption[];
+    timezones: string[];
+    weekdays: CompanyOption[];
 };
 
 export default function TeamEdit({
@@ -48,6 +52,9 @@ export default function TeamEdit({
     invitations,
     permissions,
     availableRoles,
+    segments,
+    timezones,
+    weekdays,
 }: Props) {
     const getInitials = useInitials();
 
@@ -64,8 +71,8 @@ export default function TeamEdit({
     const pageTitle = useMemo(
         () =>
             permissions.canUpdateTeam
-                ? `Edit ${team.name}`
-                : `View ${team.name}`,
+                ? `Editar ${team.name}`
+                : `Visualizar ${team.name}`,
         [permissions.canUpdateTeam, team.name],
     );
 
@@ -98,16 +105,16 @@ export default function TeamEdit({
                         <>
                             <Heading
                                 variant="small"
-                                title="Team settings"
-                                description="Update your team name and settings"
+                                title="Dados da Empresa"
+                                description="Mantenha as informações do seu negócio atualizadas"
                             />
 
-                            <Form {...update.form()} className="space-y-6">
+                            <Form {...update.form()} className="space-y-8">
                                 {({ errors, processing }) => (
                                     <>
                                         <div className="grid gap-2">
                                             <Label htmlFor="name">
-                                                Team name
+                                                Nome fantasia
                                             </Label>
                                             <Input
                                                 id="name"
@@ -119,13 +126,110 @@ export default function TeamEdit({
                                             <InputError message={errors.name} />
                                         </div>
 
+                                        <div className="grid gap-2">
+                                            <Label htmlFor="segment">Segmento</Label>
+                                            <select
+                                                id="segment"
+                                                name="segment"
+                                                defaultValue={team.segment ?? ''}
+                                                className="border-input bg-background h-9 rounded-md border px-3 text-sm"
+                                                required
+                                            >
+                                                <option value="">Selecione um segmento</option>
+                                                {segments.map((segment) => (
+                                                    <option key={segment.value} value={segment.value}>
+                                                        {segment.label}
+                                                    </option>
+                                                ))}
+                                            </select>
+                                            <InputError message={errors.segment} />
+                                        </div>
+
+                                        <div className="grid gap-2">
+                                            <Label htmlFor="website">Site</Label>
+                                            <Input id="website" name="website" type="url" defaultValue={team.website ?? ''} placeholder="https://exemplo.com.br" />
+                                            <InputError message={errors.website} />
+                                        </div>
+
+                                        <div className="grid gap-2">
+                                            <Label htmlFor="business_description">Descrição do negócio</Label>
+                                            <textarea id="business_description" name="business_description" defaultValue={team.businessDescription ?? ''} required className="border-input bg-background min-h-24 rounded-md border px-3 py-2 text-sm" />
+                                            <InputError message={errors.business_description} />
+                                        </div>
+
+                                        <div className="grid gap-2">
+                                            <Label htmlFor="products_services">Produtos e serviços</Label>
+                                            <textarea id="products_services" name="products_services" defaultValue={team.productsServices ?? ''} required className="border-input bg-background min-h-24 rounded-md border px-3 py-2 text-sm" />
+                                            <InputError message={errors.products_services} />
+                                        </div>
+
+                                        <div className="grid gap-2">
+                                            <Label htmlFor="target_audience">Público-alvo</Label>
+                                            <textarea id="target_audience" name="target_audience" defaultValue={team.targetAudience ?? ''} required className="border-input bg-background min-h-24 rounded-md border px-3 py-2 text-sm" />
+                                            <InputError message={errors.target_audience} />
+                                        </div>
+
+                                        <div className="grid gap-4">
+                                            <div>
+                                                <Label>Horário de atendimento</Label>
+                                                <p className="text-muted-foreground text-sm">Defina os dias e horários em que sua empresa atende.</p>
+                                            </div>
+                                            <div className="space-y-3">
+                                                {weekdays.map((weekday) => {
+                                                    const hours = team.businessHours?.[weekday.value];
+                                                    const isEnabled = hours?.enabled === undefined || hours.enabled === true || hours.enabled === '1';
+
+                                                    return (
+                                                        <div key={weekday.value} className="grid gap-3 rounded-md border p-3 sm:grid-cols-[1fr_auto_auto_auto] sm:items-center">
+                                                            <label className="flex items-center gap-2 text-sm">
+                                                                <input type="hidden" name={`business_hours[${weekday.value}][enabled]`} value="0" />
+                                                                <input type="checkbox" name={`business_hours[${weekday.value}][enabled]`} value="1" defaultChecked={isEnabled} className="accent-primary" />
+                                                                {weekday.label}
+                                                            </label>
+                                                            <Input type="time" name={`business_hours[${weekday.value}][open]`} defaultValue={hours?.open ?? '09:00'} aria-label={`Abertura ${weekday.label}`} />
+                                                            <span className="text-muted-foreground text-sm">até</span>
+                                                            <Input type="time" name={`business_hours[${weekday.value}][close]`} defaultValue={hours?.close ?? '18:00'} aria-label={`Fechamento ${weekday.label}`} />
+                                                        </div>
+                                                    );
+                                                })}
+                                            </div>
+                                            <InputError message={errors.business_hours} />
+                                        </div>
+
+                                        <div className="grid gap-2">
+                                            <Label htmlFor="timezone">Fuso horário</Label>
+                                            <select id="timezone" name="timezone" defaultValue={team.timezone ?? 'America/Sao_Paulo'} className="border-input bg-background h-9 rounded-md border px-3 text-sm" required>
+                                                {timezones.map((timezone) => <option key={timezone} value={timezone}>{timezone}</option>)}
+                                            </select>
+                                            <InputError message={errors.timezone} />
+                                        </div>
+
+                                        <div className="grid gap-4 sm:grid-cols-2">
+                                            <div className="grid gap-2">
+                                                <Label htmlFor="phone">Telefone público</Label>
+                                                <Input id="phone" name="phone" type="tel" defaultValue={team.phone ?? ''} />
+                                                <InputError message={errors.phone} />
+                                            </div>
+                                            <div className="grid gap-2">
+                                                <Label htmlFor="public_email">E-mail público</Label>
+                                                <Input id="public_email" name="public_email" type="email" defaultValue={team.publicEmail ?? ''} />
+                                                <InputError message={errors.public_email} />
+                                            </div>
+                                        </div>
+
+                                        <div className="grid gap-2">
+                                            <Label htmlFor="address">Endereço</Label>
+                                            <textarea id="address" name="address" defaultValue={team.address ?? ''} className="border-input bg-background min-h-20 rounded-md border px-3 py-2 text-sm" />
+                                            <InputError message={errors.address} />
+                                        </div>
+
                                         <div className="flex items-center gap-4">
                                             <Button
                                                 type="submit"
                                                 data-test="team-save-button"
                                                 disabled={processing}
                                             >
-                                                Save
+                                                Salvar alterações
                                             </Button>
                                         </div>
                                     </>
@@ -134,7 +238,19 @@ export default function TeamEdit({
                         </>
                     ) : (
                         <>
-                            <Heading variant="small" title={team.name} />
+                            <Heading variant="small" title="Dados da Empresa" description="Você pode visualizar os dados da Empresa, mas apenas Owner e Admin podem editá-los." />
+                            <div className="grid gap-5 rounded-xl border p-5 text-sm">
+                                <div><p className="text-muted-foreground">Nome fantasia</p><p className="font-medium">{team.name}</p></div>
+                                <div><p className="text-muted-foreground">Segmento</p><p className="font-medium">{segments.find((segment) => segment.value === team.segment)?.label ?? team.segment}</p></div>
+                                <div><p className="text-muted-foreground">Site</p><p className="font-medium">{team.website || 'Não informado'}</p></div>
+                                <div><p className="text-muted-foreground">Descrição do negócio</p><p className="whitespace-pre-wrap">{team.businessDescription}</p></div>
+                                <div><p className="text-muted-foreground">Produtos e serviços</p><p className="whitespace-pre-wrap">{team.productsServices}</p></div>
+                                <div><p className="text-muted-foreground">Público-alvo</p><p className="whitespace-pre-wrap">{team.targetAudience}</p></div>
+                                <div><p className="text-muted-foreground">Fuso horário</p><p className="font-medium">{team.timezone}</p></div>
+                                <div><p className="text-muted-foreground">Telefone público</p><p>{team.phone || 'Não informado'}</p></div>
+                                <div><p className="text-muted-foreground">E-mail público</p><p>{team.publicEmail || 'Não informado'}</p></div>
+                                <div><p className="text-muted-foreground">Endereço</p><p className="whitespace-pre-wrap">{team.address || 'Não informado'}</p></div>
+                            </div>
                         </>
                     )}
                 </div>
@@ -342,7 +458,7 @@ export default function TeamEdit({
 TeamEdit.layout = (props: { team: { name: string } }) => ({
     breadcrumbs: [
         {
-            title: props.team.name,
+            title: 'Empresa',
             href: edit(),
         },
     ],

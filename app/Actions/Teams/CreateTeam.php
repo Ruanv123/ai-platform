@@ -6,23 +6,33 @@ use App\Enums\TeamRole;
 use App\Models\Team;
 use App\Models\User;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Gate;
 
 class CreateTeam
 {
     /**
-     * Create a new team and add the user as owner.
+     * Create an Empresa and attach its owner.
+     *
+     * @param  array<string, mixed>  $attributes
      */
-    public function handle(User $user, string $name, bool $isPersonal = false): Team
+    public function handle(User $user, string $name, array $attributes = []): Team
     {
-        return DB::transaction(function () use ($user, $name, $isPersonal) {
+        Gate::forUser($user)->authorize('create', Team::class);
+
+        return DB::transaction(function () use ($user, $name, $attributes) {
             $team = Team::create([
+                ...$attributes,
                 'name' => $name,
-                'is_personal' => $isPersonal,
             ]);
 
-            $membership = $team->memberships()->create([
+            $team->memberships()->create([
                 'user_id' => $user->id,
                 'role' => TeamRole::Owner,
+            ]);
+
+            $team->collections()->create([
+                'name' => 'Geral',
+                'is_default' => true,
             ]);
 
             $user->switchTeam($team);

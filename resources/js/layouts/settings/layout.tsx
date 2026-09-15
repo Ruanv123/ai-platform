@@ -8,7 +8,7 @@ import { cn, toUrl } from '@/lib/utils';
 import { edit as editAppearance } from '@/routes/appearance';
 import { edit } from '@/routes/profile';
 import { edit as editSecurity } from '@/routes/security';
-import { edit as teams } from '@/routes/teams';
+import { edit as company } from '@/routes/company';
 import type { NavItem } from '@/types';
 
 const sidebarNavItems: NavItem[] = [
@@ -23,8 +23,8 @@ const sidebarNavItems: NavItem[] = [
         icon: null,
     },
     {
-        title: 'Team',
-        href: teams(),
+        title: 'Empresa',
+        href: company(),
         icon: null,
     },
     {

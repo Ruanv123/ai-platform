@@ -1,13 +1,21 @@
 <?php
 
 use App\Http\Controllers\DashboardController;
+use App\Http\Controllers\Onboarding\CompanyController;
 use App\Http\Controllers\Teams\TeamInvitationController;
+use App\Http\Middleware\EnsureUserHasTeam;
+use App\Http\Middleware\RedirectIfUserHasTeam;
 use Illuminate\Support\Facades\Route;
 
 Route::inertia('/', 'welcome')->name('home');
 
+Route::middleware(['auth', RedirectIfUserHasTeam::class])->group(function () {
+    Route::get('onboarding/company', [CompanyController::class, 'create'])->name('onboarding.company');
+    Route::post('onboarding/company', [CompanyController::class, 'store'])->name('onboarding.company.store');
+});
+
 Route::get('dashboard', DashboardController::class)
-    ->middleware('auth')
+    ->middleware(['auth', EnsureUserHasTeam::class])
     ->name('dashboard');
 
 Route::middleware(['auth'])->group(function () {

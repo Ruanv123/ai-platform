@@ -2,6 +2,7 @@
 
 namespace App\Http\Middleware;
 
+use App\Data\UserTeam;
 use Illuminate\Http\Request;
 use Inertia\Middleware;
 
@@ -44,7 +45,11 @@ class HandleInertiaRequests extends Middleware
                 'user' => $user,
             ],
             'sidebarOpen' => ! $request->hasCookie('sidebar_state') || $request->cookie('sidebar_state') === 'true',
-            'currentTeam' => fn () => $user?->currentTeam ? $user->toUserTeam($user->currentTeam) : null,
+            'currentTeam' => function () use ($user): ?UserTeam {
+                $team = $user?->company();
+
+                return $team ? $user->toUserTeam($team) : null;
+            },
         ];
     }
 }

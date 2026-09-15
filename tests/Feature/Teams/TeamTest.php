@@ -7,7 +7,7 @@ use Illuminate\Support\Facades\Route;
 use Inertia\Testing\AssertableInertia as Assert;
 
 test('the team settings page renders the authenticated users current team', function () {
-    $user = User::factory()->create();
+    $user = User::factory()->withTeam()->create();
 
     $response = $this
         ->actingAs($user)

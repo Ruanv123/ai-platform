@@ -18,7 +18,7 @@ class CreateTeamInvitationRequest extends FormRequest
      */
     public function rules(): array
     {
-        $team = $this->user()?->currentTeam;
+        $team = $this->user()?->company();
 
         abort_if(! $team instanceof Team, 404);
 

@@ -40,6 +40,12 @@ class ValidTeamInvitation implements ValidationRule
             return;
         }
 
+        if ($this->user->company() !== null) {
+            $fail(__('This user already belongs to an Empresa.'));
+
+            return;
+        }
+
         if (strtolower($value->email) !== strtolower($this->user->email)) {
             $fail(__('This invitation was sent to a different email address.'));
         }

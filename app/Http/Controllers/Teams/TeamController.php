@@ -4,7 +4,8 @@ namespace App\Http\Controllers\Teams;
 
 use App\Enums\TeamRole;
 use App\Http\Controllers\Controller;
-use App\Http\Requests\Teams\SaveTeamRequest;
+use App\Http\Controllers\Onboarding\CompanyController;
+use App\Http\Requests\Teams\SaveCompanyRequest;
 use App\Models\Membership;
 use App\Models\User;
 use Illuminate\Http\RedirectResponse;
@@ -21,16 +22,25 @@ class TeamController extends Controller
     public function edit(Request $request): Response
     {
         $user = $request->user();
-        $team = $user->currentTeam;
+        $team = $user->company();
 
         abort_if(! $team, 404);
 
-        return Inertia::render('teams/edit', [
+        return Inertia::render($request->routeIs('company.edit') ? 'settings/company' : 'teams/edit', [
             'team' => [
                 'id' => $team->id,
                 'name' => $team->name,
                 'slug' => $team->slug,
-                'isPersonal' => $team->is_personal,
+                'segment' => $team->segment,
+                'website' => $team->website,
+                'businessDescription' => $team->business_description,
+                'productsServices' => $team->products_services,
+                'targetAudience' => $team->target_audience,
+                'businessHours' => $team->business_hours,
+                'timezone' => $team->timezone,
+                'phone' => $team->phone,
+                'publicEmail' => $team->public_email,
+                'address' => $team->address,
             ],
             'members' => $team->members()->get()->map(function (User $member) {
                 /** @var Membership $membership */
@@ -57,23 +67,26 @@ class TeamController extends Controller
                 ]),
             'permissions' => $user->toTeamPermissions($team),
             'availableRoles' => TeamRole::assignable(),
+            'segments' => CompanyController::segments(),
+            'timezones' => timezone_identifiers_list(),
+            'weekdays' => CompanyController::weekdays(),
         ]);
     }
 
     /**
      * Update the specified team.
      */
-    public function update(SaveTeamRequest $request): RedirectResponse
+    public function update(SaveCompanyRequest $request): RedirectResponse
     {
-        $team = $request->user()->currentTeam;
+        $team = $request->user()->company();
 
         abort_if(! $team, 404);
         Gate::authorize('update', $team);
 
-        $team->update(['name' => $request->validated('name')]);
+        $team->update($request->validated());
 
-        Inertia::flash('toast', ['type' => 'success', 'message' => __('Team updated.')]);
+        Inertia::flash('toast', ['type' => 'success', 'message' => 'Dados da Empresa atualizados.']);
 
-        return to_route('teams.edit');
+        return to_route($request->routeIs('company.update') ? 'company.edit' : 'teams.edit');
     }
 }

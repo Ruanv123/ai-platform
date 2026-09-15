@@ -18,7 +18,7 @@ class TeamMemberController extends Controller
      */
     public function update(UpdateTeamMemberRequest $request, User $user): RedirectResponse
     {
-        $team = $request->user()->currentTeam;
+        $team = $request->user()->company();
 
         abort_if(! $team, 404);
         Gate::authorize('updateMember', $team);
@@ -40,7 +40,7 @@ class TeamMemberController extends Controller
      */
     public function destroy(Request $request, User $user): RedirectResponse
     {
-        $team = $request->user()->currentTeam;
+        $team = $request->user()->company();
 
         abort_if(! $team, 404);
         Gate::authorize('removeMember', $team);
@@ -56,7 +56,7 @@ class TeamMemberController extends Controller
             ->delete();
 
         if ($user->isCurrentTeam($team)) {
-            $user->switchTeam($user->personalTeam());
+            $user->update(['current_team_id' => null]);
         }
 
         Inertia::flash('toast', ['type' => 'success', 'message' => __('Member removed.')]);
