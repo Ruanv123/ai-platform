@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\DashboardController;
+use App\Http\Controllers\Knowledge\AgentController;
 use App\Http\Controllers\Knowledge\CollectionController;
 use App\Http\Controllers\Knowledge\DocumentController;
 use App\Http\Controllers\Onboarding\CompanyController;
@@ -21,6 +22,12 @@ Route::get('dashboard', DashboardController::class)
     ->name('dashboard');
 
 Route::middleware(['auth', EnsureUserHasTeam::class])->group(function () {
+    Route::resource('knowledge/agents', AgentController::class)
+        ->only(['index', 'store', 'update', 'destroy'])
+        ->names('agents');
+    Route::patch('knowledge/agents/{agent}/toggle', [AgentController::class, 'toggle'])
+        ->name('agents.toggle');
+
     Route::resource('knowledge/collections', CollectionController::class)
         ->only(['index', 'store', 'update', 'destroy'])
         ->names('collections');

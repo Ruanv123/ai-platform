@@ -12,6 +12,7 @@ enum TeamPermission: string
     case RemoveMember = 'member:remove';
 
     case ManageKnowledge = 'knowledge:manage';
+    case ManageAgents = 'agent:manage';
 
     case CreateInvitation = 'invitation:create';
     case CancelInvitation = 'invitation:cancel';
