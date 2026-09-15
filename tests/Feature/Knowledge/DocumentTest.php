@@ -33,7 +33,7 @@ it('creates a text document, ingests it and reports its storage usage', function
 
     expect($document->type)->toBe(DocumentType::Text)
         ->and($document->status)->toBe(DocumentStatus::Ready)
-        ->and($document->size_bytes)->toBe(strlen($content))
+        ->and($document->size_bytes)->toBe(41)
         ->and($document->error_message)->toBeNull();
 
     $this->assertDatabaseCount('chunks', 1);
@@ -50,12 +50,9 @@ it('reprocesses edited text and replaces the previous chunks', function () {
         'title' => 'Política antiga',
         'content' => 'A política antiga não deve aparecer.',
         'status' => DocumentStatus::Ready,
-        'size_bytes' => strlen('A política antiga não deve aparecer.'),
+        'size_bytes' => 38,
     ]);
-    Chunk::create([
-        'document_id' => $document->id,
-        'team_id' => $user->company()->id,
-        'collection_id' => $collection->id,
+    Chunk::factory()->for($document)->create([
         'content' => 'A política antiga não deve aparecer.',
         'position' => 0,
         'embedding' => array_merge([1.0], array_fill(0, 1535, 0.0)),
@@ -71,10 +68,11 @@ it('reprocesses edited text and replaces the previous chunks', function () {
 
     expect($document->status)->toBe(DocumentStatus::Ready)
         ->and($document->title)->toBe('Política atualizada')
-        ->and($document->size_bytes)->toBe(strlen('A política atualizada deve aparecer.'));
+        ->and($document->size_bytes)->toBe(37);
 
     $this->assertDatabaseMissing('chunks', ['content' => 'A política antiga não deve aparecer.']);
     $this->assertDatabaseHas('chunks', ['content' => 'A política atualizada deve aparecer.']);
+    Embeddings::assertGenerated(fn ($prompt) => $prompt->contains('A política atualizada deve aparecer.'));
 });
 
 it('shows documents, storage usage and polling while ingestion is pending', function () {
@@ -82,7 +80,7 @@ it('shows documents, storage usage and polling while ingestion is pending', func
     $collection = Collection::factory()->for($user->company())->create();
     $document = Document::factory()->for($collection)->pending()->create([
         'content' => 'Aguardando processamento.',
-        'size_bytes' => strlen('Aguardando processamento.'),
+        'size_bytes' => 25,
     ]);
 
     $response = $this->actingAs($user)->get(route('documents.index', $collection));
@@ -92,7 +90,7 @@ it('shows documents, storage usage and polling while ingestion is pending', func
         ->where('collection.id', $collection->id)
         ->where('documents.0.id', $document->id)
         ->where('documents.0.status', 'pending')
-        ->where('storage.usedBytes', strlen('Aguardando processamento.'))
+        ->where('storage.usedBytes', 25)
         ->where('polling', true),
     );
 });
@@ -121,13 +119,10 @@ it('removes document chunks and releases its storage usage when deleted', functi
     $collection = Collection::factory()->for($user->company())->create();
     $document = Document::factory()->for($collection)->create([
         'content' => 'Conteúdo removível.',
-        'size_bytes' => strlen('Conteúdo removível.'),
+        'size_bytes' => 21,
         'status' => DocumentStatus::Ready,
     ]);
-    Chunk::create([
-        'document_id' => $document->id,
-        'team_id' => $user->company()->id,
-        'collection_id' => $collection->id,
+    Chunk::factory()->for($document)->create([
         'content' => 'Conteúdo removível.',
         'position' => 0,
         'embedding' => array_merge([1.0], array_fill(0, 1535, 0.0)),
@@ -147,10 +142,7 @@ it('moves a document and its existing chunks to another collection', function ()
     $document = Document::factory()->for($source)->create([
         'status' => DocumentStatus::Ready,
     ]);
-    $chunk = Chunk::create([
-        'document_id' => $document->id,
-        'team_id' => $user->company()->id,
-        'collection_id' => $source->id,
+    $chunk = Chunk::factory()->for($document)->create([
         'content' => $document->content,
         'position' => 0,
         'embedding' => array_merge([1.0], array_fill(0, 1535, 0.0)),
@@ -182,10 +174,7 @@ it('marks an ingestion as failed and preserves the previous chunks', function ()
         'status' => DocumentStatus::Pending,
         'ingestion_token' => '00000000-0000-0000-0000-000000000001',
     ]);
-    $chunk = Chunk::create([
-        'document_id' => $document->id,
-        'team_id' => $user->company()->id,
-        'collection_id' => $collection->id,
+    $chunk = Chunk::factory()->for($document)->create([
         'content' => 'Versão anterior preservada.',
         'position' => 0,
         'embedding' => array_merge([1.0], array_fill(0, 1535, 0.0)),
@@ -203,6 +192,42 @@ it('marks an ingestion as failed and preserves the previous chunks', function ()
     expect($document->status)->toBe(DocumentStatus::Failed)
         ->and($document->error_message)->toBe('Não foi possível processar o documento. Tente novamente.');
     $this->assertModelExists($chunk);
+    Embeddings::assertGenerated(fn ($prompt) => $prompt->contains($document->content));
+});
+
+it('reprocesses a failed document through HTTP', function () {
+    Queue::fake();
+
+    $user = User::factory()->withTeam()->create();
+    $collection = Collection::factory()->for($user->company())->create();
+    $document = Document::factory()->for($collection)->create([
+        'status' => DocumentStatus::Failed,
+        'error_message' => 'Falha anterior.',
+    ]);
+
+    $response = $this->actingAs($user)->post(route('documents.reprocess', $document));
+
+    $response->assertRedirect(route('documents.index', $collection));
+    $document->refresh();
+
+    expect($document->status)->toBe(DocumentStatus::Pending)
+        ->and($document->error_message)->toBeNull();
+    Queue::assertPushed(IngestDocument::class, fn (IngestDocument $job): bool => $job->documentId === $document->id && $job->queue === 'ingestion'
+    );
+});
+
+it('deletes documents and chunks when their collection is deleted', function () {
+    $user = User::factory()->withTeam()->create();
+    $collection = Collection::factory()->for($user->company())->create();
+    $document = Document::factory()->for($collection)->create(['status' => DocumentStatus::Ready]);
+    $chunk = Chunk::factory()->for($document)->create();
+
+    $response = $this->actingAs($user)->delete(route('collections.destroy', $collection));
+
+    $response->assertRedirect(route('collections.index'));
+    $this->assertModelMissing($collection);
+    $this->assertModelMissing($document);
+    $this->assertModelMissing($chunk);
 });
 
 it('returns not found for another company document', function () {

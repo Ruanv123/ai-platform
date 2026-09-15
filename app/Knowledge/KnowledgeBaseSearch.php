@@ -50,14 +50,22 @@ class KnowledgeBaseSearch
         return Chunk::withoutGlobalScopes()
             ->join('documents', 'documents.id', '=', 'chunks.document_id')
             ->join('collections', 'collections.id', '=', 'chunks.collection_id')
-            ->select('chunks.*', 'documents.title as document_title', 'collections.name as collection_name')
+            ->select(
+                'chunks.id',
+                'chunks.document_id',
+                'chunks.team_id',
+                'chunks.collection_id',
+                'chunks.content',
+                'documents.title as document_title',
+                'collections.name as collection_name',
+            )
             ->where('chunks.team_id', $team->getKey())
             ->where('documents.team_id', $team->getKey())
             ->where('collections.team_id', $team->getKey())
             ->whereIn('chunks.collection_id', $collectionIds)
             ->where('documents.status', DocumentStatus::Ready->value)
             ->selectVectorDistance('embedding', $embedding, as: 'distance')
-            ->whereVectorDistanceLessThan('embedding', $embedding, maxDistance: 1 - $minimumSimilarity)
+            ->whereVectorDistanceLessThan('embedding', $embedding, maxDistance: 1 - $minimumSimilarity + 1e-6)
             ->orderByVectorDistance('embedding', $embedding)
             ->limit($topK)
             ->toBase()
