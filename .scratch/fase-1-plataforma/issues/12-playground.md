@@ -4,14 +4,14 @@
 
 **Blocked by:** 07 (Documentos de texto livre + ingestão + busca), 11 (Agentes CRUD)
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] API do `laravel/ai` 0.11 para agentes com ferramentas e streaming com eventos de ferramenta verificada na documentação instalada
-- [ ] Template de instruções versionado no código, preenchido com dados da Empresa e do Agente; gatilhos de transferência não entram no prompt
-- [ ] Ferramenta de busca limitada às Coleções do Agente; Agente sem Coleções conversa só com dados da Empresa
-- [ ] Endpoint de streaming por Agente, disponível a todos os papéis, recebendo histórico + nova mensagem; nada é persistido
-- [ ] UI de chat com mensagem de boas-vindas, streaming, botão reiniciar e painel de fontes (documento, Coleção, trecho, similaridade) ou indicação de que a base não foi consultada
-- [ ] Aviso no Playground quando o formulário do Agente tem alterações não salvas
-- [ ] Rate limit de 30 mensagens/hora por usuário com mensagem em pt-BR
-- [ ] Erro ou timeout do provedor vira mensagem amigável no chat
-- [ ] Feature tests com o fake de agente do `laravel/ai`: streaming responde, Member pode usar, isolamento (404), rate limit a partir da 31ª mensagem, erro do provedor tratado
+- [x] API do `laravel/ai` 0.11 para agentes com ferramentas e streaming com eventos de ferramenta verificada na documentação instalada
+- [x] Template de instruções versionado no código, preenchido com dados da Empresa e do Agente; gatilhos de transferência não entram no prompt
+- [x] Ferramenta de busca limitada às Coleções do Agente; Agente sem Coleções conversa só com dados da Empresa
+- [x] Endpoint de streaming por Agente, disponível a todos os papéis, recebendo histórico + nova mensagem; nada é persistido
+- [x] UI de chat com mensagem de boas-vindas, streaming, botão reiniciar e painel de fontes (documento, Coleção, trecho, similaridade) ou indicação de que a base não foi consultada
+- [x] Aviso no Playground quando o formulário do Agente tem alterações não salvas
+- [x] Rate limit de 30 mensagens/hora por usuário com mensagem em pt-BR
+- [x] Erro ou timeout do provedor vira mensagem amigável no chat
+- [x] Feature tests com o fake de agente do `laravel/ai`: streaming responde, Member pode usar, isolamento (404), rate limit a partir da 31ª mensagem, erro do provedor tratado

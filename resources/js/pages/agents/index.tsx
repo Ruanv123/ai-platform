@@ -1,15 +1,16 @@
-import { Form, Head, router } from '@inertiajs/react';
+import { Form, Head, Link, router } from '@inertiajs/react';
 import {
     ArrowDown,
     ArrowUp,
     Bot,
+    MessageCircle,
     Pencil,
     Plus,
     Power,
     Trash2,
     X,
 } from 'lucide-react';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import Heading from '@/components/heading';
 import InputError from '@/components/input-error';
 import { Badge } from '@/components/ui/badge';
@@ -39,7 +40,7 @@ import {
     SelectTrigger,
     SelectValue,
 } from '@/components/ui/select';
-import { destroy, store, toggle, update } from '@/routes/agents';
+import { destroy, playground, store, toggle, update } from '@/routes/agents';
 import type { TeamPermissions } from '@/types';
 
 type Option = {
@@ -69,6 +70,23 @@ type Agent = {
     isActive: boolean;
     collectionIds: number[];
 };
+
+type AgentFormSnapshot = {
+    name: string;
+    objective: string;
+    tone: string;
+    responseLength: string;
+    usesEmojis: boolean;
+    welcomeMessage: string;
+    instructions: string[];
+    rules: string[];
+    transferTriggers: string[];
+    collectionIds: number[];
+};
+
+function serializeAgentForm(values: AgentFormSnapshot): string {
+    return JSON.stringify(values);
+}
 
 type Props = {
     agents: Agent[];
@@ -232,6 +250,7 @@ function AgentFormFields({
     onSuccess: () => void;
 }) {
     const isEditing = agent !== null;
+    const [name, setName] = useState(agent?.name ?? '');
     const [objective, setObjective] = useState(
         agent?.objective ?? objectives[0]?.value ?? '',
     );
@@ -248,6 +267,69 @@ function AgentFormFields({
     const [selectedCollectionIds, setSelectedCollectionIds] = useState(
         agent?.collectionIds ?? [],
     );
+    const [welcomeMessage, setWelcomeMessage] = useState(
+        agent?.welcomeMessage ?? '',
+    );
+    const dirtyStorageKey = agent ? `agent-playground-dirty-${agent.id}` : null;
+    const initialFormSnapshot = agent
+        ? serializeAgentForm({
+              name: agent.name,
+              objective: agent.objective,
+              tone: agent.tone,
+              responseLength: agent.responseLength,
+              usesEmojis: agent.usesEmojis,
+              welcomeMessage: agent.welcomeMessage,
+              instructions: agent.instructions,
+              rules: agent.rules,
+              transferTriggers: agent.transferTriggers,
+              collectionIds: agent.collectionIds,
+          })
+        : null;
+
+    useEffect(() => {
+        if (dirtyStorageKey === null || initialFormSnapshot === null) {
+            return;
+        }
+
+        const currentFormSnapshot = serializeAgentForm({
+            name,
+            objective,
+            tone,
+            responseLength,
+            usesEmojis,
+            welcomeMessage,
+            instructions,
+            rules,
+            transferTriggers,
+            collectionIds: selectedCollectionIds,
+        });
+
+        window.localStorage.setItem(
+            dirtyStorageKey,
+            String(currentFormSnapshot !== initialFormSnapshot),
+        );
+    }, [
+        dirtyStorageKey,
+        initialFormSnapshot,
+        name,
+        objective,
+        tone,
+        responseLength,
+        usesEmojis,
+        welcomeMessage,
+        instructions,
+        rules,
+        transferTriggers,
+        selectedCollectionIds,
+    ]);
+
+    const handleSuccess = () => {
+        if (dirtyStorageKey !== null) {
+            window.localStorage.removeItem(dirtyStorageKey);
+        }
+
+        onSuccess();
+    };
 
     const toggleCollection = (collectionId: number) => {
         setSelectedCollectionIds((current) =>
@@ -261,7 +343,7 @@ function AgentFormFields({
         <Form
             {...(isEditing ? update.form(agent.id) : store.form())}
             className="grid max-h-[75vh] gap-6 overflow-y-auto pr-1"
-            onSuccess={onSuccess}
+            onSuccess={handleSuccess}
         >
             {({ errors, processing }) => (
                 <>
@@ -292,7 +374,10 @@ function AgentFormFields({
                             <Input
                                 id="agent-name"
                                 name="name"
-                                defaultValue={agent?.name ?? ''}
+                                value={name}
+                                onChange={(event) =>
+                                    setName(event.target.value)
+                                }
                                 placeholder="Ex.: Lia, sua consultora de vendas"
                                 autoFocus
                                 required
@@ -349,7 +434,10 @@ function AgentFormFields({
                             <textarea
                                 id="agent-welcome-message"
                                 name="welcome_message"
-                                defaultValue={agent?.welcomeMessage ?? ''}
+                                value={welcomeMessage}
+                                onChange={(event) =>
+                                    setWelcomeMessage(event.target.value)
+                                }
                                 placeholder="Ex.: Olá! Sou a Lia. Como posso ajudar?"
                                 className="border-input bg-background placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-ring/50 min-h-24 rounded-md border px-3 py-2 text-sm shadow-xs outline-none focus-visible:ring-[3px]"
                                 required
@@ -731,41 +819,55 @@ export default function Agents({
                                                 : 'Coleções'}
                                         </span>
                                     </div>
-                                    {permissions.canManageAgents && (
-                                        <div className="flex items-center gap-1 opacity-100 transition-opacity sm:opacity-0 sm:group-hover:opacity-100 sm:focus-within:opacity-100">
-                                            <Button
-                                                variant="ghost"
-                                                size="icon"
-                                                onClick={() =>
-                                                    setAgentToToggle(agent)
-                                                }
-                                                aria-label={`${agent.isActive ? 'Desativar' : 'Ativar'} ${agent.name}`}
+                                    <div className="flex items-center gap-1">
+                                        <Button
+                                            variant="outline"
+                                            size="sm"
+                                            asChild
+                                        >
+                                            <Link
+                                                href={playground(agent.id).url}
                                             >
-                                                <Power />
-                                            </Button>
-                                            <Button
-                                                variant="ghost"
-                                                size="icon"
-                                                onClick={() =>
-                                                    openEditDialog(agent)
-                                                }
-                                                aria-label={`Editar ${agent.name}`}
-                                            >
-                                                <Pencil />
-                                            </Button>
-                                            <Button
-                                                variant="ghost"
-                                                size="icon"
-                                                className="text-destructive hover:text-destructive"
-                                                onClick={() =>
-                                                    setAgentToDelete(agent)
-                                                }
-                                                aria-label={`Excluir ${agent.name}`}
-                                            >
-                                                <Trash2 />
-                                            </Button>
-                                        </div>
-                                    )}
+                                                <MessageCircle />
+                                                Testar
+                                            </Link>
+                                        </Button>
+                                        {permissions.canManageAgents && (
+                                            <div className="flex items-center gap-1 opacity-100 transition-opacity sm:opacity-0 sm:group-hover:opacity-100 sm:focus-within:opacity-100">
+                                                <Button
+                                                    variant="ghost"
+                                                    size="icon"
+                                                    onClick={() =>
+                                                        setAgentToToggle(agent)
+                                                    }
+                                                    aria-label={`${agent.isActive ? 'Desativar' : 'Ativar'} ${agent.name}`}
+                                                >
+                                                    <Power />
+                                                </Button>
+                                                <Button
+                                                    variant="ghost"
+                                                    size="icon"
+                                                    onClick={() =>
+                                                        openEditDialog(agent)
+                                                    }
+                                                    aria-label={`Editar ${agent.name}`}
+                                                >
+                                                    <Pencil />
+                                                </Button>
+                                                <Button
+                                                    variant="ghost"
+                                                    size="icon"
+                                                    className="text-destructive hover:text-destructive"
+                                                    onClick={() =>
+                                                        setAgentToDelete(agent)
+                                                    }
+                                                    aria-label={`Excluir ${agent.name}`}
+                                                >
+                                                    <Trash2 />
+                                                </Button>
+                                            </div>
+                                        )}
+                                    </div>
                                 </CardContent>
                             </Card>
                         ))}

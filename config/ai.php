@@ -20,6 +20,12 @@ return [
     'default_for_embeddings' => 'openai',
     'default_for_reranking' => 'cohere',
 
+    'playground' => [
+        'provider' => 'openai',
+        'model' => env('AI_PLAYGROUND_MODEL', 'gpt-5.6-luna'),
+        'timeout' => (int) env('AI_PLAYGROUND_TIMEOUT', 60),
+    ],
+
     /*
     |--------------------------------------------------------------------------
     | Caching

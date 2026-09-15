@@ -4,6 +4,7 @@ use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\Knowledge\AgentController;
 use App\Http\Controllers\Knowledge\CollectionController;
 use App\Http\Controllers\Knowledge\DocumentController;
+use App\Http\Controllers\Knowledge\PlaygroundController;
 use App\Http\Controllers\Onboarding\CompanyController;
 use App\Http\Controllers\Teams\TeamInvitationController;
 use App\Http\Middleware\EnsureUserHasTeam;
@@ -27,6 +28,11 @@ Route::middleware(['auth', EnsureUserHasTeam::class])->group(function () {
         ->names('agents');
     Route::patch('knowledge/agents/{agent}/toggle', [AgentController::class, 'toggle'])
         ->name('agents.toggle');
+    Route::get('knowledge/agents/{agent}/playground', [PlaygroundController::class, 'show'])
+        ->name('agents.playground');
+    Route::post('knowledge/agents/{agent}/playground', [PlaygroundController::class, 'stream'])
+        ->middleware('throttle:playground')
+        ->name('agents.playground.stream');
 
     Route::resource('knowledge/collections', CollectionController::class)
         ->only(['index', 'store', 'update', 'destroy'])
