@@ -417,7 +417,7 @@ export default function TeamEdit({
                             <Heading
                                 variant="small"
                                 title="Dados da Empresa"
-                                description="Você pode visualizar os dados da Empresa, mas apenas Owner e Admin podem editá-los."
+                                description="Você pode visualizar os dados da Empresa, mas apenas Proprietário e Administrador podem editá-los."
                             />
                             <div className="grid gap-5 rounded-xl border p-5 text-sm">
                                 <div>
@@ -506,10 +506,10 @@ export default function TeamEdit({
                     <div className="flex items-center justify-between">
                         <Heading
                             variant="small"
-                            title="Team members"
+                            title="Membros da equipe"
                             description={
                                 permissions.canCreateInvitation
-                                    ? 'Manage who belongs to this team'
+                                    ? 'Gerencie quem faz parte desta equipe'
                                     : ''
                             }
                         />
@@ -519,7 +519,7 @@ export default function TeamEdit({
                                 data-test="invite-member-button"
                                 onClick={() => setInviteDialogOpen(true)}
                             >
-                                <UserPlus /> Invite member
+                                <UserPlus /> Convidar membro
                             </Button>
                         ) : null}
                     </div>
@@ -609,7 +609,7 @@ export default function TeamEdit({
                                                     </Button>
                                                 </TooltipTrigger>
                                                 <TooltipContent>
-                                                    <p>Remove member</p>
+                                                    <p>Remover membro</p>
                                                 </TooltipContent>
                                             </Tooltip>
                                         </TooltipProvider>
@@ -624,8 +624,8 @@ export default function TeamEdit({
                     <div className="space-y-6">
                         <Heading
                             variant="small"
-                            title="Pending invitations"
-                            description="Invitations that haven't been accepted yet"
+                            title="Convites pendentes"
+                            description="Convites que ainda não foram aceitos"
                         />
 
                         <div className="space-y-3">
@@ -667,7 +667,7 @@ export default function TeamEdit({
                                                     </Button>
                                                 </TooltipTrigger>
                                                 <TooltipContent>
-                                                    <p>Cancel invitation</p>
+                                                    <p>Cancelar convite</p>
                                                 </TooltipContent>
                                             </Tooltip>
                                         </TooltipProvider>

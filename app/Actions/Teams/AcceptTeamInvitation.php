@@ -24,19 +24,19 @@ class AcceptTeamInvitation
 
             if (! $lockedInvitation->isPending()) {
                 throw ValidationException::withMessages([
-                    'invitation' => __('This invitation is no longer valid.'),
+                    'invitation' => 'Este convite não é mais válido.',
                 ]);
             }
 
             if ($user->company() !== null) {
                 throw ValidationException::withMessages([
-                    'invitation' => __('This user already belongs to an Empresa.'),
+                    'invitation' => 'Esta pessoa já pertence a uma Empresa.',
                 ]);
             }
 
             if (mb_strtolower($lockedInvitation->email) !== mb_strtolower($user->email)) {
                 throw ValidationException::withMessages([
-                    'invitation' => __('This invitation was sent to a different email address.'),
+                    'invitation' => 'Este convite foi enviado para outro endereço de e-mail.',
                 ]);
             }
 

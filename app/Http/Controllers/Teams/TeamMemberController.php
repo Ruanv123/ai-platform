@@ -28,13 +28,13 @@ class TeamMemberController extends Controller
             ->where('user_id', $user->id)
             ->firstOrFail();
 
-        abort_if($membership->role === TeamRole::Owner, 403, __('The team owner role cannot be changed.'));
+        abort_if($membership->role === TeamRole::Owner, 403, 'O papel do proprietário da Empresa não pode ser alterado.');
 
         $newRole = TeamRole::from($request->validated('role'));
 
         $membership->update(['role' => $newRole]);
 
-        Inertia::flash('toast', ['type' => 'success', 'message' => __('Member role updated.')]);
+        Inertia::flash('toast', ['type' => 'success', 'message' => 'Papel do membro atualizado.']);
 
         return to_route('teams.edit');
     }
@@ -53,7 +53,7 @@ class TeamMemberController extends Controller
             ->where('user_id', $user->id)
             ->firstOrFail();
 
-        abort_if($team->owner()?->is($user), 403, __('The team owner cannot be removed.'));
+        abort_if($team->owner()?->is($user), 403, 'O proprietário da Empresa não pode ser removido.');
 
         $team->memberships()
             ->where('user_id', $user->id)
@@ -63,7 +63,7 @@ class TeamMemberController extends Controller
             $user->update(['current_team_id' => null]);
         }
 
-        Inertia::flash('toast', ['type' => 'success', 'message' => __('Member removed.')]);
+        Inertia::flash('toast', ['type' => 'success', 'message' => 'Membro removido.']);
 
         return to_route('teams.edit');
     }
@@ -84,7 +84,7 @@ class TeamMemberController extends Controller
             $user->update(['current_team_id' => null]);
         });
 
-        Inertia::flash('toast', ['type' => 'success', 'message' => __('You left the Empresa.')]);
+        Inertia::flash('toast', ['type' => 'success', 'message' => 'Você saiu da Empresa.']);
 
         return to_route('onboarding.company');
     }

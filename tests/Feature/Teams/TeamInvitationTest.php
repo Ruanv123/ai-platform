@@ -55,7 +55,7 @@ test('invitation email for existing users uses the invitation route', function (
     $mail = (new TeamInvitationNotification($invitation))->toMail($invitedUser);
 
     expect($mail->actionUrl)->toBe(route('invitations.show', ['invitation' => $invitation->code]));
-    $this->assertStringContainsString('invitation', strtolower(implode(' ', $mail->introLines)));
+    $this->assertStringContainsString('convite', strtolower(implode(' ', $mail->introLines)));
 });
 
 test('invitation email for unknown users uses the invitation route', function () {
@@ -73,7 +73,7 @@ test('invitation email for unknown users uses the invitation route', function ()
     $mail = (new TeamInvitationNotification($invitation))->toMail((object) []);
 
     expect($mail->actionUrl)->toBe(route('invitations.show', ['invitation' => $invitation->code]));
-    $this->assertStringContainsString('sign in', strtolower(implode(' ', $mail->introLines)));
+    $this->assertStringContainsString('entrar', strtolower(implode(' ', $mail->introLines)));
 });
 
 test('team invitations can be created by admins', function () {
@@ -259,7 +259,7 @@ test('team invitations can be accepted', function () {
         ->post(route('invitations.accept', $invitation));
 
     $response->assertRedirect(route('dashboard'));
-    $response->assertInertiaFlash('toast', ['type' => 'success', 'message' => 'Invitation accepted.']);
+    $response->assertInertiaFlash('toast', ['type' => 'success', 'message' => 'Convite aceito.']);
 
     expect($invitedUser->fresh()->belongsToTeam($team))->toBeTrue();
     expect($invitation->fresh()->accepted_at)->not->toBeNull();

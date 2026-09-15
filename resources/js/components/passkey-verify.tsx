@@ -6,6 +6,7 @@ import InputError from '@/components/input-error';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
 import { Spinner } from '@/components/ui/spinner';
+import { translatePasskeyError } from '@/lib/passkey-error';
 
 type Props = {
     routes?: {
@@ -51,11 +52,14 @@ export default function PasskeyVerify({
                 >
                     {isLoading ? <Spinner /> : <KeyRound className="h-4 w-4" />}
                     {isLoading
-                        ? (loadingLabel ?? 'Authenticating...')
-                        : (label ?? 'Sign in with a passkey')}
+                        ? (loadingLabel ?? 'Autenticando...')
+                        : (label ?? 'Entrar com uma chave de acesso')}
                 </Button>
                 {error && (
-                    <InputError message={error} className="text-center" />
+                    <InputError
+                        message={translatePasskeyError(error)}
+                        className="text-center"
+                    />
                 )}
             </div>
 
@@ -65,7 +69,7 @@ export default function PasskeyVerify({
                 </div>
                 <div className="relative flex justify-center text-xs uppercase">
                     <span className="bg-background text-muted-foreground px-2">
-                        {separator ?? 'Or continue with email'}
+                        {separator ?? 'Ou continue com seu e-mail'}
                     </span>
                 </div>
             </div>

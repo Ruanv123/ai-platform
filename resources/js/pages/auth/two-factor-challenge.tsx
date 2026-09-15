@@ -23,18 +23,18 @@ export default function TwoFactorChallenge() {
     }>(() => {
         if (showRecoveryInput) {
             return {
-                title: 'Recovery code',
+                title: 'Código de recuperação',
                 description:
-                    'Please confirm access to your account by entering one of your emergency recovery codes.',
-                toggleText: 'login using an authentication code',
+                    'Confirme o acesso à sua conta informando um dos seus códigos de recuperação.',
+                toggleText: 'entrar usando um código de autenticação',
             };
         }
 
         return {
-            title: 'Authentication code',
-            description:
-                'Enter the authentication code provided by your authenticator application.',
-            toggleText: 'login using a recovery code',
+            title: 'Código de autenticação',
+                description:
+                    'Informe o código de autenticação exibido pelo seu aplicativo autenticador.',
+                toggleText: 'entrar usando um código de recuperação',
         };
     }, [showRecoveryInput]);
 
@@ -51,7 +51,7 @@ export default function TwoFactorChallenge() {
 
     return (
         <>
-            <Head title="Two-factor authentication" />
+            <Head title="Autenticação de dois fatores" />
 
             <div className="space-y-6">
                 <Form
@@ -67,7 +67,7 @@ export default function TwoFactorChallenge() {
                                     <Input
                                         name="recovery_code"
                                         type="text"
-                                        placeholder="Enter recovery code"
+                                        placeholder="Informe o código de recuperação"
                                         autoFocus={showRecoveryInput}
                                         required
                                     />
@@ -109,11 +109,11 @@ export default function TwoFactorChallenge() {
                                 className="w-full"
                                 disabled={processing}
                             >
-                                Continue
+                                Continuar
                             </Button>
 
                             <div className="text-muted-foreground text-center text-sm">
-                                <span>or you can </span>
+                                <span>ou você pode </span>
                                 <button
                                     type="button"
                                     className="text-foreground cursor-pointer underline decoration-neutral-300 underline-offset-4 transition-colors duration-300 ease-out hover:decoration-current! dark:decoration-neutral-500"
