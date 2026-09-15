@@ -3,9 +3,10 @@
 namespace App\Http\Controllers\Knowledge;
 
 use App\Enums\DocumentStatus;
+use App\Enums\DocumentType;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Knowledge\MoveDocumentRequest;
-use App\Http\Requests\Knowledge\SaveTextDocumentRequest;
+use App\Http\Requests\Knowledge\SaveDocumentRequest;
 use App\Jobs\IngestDocument;
 use App\Knowledge\DocumentStorageQuota;
 use App\Models\Chunk;
@@ -68,9 +69,9 @@ class DocumentController extends Controller
     }
 
     /**
-     * Store a free-form text document and dispatch its ingestion.
+     * Store a document and dispatch its ingestion.
      */
-    public function store(SaveTextDocumentRequest $request, Collection $collection): RedirectResponse
+    public function store(SaveDocumentRequest $request, Collection $collection): RedirectResponse
     {
         $user = $request->user();
         $team = $user->company();
@@ -80,17 +81,20 @@ class DocumentController extends Controller
 
         $document = DB::transaction(function () use ($request, $collection, $team): Document {
             $lockedTeam = $team->newQuery()->lockForUpdate()->whereKey($team->getKey())->firstOrFail();
-            $content = $request->string('content')->toString();
+            $type = DocumentType::from($request->string('type')->toString());
+            $content = $this->documentContent($type, $request->validated());
+            $faqItems = $this->faqItems($type, $request->validated());
             $this->quota->assertCanStore($lockedTeam, strlen($content));
             $token = (string) Str::uuid();
 
             $document = Document::create([
                 'team_id' => $lockedTeam->getKey(),
                 'collection_id' => $collection->getKey(),
-                'type' => 'text',
+                'type' => $type,
                 'status' => DocumentStatus::Pending,
                 'title' => $request->string('title')->toString(),
                 'content' => $content,
+                'faq_items' => $faqItems,
                 'size_bytes' => strlen($content),
                 'ingestion_token' => $token,
             ]);
@@ -109,9 +113,9 @@ class DocumentController extends Controller
     }
 
     /**
-     * Update a free-form text document and reprocess its content.
+     * Update a document and reprocess its content.
      */
-    public function update(SaveTextDocumentRequest $request, Document $document): RedirectResponse
+    public function update(SaveDocumentRequest $request, Document $document): RedirectResponse
     {
         $team = $request->user()->company();
         abort_if($team === null, 404);
@@ -119,12 +123,14 @@ class DocumentController extends Controller
         $token = (string) Str::uuid();
         DB::transaction(function () use ($request, $document, $team, $token): void {
             $lockedTeam = $team->newQuery()->lockForUpdate()->whereKey($team->getKey())->firstOrFail();
-            $content = $request->string('content')->toString();
+            $content = $this->documentContent($document->type, $request->validated());
+            $faqItems = $this->faqItems($document->type, $request->validated());
             $this->quota->assertCanStore($lockedTeam, strlen($content), $document);
 
             $document->update([
                 'title' => $request->string('title')->toString(),
                 'content' => $content,
+                'faq_items' => $faqItems,
                 'size_bytes' => strlen($content),
                 'status' => DocumentStatus::Pending,
                 'error_message' => null,
@@ -214,6 +220,7 @@ class DocumentController extends Controller
             'id' => $document->id,
             'title' => $document->title,
             'content' => $document->content,
+            'faqItems' => $document->faq_items,
             'type' => $document->type->value,
             'status' => $document->status->value,
             'statusLabel' => $document->status->label(),
@@ -241,5 +248,63 @@ class DocumentController extends Controller
     private function dispatchIngestionAfterCommit(Document $document, string $token): void
     {
         DB::afterCommit(fn (): mixed => IngestDocument::dispatch($document->getKey(), $token)->onQueue('ingestion'));
+    }
+
+    /**
+     * Build the text representation used for storage accounting and search context.
+     *
+     * @param  array<string, mixed>  $data
+     */
+    private function documentContent(DocumentType $type, array $data): string
+    {
+        if ($type === DocumentType::Text) {
+            return (string) ($data['content'] ?? '');
+        }
+
+        $faqItems = $this->faqItems($type, $data) ?? [];
+
+        return implode("\n\n", array_map(
+            static fn (array $item): string => "Pergunta: {$item['question']}\nResposta: {$item['answer']}",
+            $faqItems,
+        ));
+    }
+
+    /**
+     * @param  array<string, mixed>  $data
+     * @return array<int, array{question: string, answer: string}>|null
+     */
+    private function faqItems(DocumentType $type, array $data): ?array
+    {
+        if ($type !== DocumentType::Faq) {
+            return null;
+        }
+
+        $items = $data['items'] ?? [];
+
+        if (! is_array($items)) {
+            return [];
+        }
+
+        $faqItems = [];
+
+        foreach ($items as $item) {
+            if (! is_array($item)) {
+                continue;
+            }
+
+            $question = $item['question'] ?? null;
+            $answer = $item['answer'] ?? null;
+
+            if (! is_string($question) || ! is_string($answer)) {
+                continue;
+            }
+
+            $faqItems[] = [
+                'question' => $question,
+                'answer' => $answer,
+            ];
+        }
+
+        return $faqItems;
     }
 }

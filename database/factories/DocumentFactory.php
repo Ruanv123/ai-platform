@@ -27,6 +27,7 @@ class DocumentFactory extends Factory
             'status' => DocumentStatus::Pending,
             'title' => fake()->sentence(3),
             'content' => fake()->paragraph(),
+            'faq_items' => null,
             'error_message' => null,
             'size_bytes' => 0,
             'ingestion_token' => fake()->uuid(),

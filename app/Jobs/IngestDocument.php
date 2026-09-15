@@ -51,8 +51,9 @@ class IngestDocument implements ShouldQueue
             'error_message' => null,
         ]);
 
-        $text = $this->extractText($document);
-        $chunks = $chunker->chunk($text);
+        $chunks = $document->type === DocumentType::Faq
+            ? $this->extractFaqChunks($document)
+            : $chunker->chunk($this->extractText($document));
         $embeddings = Embeddings::for($chunks)
             ->dimensions((int) config('knowledge.embedding_dimensions', 1536))
             ->generate(
@@ -130,11 +131,27 @@ class IngestDocument implements ShouldQueue
         return $text;
     }
 
+    /**
+     * Turn every structured FAQ pair into exactly one chunk.
+     *
+     * @return array<int, string>
+     */
+    private function extractFaqChunks(Document $document): array
+    {
+        $items = $document->faq_items;
+
+        if (! is_array($items) || $items === []) {
+            throw new RuntimeException('O FAQ não contém pares para processar.');
+        }
+
+        return array_map(static fn (array $item): string => "Pergunta: {$item['question']}\nResposta: {$item['answer']}", $items);
+    }
+
     private function friendlyErrorMessage(?Throwable $exception): string
     {
         $message = $exception?->getMessage();
 
-        if ($message !== null && preg_match('/^(PDF sem texto extraível|O documento não contém texto|Este tipo de documento)/u', $message)) {
+        if ($message !== null && preg_match('/^(PDF sem texto extraível|O documento não contém texto|O FAQ não contém pares|Este tipo de documento)/u', $message)) {
             return $message;
         }
 

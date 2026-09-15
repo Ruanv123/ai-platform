@@ -2,7 +2,10 @@ import { Form, Head, Link, router, usePoll } from '@inertiajs/react';
 import {
     AlertCircle,
     ArrowLeft,
+    ArrowDown,
+    ArrowUp,
     FileText,
+    FileQuestion,
     LoaderCircle,
     Pencil,
     Plus,
@@ -46,12 +49,18 @@ type KnowledgeDocument = {
     id: number;
     title: string;
     content: string;
+    faqItems: FaqItem[] | null;
     type: string;
     status: string;
     statusLabel: string;
     errorMessage: string | null;
     sizeBytes: number;
     updatedAt: string | null;
+};
+
+type FaqItem = {
+    question: string;
+    answer: string;
 };
 
 type KnowledgeCollection = {
@@ -112,6 +121,63 @@ function DocumentFormDialog({
     onOpenChange,
 }: DocumentFormDialogProps) {
     const isEditing = document !== null;
+    const [documentType, setDocumentType] = useState<'text' | 'faq'>(
+        document?.type === 'faq' ? 'faq' : 'text',
+    );
+    const [faqItems, setFaqItems] = useState<FaqItem[]>(
+        document?.faqItems?.length
+            ? document.faqItems
+            : [{ question: '', answer: '' }],
+    );
+
+    useEffect(() => {
+        setDocumentType(document?.type === 'faq' ? 'faq' : 'text');
+        setFaqItems(
+            document?.faqItems?.length
+                ? document.faqItems
+                : [{ question: '', answer: '' }],
+        );
+    }, [document?.id, open]);
+
+    const updateFaqItem = (
+        index: number,
+        field: keyof FaqItem,
+        value: string,
+    ) => {
+        setFaqItems((items) =>
+            items.map((item, itemIndex) =>
+                itemIndex === index ? { ...item, [field]: value } : item,
+            ),
+        );
+    };
+
+    const addFaqItem = () => {
+        setFaqItems((items) => [...items, { question: '', answer: '' }]);
+    };
+
+    const removeFaqItem = (index: number) => {
+        setFaqItems((items) =>
+            items.filter((_, itemIndex) => itemIndex !== index),
+        );
+    };
+
+    const moveFaqItem = (index: number, direction: -1 | 1) => {
+        const targetIndex = index + direction;
+
+        if (targetIndex < 0 || targetIndex >= faqItems.length) {
+            return;
+        }
+
+        setFaqItems((items) => {
+            const nextItems = [...items];
+            [nextItems[index], nextItems[targetIndex]] = [
+                nextItems[targetIndex],
+                nextItems[index],
+            ];
+
+            return nextItems;
+        });
+    };
 
     return (
         <Dialog open={open} onOpenChange={onOpenChange}>
@@ -120,11 +186,14 @@ function DocumentFormDialog({
                     <DialogTitle>
                         {isEditing
                             ? 'Editar documento'
-                            : 'Novo documento de texto'}
+                            : documentType === 'faq'
+                              ? 'Novo documento de FAQ'
+                              : 'Novo documento de texto'}
                     </DialogTitle>
                     <DialogDescription>
-                        Escreva um conteúdo que os Agentes poderão consultar na
-                        base de conhecimento.
+                        {documentType === 'faq'
+                            ? 'Organize perguntas e respostas que os Agentes poderão consultar.'
+                            : 'Escreva um conteúdo que os Agentes poderão consultar na base de conhecimento.'}
                     </DialogDescription>
                 </DialogHeader>
                 <Form
@@ -137,6 +206,11 @@ function DocumentFormDialog({
                 >
                     {({ errors, processing }) => (
                         <>
+                            <input
+                                type="hidden"
+                                name="type"
+                                value={documentType}
+                            />
                             <div className="grid gap-2">
                                 <Label htmlFor="document-title">Título</Label>
                                 <Input
@@ -150,19 +224,192 @@ function DocumentFormDialog({
                                 <InputError message={errors.title} />
                             </div>
                             <div className="grid gap-2">
-                                <Label htmlFor="document-content">
-                                    Conteúdo
-                                </Label>
-                                <textarea
-                                    id="document-content"
-                                    name="content"
-                                    defaultValue={document?.content ?? ''}
-                                    placeholder="Use títulos e parágrafos para organizar o conteúdo."
-                                    className="border-input bg-background placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-ring/50 min-h-64 rounded-md border px-3 py-2 text-sm shadow-xs outline-none focus-visible:ring-[3px]"
-                                    required
-                                />
-                                <InputError message={errors.content} />
+                                <Label htmlFor="document-type">Tipo</Label>
+                                <select
+                                    id="document-type"
+                                    value={documentType}
+                                    onChange={(event) =>
+                                        setDocumentType(
+                                            event.target.value as
+                                                | 'text'
+                                                | 'faq',
+                                        )
+                                    }
+                                    disabled={isEditing}
+                                    className="border-input bg-background focus-visible:border-ring focus-visible:ring-ring/50 h-9 rounded-md border px-3 text-sm shadow-xs outline-none"
+                                >
+                                    <option value="text">Texto livre</option>
+                                    <option value="faq">FAQ</option>
+                                </select>
+                                <InputError message={errors.type} />
                             </div>
+                            {documentType === 'faq' ? (
+                                <div className="grid gap-3">
+                                    <div className="flex items-center justify-between gap-4">
+                                        <div className="grid gap-1">
+                                            <Label>Perguntas e respostas</Label>
+                                            <p className="text-muted-foreground text-xs">
+                                                Cada par será indexado como um
+                                                trecho separado.
+                                            </p>
+                                        </div>
+                                        <Button
+                                            type="button"
+                                            variant="outline"
+                                            size="sm"
+                                            onClick={addFaqItem}
+                                        >
+                                            <Plus />
+                                            Adicionar par
+                                        </Button>
+                                    </div>
+                                    <InputError message={errors.items} />
+                                    <InputError message={errors.content} />
+                                    <div className="grid gap-3">
+                                        {faqItems.map((item, index) => (
+                                            <div
+                                                key={index}
+                                                className="bg-muted/30 grid gap-3 rounded-lg border p-4"
+                                            >
+                                                <div className="flex items-center justify-between gap-2">
+                                                    <span className="text-sm font-medium">
+                                                        Par {index + 1}
+                                                    </span>
+                                                    <div className="flex items-center gap-1">
+                                                        <Button
+                                                            type="button"
+                                                            variant="ghost"
+                                                            size="icon"
+                                                            onClick={() =>
+                                                                moveFaqItem(
+                                                                    index,
+                                                                    -1,
+                                                                )
+                                                            }
+                                                            disabled={
+                                                                index === 0
+                                                            }
+                                                            aria-label={`Mover par ${index + 1} para cima`}
+                                                        >
+                                                            <ArrowUp />
+                                                        </Button>
+                                                        <Button
+                                                            type="button"
+                                                            variant="ghost"
+                                                            size="icon"
+                                                            onClick={() =>
+                                                                moveFaqItem(
+                                                                    index,
+                                                                    1,
+                                                                )
+                                                            }
+                                                            disabled={
+                                                                index ===
+                                                                faqItems.length -
+                                                                    1
+                                                            }
+                                                            aria-label={`Mover par ${index + 1} para baixo`}
+                                                        >
+                                                            <ArrowDown />
+                                                        </Button>
+                                                        <Button
+                                                            type="button"
+                                                            variant="ghost"
+                                                            size="icon"
+                                                            onClick={() =>
+                                                                removeFaqItem(
+                                                                    index,
+                                                                )
+                                                            }
+                                                            disabled={
+                                                                faqItems.length ===
+                                                                1
+                                                            }
+                                                            aria-label={`Remover par ${index + 1}`}
+                                                        >
+                                                            <Trash2 />
+                                                        </Button>
+                                                    </div>
+                                                </div>
+                                                <div className="grid gap-2">
+                                                    <Label
+                                                        htmlFor={`faq-question-${index}`}
+                                                    >
+                                                        Pergunta
+                                                    </Label>
+                                                    <Input
+                                                        id={`faq-question-${index}`}
+                                                        name={`items[${index}][question]`}
+                                                        value={item.question}
+                                                        onChange={(event) =>
+                                                            updateFaqItem(
+                                                                index,
+                                                                'question',
+                                                                event.target
+                                                                    .value,
+                                                            )
+                                                        }
+                                                        placeholder="Ex.: Qual é o prazo de entrega?"
+                                                        required
+                                                    />
+                                                    <InputError
+                                                        message={
+                                                            errors[
+                                                                `items.${index}.question`
+                                                            ]
+                                                        }
+                                                    />
+                                                </div>
+                                                <div className="grid gap-2">
+                                                    <Label
+                                                        htmlFor={`faq-answer-${index}`}
+                                                    >
+                                                        Resposta
+                                                    </Label>
+                                                    <textarea
+                                                        id={`faq-answer-${index}`}
+                                                        name={`items[${index}][answer]`}
+                                                        value={item.answer}
+                                                        onChange={(event) =>
+                                                            updateFaqItem(
+                                                                index,
+                                                                'answer',
+                                                                event.target
+                                                                    .value,
+                                                            )
+                                                        }
+                                                        placeholder="Escreva uma resposta objetiva."
+                                                        className="border-input bg-background placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-ring/50 min-h-24 rounded-md border px-3 py-2 text-sm shadow-xs outline-none focus-visible:ring-[3px]"
+                                                        required
+                                                    />
+                                                    <InputError
+                                                        message={
+                                                            errors[
+                                                                `items.${index}.answer`
+                                                            ]
+                                                        }
+                                                    />
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            ) : (
+                                <div className="grid gap-2">
+                                    <Label htmlFor="document-content">
+                                        Conteúdo
+                                    </Label>
+                                    <textarea
+                                        id="document-content"
+                                        name="content"
+                                        defaultValue={document?.content ?? ''}
+                                        placeholder="Use títulos e parágrafos para organizar o conteúdo."
+                                        className="border-input bg-background placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-ring/50 min-h-64 rounded-md border px-3 py-2 text-sm shadow-xs outline-none focus-visible:ring-[3px]"
+                                        required
+                                    />
+                                    <InputError message={errors.content} />
+                                </div>
+                            )}
                             <DialogFooter>
                                 <DialogClose asChild>
                                     <Button type="button" variant="outline">
@@ -287,7 +534,7 @@ export default function Documents({
                                     Nenhum documento nesta coleção
                                 </h2>
                                 <p className="text-muted-foreground max-w-sm text-sm">
-                                    Adicione um texto livre para começar a
+                                    Adicione um documento para começar a
                                     alimentar sua base de conhecimento.
                                 </p>
                             </div>
@@ -309,13 +556,22 @@ export default function Documents({
                                 <CardContent className="flex flex-col gap-4 p-5 sm:flex-row sm:items-center sm:justify-between">
                                     <div className="flex min-w-0 items-start gap-3">
                                         <div className="bg-muted flex size-10 shrink-0 items-center justify-center rounded-lg">
-                                            <FileText className="text-muted-foreground size-5" />
+                                            {document.type === 'faq' ? (
+                                                <FileQuestion className="text-muted-foreground size-5" />
+                                            ) : (
+                                                <FileText className="text-muted-foreground size-5" />
+                                            )}
                                         </div>
                                         <div className="grid min-w-0 gap-1">
                                             <div className="flex flex-wrap items-center gap-2">
                                                 <h2 className="truncate font-medium">
                                                     {document.title}
                                                 </h2>
+                                                <Badge variant="outline">
+                                                    {document.type === 'faq'
+                                                        ? 'FAQ'
+                                                        : 'Texto livre'}
+                                                </Badge>
                                                 <Badge
                                                     variant={statusVariant(
                                                         document.status,

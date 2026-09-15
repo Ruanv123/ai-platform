@@ -21,6 +21,7 @@ use Illuminate\Support\Carbon;
  * @property DocumentStatus $status
  * @property string $title
  * @property string $content
+ * @property array<int, array{question: string, answer: string}>|null $faq_items
  * @property string|null $error_message
  * @property int $size_bytes
  * @property string|null $ingestion_token
@@ -38,6 +39,7 @@ use Illuminate\Support\Carbon;
     'status',
     'title',
     'content',
+    'faq_items',
     'error_message',
     'size_bytes',
     'ingestion_token',
@@ -88,6 +90,7 @@ class Document extends Model
         return [
             'type' => DocumentType::class,
             'status' => DocumentStatus::class,
+            'faq_items' => 'array',
             'processed_at' => 'datetime',
             'size_bytes' => 'integer',
         ];
