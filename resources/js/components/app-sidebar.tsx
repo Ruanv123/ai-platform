@@ -6,6 +6,7 @@ import {
     FolderGit2,
     LayoutGrid,
     MessageSquare,
+    Plug,
 } from 'lucide-react';
 import AppLogo from '@/components/app-logo';
 import { NavFooter } from '@/components/nav-footer';
@@ -24,6 +25,7 @@ import { dashboard } from '@/routes';
 import { index as collections } from '@/routes/collections';
 import { index as agents } from '@/routes/agents';
 import { index as channels } from '@/routes/channels';
+import { index as integrations } from '@/routes/integrations';
 import type { NavItem } from '@/types';
 
 export function AppSidebar() {
@@ -49,6 +51,11 @@ export function AppSidebar() {
             title: 'Canais',
             href: channels(),
             icon: MessageSquare,
+        },
+        {
+            title: 'Integrações',
+            href: integrations(),
+            icon: Plug,
         },
     ];
 

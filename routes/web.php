@@ -3,6 +3,7 @@
 use App\Http\Controllers\Channels\WhatsAppController;
 use App\Http\Controllers\Channels\WhatsAppWebhookController;
 use App\Http\Controllers\DashboardController;
+use App\Http\Controllers\Integrations\IntegrationController;
 use App\Http\Controllers\Knowledge\AgentController;
 use App\Http\Controllers\Knowledge\CollectionController;
 use App\Http\Controllers\Knowledge\DocumentController;
@@ -42,6 +43,8 @@ Route::middleware(['auth', EnsureUserHasTeam::class])->group(function () {
 
     Route::get('channels', [WhatsAppController::class, 'index'])
         ->name('channels.index');
+    Route::get('integrations', [IntegrationController::class, 'index'])
+        ->name('integrations.index');
     Route::post('channels/whatsapp', [WhatsAppController::class, 'store'])
         ->name('channels.whatsapp.store');
     Route::patch('channels/whatsapp/{whatsappNumber}', [WhatsAppController::class, 'update'])
