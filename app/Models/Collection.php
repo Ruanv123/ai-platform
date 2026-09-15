@@ -2,11 +2,11 @@
 
 namespace App\Models;
 
+use App\Concerns\BelongsToTeam;
 use Database\Factories\CollectionFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Support\Carbon;
 
 /**
@@ -23,17 +23,7 @@ use Illuminate\Support\Carbon;
 class Collection extends Model
 {
     /** @use HasFactory<CollectionFactory> */
-    use HasFactory;
-
-    /**
-     * Get the Empresa that owns the collection.
-     *
-     * @return BelongsTo<Team, $this>
-     */
-    public function team(): BelongsTo
-    {
-        return $this->belongsTo(Team::class);
-    }
+    use BelongsToTeam, HasFactory;
 
     /**
      * Get the attributes that should be cast.

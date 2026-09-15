@@ -61,6 +61,7 @@ export type TeamPermissions = {
     canRemoveMember: boolean;
     canCreateInvitation: boolean;
     canCancelInvitation: boolean;
+    canManageKnowledge: boolean;
 };
 
 export type RoleOption = {

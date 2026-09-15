@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\DashboardController;
+use App\Http\Controllers\Knowledge\CollectionController;
 use App\Http\Controllers\Onboarding\CompanyController;
 use App\Http\Controllers\Teams\TeamInvitationController;
 use App\Http\Middleware\EnsureUserHasTeam;
@@ -17,6 +18,12 @@ Route::middleware(['auth', RedirectIfUserHasTeam::class])->group(function () {
 Route::get('dashboard', DashboardController::class)
     ->middleware(['auth', EnsureUserHasTeam::class])
     ->name('dashboard');
+
+Route::middleware(['auth', EnsureUserHasTeam::class])->group(function () {
+    Route::resource('knowledge/collections', CollectionController::class)
+        ->only(['index', 'store', 'update', 'destroy'])
+        ->names('collections');
+});
 
 Route::get('invitations/{invitation}', [TeamInvitationController::class, 'show'])->name('invitations.show');
 
