@@ -9,7 +9,7 @@ it('returns the challenge and records verification for a matching public handsha
     $verificationTime = now()->setSeconds(12)->setMicrosecond(0);
     $this->travelTo($verificationTime);
 
-    $response = $this->get('/webhooks/whatsapp?hub.mode=subscribe&hub.verify_token=known-verify-token&hub.challenge=challenge-value');
+    $response = $this->get(route('webhooks.whatsapp').'?hub.mode=subscribe&hub.verify_token=known-verify-token&hub.challenge=challenge-value');
 
     $response->assertOk()
         ->assertContent('challenge-value')
@@ -23,7 +23,7 @@ it('returns 403 without recording verification for an invalid handshake', functi
         'verify_token' => 'known-verify-token',
     ]);
 
-    $response = $this->get('/webhooks/whatsapp?'.$query);
+    $response = $this->get(route('webhooks.whatsapp').'?'.$query);
 
     $response->assertForbidden();
     $unverifiedNumber = WhatsAppNumber::withoutGlobalScopes()->findOrFail($whatsappNumber->id);
@@ -31,6 +31,9 @@ it('returns 403 without recording verification for an invalid handshake', functi
 })->with([
     'wrong mode' => 'hub.mode=unsubscribe&hub.verify_token=known-verify-token&hub.challenge=challenge-value',
     'unknown token' => 'hub.mode=subscribe&hub.verify_token=unknown-token&hub.challenge=challenge-value',
+    'missing mode' => 'hub.verify_token=known-verify-token&hub.challenge=challenge-value',
+    'missing token' => 'hub.mode=subscribe&hub.challenge=challenge-value',
+    'missing challenge' => 'hub.mode=subscribe&hub.verify_token=known-verify-token',
 ]);
 
 function whatsappWebhookBody(string $phoneNumberId = '15551234567890'): string
@@ -54,9 +57,9 @@ it('returns 200 for a valid signed event without processing it', function () {
         'app_secret' => 'app-secret',
     ]);
     $body = whatsappWebhookBody();
-    $signature = 'sha256='.hash_hmac('sha256', $body, 'app-secret');
+    $signature = 'sha256=acc8908448ebf5b966907c9d60ceb9cec6c3c743940284b26924ded7fd77b95d';
 
-    $response = $this->call('POST', '/webhooks/whatsapp', [], [], [], [
+    $response = $this->call('POST', route('webhooks.whatsapp'), [], [], [], [
         'CONTENT_TYPE' => 'application/json',
         'HTTP_X_HUB_SIGNATURE_256' => $signature,
     ], $body);
@@ -66,14 +69,14 @@ it('returns 200 for a valid signed event without processing it', function () {
         ->toBeNull();
 });
 
-it('returns 403 for an invalid, missing, or unknown-number event signature', function (?string $phoneNumberId, ?string $signature) {
+it('returns 403 for an invalid or missing event signature', function (?string $phoneNumberId, ?string $signature) {
     WhatsAppNumber::factory()->create([
         'phone_number_id' => '15551234567890',
         'app_secret' => 'app-secret',
     ]);
     $body = whatsappWebhookBody($phoneNumberId ?? '15551234567890');
 
-    $response = $this->call('POST', '/webhooks/whatsapp', [], [], [], array_filter([
+    $response = $this->call('POST', route('webhooks.whatsapp'), [], [], [], array_filter([
         'CONTENT_TYPE' => 'application/json',
         'HTTP_X_HUB_SIGNATURE_256' => $signature,
     ]), $body);
@@ -82,5 +85,29 @@ it('returns 403 for an invalid, missing, or unknown-number event signature', fun
 })->with([
     'invalid signature' => ['15551234567890', 'sha256=invalid'],
     'missing signature' => ['15551234567890', null],
-    'unknown phone number' => ['unknown-phone-number', 'sha256=invalid'],
 ]);
+
+it('returns 403 for a valid signature from an unknown phone number', function () {
+    WhatsAppNumber::factory()->create([
+        'phone_number_id' => '15551234567890',
+        'app_secret' => 'app-secret',
+    ]);
+    $body = whatsappWebhookBody('unknown-phone-number');
+
+    $response = $this->call('POST', route('webhooks.whatsapp'), [], [], [], [
+        'CONTENT_TYPE' => 'application/json',
+        'HTTP_X_HUB_SIGNATURE_256' => 'sha256=34cd9e8d1eab018ed78d27106063ac95b534eb0895e18db679bc08856528ae9f',
+    ], $body);
+
+    $response->assertForbidden();
+});
+
+it('returns 429 after 300 webhook requests from the same source', function () {
+    for ($attempt = 0; $attempt < 300; $attempt++) {
+        $this->get(route('webhooks.whatsapp'));
+    }
+
+    $response = $this->get(route('webhooks.whatsapp'));
+
+    $response->assertTooManyRequests();
+});

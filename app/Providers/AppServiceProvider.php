@@ -36,6 +36,19 @@ class AppServiceProvider extends ServiceProvider
                     'message' => 'Você atingiu o limite de 30 mensagens por hora no Playground. Tente novamente mais tarde.',
                 ], 429, $headers));
         });
+
+        RateLimiter::for('whatsapp-webhook', function (Request $request): Limit {
+            $phoneNumberId = data_get(
+                $request->json()->all(),
+                'entry.0.changes.0.value.metadata.phone_number_id',
+            );
+            $phoneNumberKey = is_scalar($phoneNumberId) && filled($phoneNumberId)
+                ? (string) $phoneNumberId
+                : 'unknown';
+
+            return Limit::perMinute(300)
+                ->by('whatsapp-webhook:'.(string) $request->ip().':'.$phoneNumberKey);
+        });
     }
 
     /**

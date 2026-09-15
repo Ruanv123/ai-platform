@@ -16,6 +16,7 @@ use Illuminate\Support\Facades\Route;
 Route::inertia('/', 'welcome')->name('home');
 
 Route::match(['get', 'post'], 'webhooks/whatsapp', [WhatsAppWebhookController::class, 'handle'])
+    ->middleware('throttle:whatsapp-webhook')
     ->name('webhooks.whatsapp');
 
 Route::middleware(['auth', RedirectIfUserHasTeam::class])->group(function () {
