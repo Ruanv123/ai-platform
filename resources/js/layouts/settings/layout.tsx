@@ -8,7 +8,7 @@ import { cn, toUrl } from '@/lib/utils';
 import { edit as editAppearance } from '@/routes/appearance';
 import { edit } from '@/routes/profile';
 import { edit as editSecurity } from '@/routes/security';
-import { index as teams } from '@/routes/teams';
+import { edit as teams } from '@/routes/teams';
 import type { NavItem } from '@/types';
 
 const sidebarNavItems: NavItem[] = [
@@ -23,7 +23,7 @@ const sidebarNavItems: NavItem[] = [
         icon: null,
     },
     {
-        title: 'Teams',
+        title: 'Team',
         href: teams(),
         icon: null,
     },

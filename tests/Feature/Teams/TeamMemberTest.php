@@ -11,14 +11,15 @@ test('team member roles can be updated by owners', function () {
 
     $team->members()->attach($owner, ['role' => TeamRole::Owner->value]);
     $team->members()->attach($member, ['role' => TeamRole::Member->value]);
+    $owner->switchTeam($team);
 
     $response = $this
         ->actingAs($owner)
-        ->patch(route('teams.members.update', [$team, $member]), [
+        ->patch(route('teams.members.update', $member), [
             'role' => TeamRole::Admin->value,
         ]);
 
-    $response->assertRedirect(route('teams.edit', $team));
+    $response->assertRedirect(route('teams.edit'));
 
     expect($team->members()->where('user_id', $member->id)->first()->pivot->role->value)->toEqual(TeamRole::Admin->value);
 });
@@ -32,10 +33,11 @@ test('team member roles cannot be updated by non owners', function () {
     $team->members()->attach($owner, ['role' => TeamRole::Owner->value]);
     $team->members()->attach($admin, ['role' => TeamRole::Admin->value]);
     $team->members()->attach($member, ['role' => TeamRole::Member->value]);
+    $admin->switchTeam($team);
 
     $response = $this
         ->actingAs($admin)
-        ->patch(route('teams.members.update', [$team, $member]), [
+        ->patch(route('teams.members.update', $member), [
             'role' => TeamRole::Admin->value,
         ]);
 
@@ -49,12 +51,13 @@ test('team members can be removed by owners', function () {
 
     $team->members()->attach($owner, ['role' => TeamRole::Owner->value]);
     $team->members()->attach($member, ['role' => TeamRole::Member->value]);
+    $owner->switchTeam($team);
 
     $response = $this
         ->actingAs($owner)
-        ->delete(route('teams.members.destroy', [$team, $member]));
+        ->delete(route('teams.members.destroy', $member));
 
-    $response->assertRedirect(route('teams.edit', $team));
+    $response->assertRedirect(route('teams.edit'));
 
     expect($member->fresh()->belongsToTeam($team))->toBeFalse();
 });
@@ -68,10 +71,11 @@ test('team members cannot be removed by non owners', function () {
     $team->members()->attach($owner, ['role' => TeamRole::Owner->value]);
     $team->members()->attach($admin, ['role' => TeamRole::Admin->value]);
     $team->members()->attach($member, ['role' => TeamRole::Member->value]);
+    $admin->switchTeam($team);
 
     $response = $this
         ->actingAs($admin)
-        ->delete(route('teams.members.destroy', [$team, $member]));
+        ->delete(route('teams.members.destroy', $member));
 
     $response->assertForbidden();
 });
@@ -81,10 +85,11 @@ test('team owner cannot be removed', function () {
     $team = Team::factory()->create();
 
     $team->members()->attach($owner, ['role' => TeamRole::Owner->value]);
+    $owner->switchTeam($team);
 
     $response = $this
         ->actingAs($owner)
-        ->delete(route('teams.members.destroy', [$team, $owner]));
+        ->delete(route('teams.members.destroy', $owner));
 
     $response->assertForbidden();
 
@@ -98,10 +103,11 @@ test('team member role cannot be set to owner', function () {
 
     $team->members()->attach($owner, ['role' => TeamRole::Owner->value]);
     $team->members()->attach($member, ['role' => TeamRole::Member->value]);
+    $owner->switchTeam($team);
 
     $response = $this
         ->actingAs($owner)
-        ->patch(route('teams.members.update', [$team, $member]), [
+        ->patch(route('teams.members.update', $member), [
             'role' => TeamRole::Owner->value,
         ]);
 
@@ -118,12 +124,13 @@ test('removed member current team is set to personal team', function () {
 
     $team->members()->attach($owner, ['role' => TeamRole::Owner->value]);
     $team->members()->attach($member, ['role' => TeamRole::Member->value]);
+    $owner->switchTeam($team);
 
     $member->update(['current_team_id' => $team->id]);
 
     $this
         ->actingAs($owner)
-        ->delete(route('teams.members.destroy', [$team, $member]));
+        ->delete(route('teams.members.destroy', $member));
 
     expect($member->fresh()->current_team_id)->toEqual($personalTeam->id);
 });

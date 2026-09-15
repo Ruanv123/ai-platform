@@ -14,7 +14,6 @@ declare module '@inertiajs/core' {
             auth: Auth;
             sidebarOpen: boolean;
             currentTeam: Team | null;
-            teams: Team[];
             [key: string]: unknown;
         };
     }
