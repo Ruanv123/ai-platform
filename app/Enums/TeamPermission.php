@@ -13,6 +13,7 @@ enum TeamPermission: string
 
     case ManageKnowledge = 'knowledge:manage';
     case ManageAgents = 'agent:manage';
+    case ManageChannels = 'channel:manage';
 
     case CreateInvitation = 'invitation:create';
     case CancelInvitation = 'invitation:cancel';

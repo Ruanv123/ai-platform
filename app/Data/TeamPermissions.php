@@ -14,6 +14,7 @@ readonly class TeamPermissions
         public bool $canCancelInvitation,
         public bool $canManageKnowledge,
         public bool $canManageAgents,
+        public bool $canManageChannels,
     ) {
         //
     }

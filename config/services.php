@@ -35,4 +35,9 @@ return [
         ],
     ],
 
+    'whatsapp' => [
+        'graph_api_version' => env('WHATSAPP_GRAPH_API_VERSION', 'v23.0'),
+        'graph_api_url' => env('WHATSAPP_GRAPH_API_URL', 'https://graph.facebook.com'),
+    ],
+
 ];

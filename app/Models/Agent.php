@@ -12,6 +12,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Support\Carbon;
 
 /**
@@ -31,6 +32,7 @@ use Illuminate\Support\Carbon;
  * @property Carbon|null $updated_at
  * @property-read Team $team
  * @property-read \Illuminate\Database\Eloquent\Collection<int, Collection> $collections
+ * @property-read WhatsAppNumber|null $whatsappNumber
  */
 #[Fillable([
     'team_id',
@@ -69,6 +71,26 @@ class Agent extends Model
     public function collections(): BelongsToMany
     {
         return $this->belongsToMany(Collection::class, 'agent_collection');
+    }
+
+    /**
+     * Get the WhatsApp number linked to this Agent, if any.
+     *
+     * @return HasOne<WhatsAppNumber, $this>
+     */
+    public function whatsappNumber(): HasOne
+    {
+        return $this->hasOne(WhatsAppNumber::class);
+    }
+
+    /**
+     * Unlink this Agent from configured channels before deleting it.
+     */
+    protected static function booted(): void
+    {
+        static::deleting(function (Agent $agent): void {
+            $agent->whatsappNumber()->update(['agent_id' => null]);
+        });
     }
 
     /**

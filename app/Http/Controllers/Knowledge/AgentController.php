@@ -30,7 +30,7 @@ class AgentController extends Controller
 
         return Inertia::render('agents/index', [
             'agents' => $team->agents()
-                ->with('collections')
+                ->with(['collections', 'whatsappNumber'])
                 ->orderBy('name')
                 ->get()
                 ->map(fn (Agent $agent): array => [
@@ -49,6 +49,7 @@ class AgentController extends Controller
                     'transferTriggers' => $agent->transfer_triggers,
                     'isActive' => $agent->is_active,
                     'collectionIds' => $agent->collections->modelKeys(),
+                    'whatsappLinked' => $agent->whatsappNumber !== null,
                 ])
                 ->values(),
             'collections' => $team->collections()

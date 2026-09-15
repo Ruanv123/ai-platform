@@ -171,6 +171,7 @@ trait HasTeams
             canCancelInvitation: $role?->hasPermission(TeamPermission::CancelInvitation) ?? false,
             canManageKnowledge: $role?->hasPermission(TeamPermission::ManageKnowledge) ?? false,
             canManageAgents: $role?->hasPermission(TeamPermission::ManageAgents) ?? false,
+            canManageChannels: $role?->hasPermission(TeamPermission::ManageChannels) ?? false,
         );
     }
 

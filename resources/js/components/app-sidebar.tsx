@@ -1,5 +1,12 @@
 import { Link } from '@inertiajs/react';
-import { Bot, BookOpen, Brain, FolderGit2, LayoutGrid } from 'lucide-react';
+import {
+    Bot,
+    BookOpen,
+    Brain,
+    FolderGit2,
+    LayoutGrid,
+    MessageSquare,
+} from 'lucide-react';
 import AppLogo from '@/components/app-logo';
 import { NavFooter } from '@/components/nav-footer';
 import { NavMain } from '@/components/nav-main';
@@ -16,6 +23,7 @@ import {
 import { dashboard } from '@/routes';
 import { index as collections } from '@/routes/collections';
 import { index as agents } from '@/routes/agents';
+import { index as channels } from '@/routes/channels';
 import type { NavItem } from '@/types';
 
 export function AppSidebar() {
@@ -36,6 +44,11 @@ export function AppSidebar() {
             title: 'Agentes',
             href: agents(),
             icon: Bot,
+        },
+        {
+            title: 'Canais',
+            href: channels(),
+            icon: MessageSquare,
         },
     ];
 

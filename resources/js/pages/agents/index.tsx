@@ -69,6 +69,7 @@ type Agent = {
     transferTriggers: string[];
     isActive: boolean;
     collectionIds: number[];
+    whatsappLinked: boolean;
 };
 
 type AgentFormSnapshot = {
@@ -640,6 +641,12 @@ function DeleteAgentDialog({
                         não poderá mais ser usado no Playground. Essa ação não
                         pode ser desfeita.
                     </DialogDescription>
+                    {agent.whatsappLinked && (
+                        <p className="text-destructive text-sm">
+                            Este Agente está vinculado ao WhatsApp. O número
+                            será desvinculado automaticamente.
+                        </p>
+                    )}
                 </DialogHeader>
                 <DialogFooter>
                     <DialogClose asChild>

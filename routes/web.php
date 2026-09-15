@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Channels\WhatsAppController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\Knowledge\AgentController;
 use App\Http\Controllers\Knowledge\CollectionController;
@@ -33,6 +34,17 @@ Route::middleware(['auth', EnsureUserHasTeam::class])->group(function () {
     Route::post('knowledge/agents/{agent}/playground', [PlaygroundController::class, 'stream'])
         ->middleware('throttle:playground')
         ->name('agents.playground.stream');
+
+    Route::get('channels', [WhatsAppController::class, 'index'])
+        ->name('channels.index');
+    Route::post('channels/whatsapp', [WhatsAppController::class, 'store'])
+        ->name('channels.whatsapp.store');
+    Route::patch('channels/whatsapp/{whatsappNumber}', [WhatsAppController::class, 'update'])
+        ->name('channels.whatsapp.update');
+    Route::post('channels/whatsapp/{whatsappNumber}/test', [WhatsAppController::class, 'test'])
+        ->name('channels.whatsapp.test');
+    Route::delete('channels/whatsapp/{whatsappNumber}', [WhatsAppController::class, 'destroy'])
+        ->name('channels.whatsapp.destroy');
 
     Route::resource('knowledge/collections', CollectionController::class)
         ->only(['index', 'store', 'update', 'destroy'])
