@@ -4,14 +4,14 @@
 
 **Blocked by:** 02 (Uma Empresa por usuário)
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] Cadastro não cria mais team pessoal nem usa o nome do usuário como nome de team
-- [ ] Middleware redireciona usuário autenticado sem Empresa para o onboarding em qualquer rota da aplicação
-- [ ] Onboarding coleta nome fantasia, segmento (select), site, descrição do negócio, produtos/serviços, público-alvo, horário de atendimento por dia da semana, fuso horário e contatos públicos (telefone, e-mail, endereço)
-- [ ] Concluir o onboarding cria a Empresa e vincula o usuário como `Owner` numa transação e leva ao Dashboard
-- [ ] Usuário com Empresa não acessa o onboarding nem consegue criar uma segunda Empresa
-- [ ] Configurações > Empresa permite Owner e Admin editarem os dados; Member vê em modo leitura e recebe 403 ao tentar salvar
-- [ ] Validação com mensagens claras
-- [ ] Coluna booleana `is_platform_admin` no usuário, padrão falso
-- [ ] Feature tests cobrindo redirecionamento, criação, bloqueio de segunda Empresa e permissões de edição
+- [x] Cadastro não cria mais team pessoal nem usa o nome do usuário como nome de team
+- [x] Middleware redireciona usuário autenticado sem Empresa para o onboarding em qualquer rota da aplicação
+- [x] Onboarding coleta nome fantasia, segmento (select), site, descrição do negócio, produtos/serviços, público-alvo, horário de atendimento por dia da semana, fuso horário e contatos públicos (telefone, e-mail, endereço)
+- [x] Concluir o onboarding cria a Empresa e vincula o usuário como `Owner` numa transação e leva ao Dashboard
+- [x] Usuário com Empresa não acessa o onboarding nem consegue criar uma segunda Empresa
+- [x] Configurações > Empresa permite Owner e Admin editarem os dados; Member vê em modo leitura e recebe 403 ao tentar salvar
+- [x] Validação com mensagens claras
+- [x] Coluna booleana `is_platform_admin` no usuário, padrão falso
+- [x] Feature tests cobrindo redirecionamento, criação, bloqueio de segunda Empresa e permissões de edição

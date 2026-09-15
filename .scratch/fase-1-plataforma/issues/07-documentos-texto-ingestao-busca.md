@@ -4,15 +4,15 @@
 
 **Blocked by:** 01 (Infra), 06 (Coleções)
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] Model Documento (tipo, status, mensagem de erro, tamanho em bytes, Coleção, Empresa) e Chunk (conteúdo, embedding `vector(1536)`, `team_id` e `collection_id` desnormalizados) com índice HNSW
-- [ ] Owner e Admin criam e editam documento de texto livre (título + conteúdo); edição volta o status para `pending` e reprocessa
-- [ ] Job de ingestão idempotente na fila `ingestion`; falha após tentativas marca `failed` com mensagem e preserva chunks anteriores
-- [ ] Lista de documentos mostra status, tamanho e data, com polling do Inertia apenas enquanto houver `pending`/`processing`
-- [ ] Excluir documento, mover para outra Coleção e reprocessar documento com erro
-- [ ] Uso de armazenamento da Empresa exibido contra a cota de 500 MB; criação/edição que ultrapassa a cota é bloqueada com mensagem clara; excluir libera espaço
-- [ ] Exclusão de Coleção apaga documentos e chunks em cascata
-- [ ] Módulo de busca: recebe Empresa, Coleções permitidas e pergunta; devolve até 5 trechos com similaridade ≥ 0.35 ordenados, com conteúdo, documento (id, título), Coleção (id, nome) e similaridade; ignora documentos não `ready`; conjunto vazio de Coleções devolve vazio sem consultar o banco; top-K e threshold em configuração
-- [ ] Feature tests via HTTP com `Embeddings::fake()` e fila `sync` (status `ready`, chunks gerados, cota, permissões, isolamento)
-- [ ] Testes diretos do módulo de busca contra pgvector com vetores controlados: limite 5, corte 0.35, ordenação, só `ready`, isolamento por Empresa, restrição a Coleções, conjunto vazio
+- [x] Model Documento (tipo, status, mensagem de erro, tamanho em bytes, Coleção, Empresa) e Chunk (conteúdo, embedding `vector(1536)`, `team_id` e `collection_id` desnormalizados) com índice HNSW
+- [x] Owner e Admin criam e editam documento de texto livre (título + conteúdo); edição volta o status para `pending` e reprocessa
+- [x] Job de ingestão idempotente na fila `ingestion`; falha após tentativas marca `failed` com mensagem e preserva chunks anteriores
+- [x] Lista de documentos mostra status, tamanho e data, com polling do Inertia apenas enquanto houver `pending`/`processing`
+- [x] Excluir documento, mover para outra Coleção e reprocessar documento com erro
+- [x] Uso de armazenamento da Empresa exibido contra a cota de 500 MB; criação/edição que ultrapassa a cota é bloqueada com mensagem clara; excluir libera espaço
+- [x] Exclusão de Coleção apaga documentos e chunks em cascata
+- [x] Módulo de busca: recebe Empresa, Coleções permitidas e pergunta; devolve até 5 trechos com similaridade ≥ 0.35 ordenados, com conteúdo, documento (id, título), Coleção (id, nome) e similaridade; ignora documentos não `ready`; conjunto vazio de Coleções devolve vazio sem consultar o banco; top-K e threshold em configuração
+- [x] Feature tests via HTTP com `Embeddings::fake()` e fila `sync` (status `ready`, chunks gerados, cota, permissões, isolamento)
+- [x] Testes diretos do módulo de busca contra pgvector com vetores controlados: limite 5, corte 0.35, ordenação, só `ready`, isolamento por Empresa, restrição a Coleções, conjunto vazio

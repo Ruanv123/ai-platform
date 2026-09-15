@@ -4,12 +4,12 @@
 
 **Blocked by:** 06 (Coleções)
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] Model Agente pertencente à Empresa, com enums de objetivo, tom e tamanho (labels pt-BR via método de label, no padrão do `TeamRole`)
-- [ ] Relação muitos-para-muitos Agente ↔ Coleção; só Coleções da mesma Empresa são aceitas
-- [ ] `TeamPermission` ganha `agent:manage` (Owner e Admin)
-- [ ] Item "Agentes" na sidebar; lista com nome, objetivo e status
-- [ ] Formulário com editores de lista (adicionar, editar, reordenar, remover) para instruções, regras e gatilhos de transferência
-- [ ] Ativar/desativar e excluir Agente com confirmação
-- [ ] Feature tests: validação, Coleção de outra Empresa recusada, permissões por papel, isolamento (404)
+- [x] Model Agente pertencente à Empresa, com enums de objetivo, tom e tamanho (labels pt-BR via método de label, no padrão do `TeamRole`)
+- [x] Relação muitos-para-muitos Agente ↔ Coleção; só Coleções da mesma Empresa são aceitas
+- [x] `TeamPermission` ganha `agent:manage` (Owner e Admin)
+- [x] Item "Agentes" na sidebar; lista com nome, objetivo e status
+- [x] Formulário com editores de lista (adicionar, editar, reordenar, remover) para instruções, regras e gatilhos de transferência
+- [x] Ativar/desativar e excluir Agente com confirmação
+- [x] Feature tests: validação, Coleção de outra Empresa recusada, permissões por papel, isolamento (404)

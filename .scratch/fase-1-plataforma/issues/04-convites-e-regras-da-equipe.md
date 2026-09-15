@@ -4,14 +4,14 @@
 
 **Blocked by:** 03 (Onboarding da Empresa)
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] Owner e Admin convidam definindo papel Admin ou Member; e-mail de convite enviado (visível no Mailpit)
-- [ ] Link do convite abre cadastro vinculado; ao concluir, o usuário é membro da Empresa com o papel do convite e cai no Dashboard sem onboarding
-- [ ] Usuário logado sem Empresa consegue aceitar um convite
-- [ ] Convite para e-mail que já pertence a outra Empresa é recusado na validação
-- [ ] Owner e Admin listam e cancelam convites pendentes; Owner altera papéis e remove membros
-- [ ] Owner não consegue sair da Empresa; Member consegue
-- [ ] Exclusão da Empresa indisponível (rota e UI)
-- [ ] Convites pendentes removidos do Dashboard e das props
-- [ ] Feature tests para cada regra acima
+- [x] Owner e Admin convidam definindo papel Admin ou Member; e-mail de convite enviado (visível no Mailpit)
+- [x] Link do convite abre cadastro vinculado; ao concluir, o usuário é membro da Empresa com o papel do convite e cai no Dashboard sem onboarding
+- [x] Usuário logado sem Empresa consegue aceitar um convite
+- [x] Convite para e-mail que já pertence a outra Empresa é recusado na validação
+- [x] Owner e Admin listam e cancelam convites pendentes; Owner altera papéis e remove membros
+- [x] Owner não consegue sair da Empresa; Member consegue
+- [x] Exclusão da Empresa indisponível (rota e UI)
+- [x] Convites pendentes removidos do Dashboard e das props
+- [x] Feature tests para cada regra acima

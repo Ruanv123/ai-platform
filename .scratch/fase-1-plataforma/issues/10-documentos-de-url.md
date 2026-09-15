@@ -4,11 +4,11 @@
 
 **Blocked by:** 07 (Documentos de texto livre + ingestão + busca)
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] `fivefilters/readability.php` e `league/html-to-markdown` instalados (compatibilidade com PHP 8.5 confirmada)
-- [ ] Criação de documento `url` com validação de URL http/https
-- [ ] Download com timeout; erros de rede, status HTTP de erro e conteúdo vazio marcam `failed` com mensagem em pt-BR
-- [ ] Conteúdo principal extraído e convertido para Markdown preservando títulos e listas
-- [ ] Botão de re-sincronizar volta para `pending` e reprocessa; tamanho do texto extraído atualiza a cota
-- [ ] Feature tests com `Http::fake()` e fixture HTML com menu e rodapé (verificando que o lixo de navegação não entra nos chunks), página inacessível e re-sync
+- [x] `fivefilters/readability.php` e `league/html-to-markdown` instalados (compatibilidade com PHP 8.5 confirmada)
+- [x] Criação de documento `url` com validação de URL http/https
+- [x] Download com timeout; erros de rede, status HTTP de erro e conteúdo vazio marcam `failed` com mensagem em pt-BR
+- [x] Conteúdo principal extraído e convertido para Markdown preservando títulos e listas
+- [x] Botão de re-sincronizar volta para `pending` e reprocessa; tamanho do texto extraído atualiza a cota
+- [x] Feature tests com `Http::fake()` e fixture HTML com menu e rodapé (verificando que o lixo de navegação não entra nos chunks), página inacessível e re-sync

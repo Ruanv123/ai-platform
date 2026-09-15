@@ -4,11 +4,11 @@
 
 **Blocked by:** 04 (Convites e regras da Equipe)
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] Telas de login, cadastro, esqueci a senha, redefinição, 2FA, passkeys e confirmação de senha em pt-BR
-- [ ] Configurações (perfil, segurança, aparência) e Equipe em pt-BR
-- [ ] Sidebar, menus de usuário e títulos de página em pt-BR
-- [ ] Traduções pt-BR para validação, autenticação, senhas e paginação; locale da aplicação `pt_BR`
-- [ ] E-mails de convite e redefinição de senha em pt-BR
-- [ ] Testes existentes que verificam textos continuam passando (atualizados quando necessário)
+- [x] Telas de login, cadastro, esqueci a senha, redefinição, 2FA, passkeys e confirmação de senha em pt-BR
+- [x] Configurações (perfil, segurança, aparência) e Equipe em pt-BR
+- [x] Sidebar, menus de usuário e títulos de página em pt-BR
+- [x] Traduções pt-BR para validação, autenticação, senhas e paginação; locale da aplicação `pt_BR`
+- [x] E-mails de convite e redefinição de senha em pt-BR
+- [x] Testes existentes que verificam textos continuam passando (atualizados quando necessário)

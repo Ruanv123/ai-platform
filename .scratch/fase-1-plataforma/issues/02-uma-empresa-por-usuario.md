@@ -4,13 +4,13 @@
 
 **Blocked by:** None (can start immediately)
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] Rotas autenticadas não têm mais o slug do team na URL; o middleware de URL defaults é removido
-- [ ] A Empresa corrente é resolvida a partir do usuário logado em todo lugar que antes usava o slug
-- [ ] Rotas e telas de criar team, trocar team e seletor de team removidas
-- [ ] Feature de verificação de e-mail desligada; nenhuma rota exige `verified`
-- [ ] Usuário recém-cadastrado acessa a aplicação sem confirmar e-mail
-- [ ] Reset de senha, 2FA e passkeys seguem funcionando
-- [ ] Testes do starter kit afetados atualizados para o novo comportamento (não apagados); testes de verificação de e-mail ajustados para refletir a feature desligada
-- [ ] Wayfinder regenerado e frontend compila sem referências a rotas removidas
+- [x] Rotas autenticadas não têm mais o slug do team na URL; o middleware de URL defaults é removido
+- [x] A Empresa corrente é resolvida a partir do usuário logado em todo lugar que antes usava o slug
+- [x] Rotas e telas de criar team, trocar team e seletor de team removidas
+- [x] Feature de verificação de e-mail desligada; nenhuma rota exige `verified`
+- [x] Usuário recém-cadastrado acessa a aplicação sem confirmar e-mail
+- [x] Reset de senha, 2FA e passkeys seguem funcionando
+- [x] Testes do starter kit afetados atualizados para o novo comportamento (não apagados); testes de verificação de e-mail ajustados para refletir a feature desligada
+- [x] Wayfinder regenerado e frontend compila sem referências a rotas removidas

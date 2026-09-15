@@ -4,13 +4,13 @@
 
 **Blocked by:** None (can start immediately)
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] Arquivo de compose com Postgres (imagem oficial pgvector), Redis e Mailpit sobe com um comando
-- [ ] `.env.example` configurado para Postgres, Redis (fila, e cache/sessão se fizer sentido) e Mailpit
-- [ ] Migration habilita a extensão `vector`
-- [ ] `laravel/horizon` instalado, com supervisores para as filas `ingestion` e `default`; painel acessível em ambiente local
-- [ ] Script de dev (`composer run dev`) sobe o Horizon no lugar do `queue:listen`
-- [ ] Configuração de testes aponta para um database de teste no Postgres com pgvector (criado pelo compose)
-- [ ] Toda a suíte de testes existente passa em Postgres
-- [ ] Um teste prova que a extensão `vector` está disponível no banco de testes
+- [x] Arquivo de compose com Postgres (imagem oficial pgvector), Redis e Mailpit sobe com um comando
+- [x] `.env.example` configurado para Postgres, Redis (fila, e cache/sessão se fizer sentido) e Mailpit
+- [x] Migration habilita a extensão `vector`
+- [x] `laravel/horizon` instalado, com supervisores para as filas `ingestion` e `default`; painel acessível em ambiente local
+- [x] Script de dev (`composer run dev`) sobe o Horizon no lugar do `queue:listen`
+- [x] Configuração de testes aponta para um database de teste no Postgres com pgvector (criado pelo compose)
+- [x] Toda a suíte de testes existente passa em Postgres
+- [x] Um teste prova que a extensão `vector` está disponível no banco de testes

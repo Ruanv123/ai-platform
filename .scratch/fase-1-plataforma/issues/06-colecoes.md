@@ -4,12 +4,12 @@
 
 **Blocked by:** 03 (Onboarding da Empresa)
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] Comportamento reutilizável de pertencer à Empresa: scope só aplicado em contexto HTTP autenticado; recurso de outra Empresa responde 404
-- [ ] `TeamPermission` ganha `knowledge:manage` (Owner e Admin); permissões do usuário expostas ao frontend
-- [ ] Onboarding cria a Coleção "Geral" marcada como padrão; seeder/factory cobrem o caso
-- [ ] Item "Base de conhecimento" na sidebar com lista de Coleções (nome, descrição, quantidade de documentos)
-- [ ] Owner e Admin criam, editam e excluem Coleções com confirmação; Member não vê as ações e recebe 403 via requisição direta
-- [ ] Coleção "Geral" não pode ser excluída (UI e backend)
-- [ ] Feature tests: CRUD, permissões por papel, isolamento entre Empresas (404), "Geral" indelével
+- [x] Comportamento reutilizável de pertencer à Empresa: scope só aplicado em contexto HTTP autenticado; recurso de outra Empresa responde 404
+- [x] `TeamPermission` ganha `knowledge:manage` (Owner e Admin); permissões do usuário expostas ao frontend
+- [x] Onboarding cria a Coleção "Geral" marcada como padrão; seeder/factory cobrem o caso
+- [x] Item "Base de conhecimento" na sidebar com lista de Coleções (nome, descrição, quantidade de documentos)
+- [x] Owner e Admin criam, editam e excluem Coleções com confirmação; Member não vê as ações e recebe 403 via requisição direta
+- [x] Coleção "Geral" não pode ser excluída (UI e backend)
+- [x] Feature tests: CRUD, permissões por papel, isolamento entre Empresas (404), "Geral" indelével

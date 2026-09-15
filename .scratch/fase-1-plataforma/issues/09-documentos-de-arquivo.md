@@ -4,13 +4,13 @@
 
 **Blocked by:** 07 (Documentos de texto livre + ingestão + busca)
 
-**Status:** ready-for-agent
+**Status:** partial (falta documentar `poppler-utils` no CI)
 
-- [ ] `spatie/pdf-to-text` instalado (compatibilidade com PHP 8.5 confirmada)
-- [ ] Upload valida formato (PDF, DOCX, TXT), limite de 20 MB e cota da Empresa, com mensagens claras
-- [ ] Arquivo original armazenado em disco configurável; excluir o documento remove o arquivo
-- [ ] Extração de PDF, DOCX (títulos, parágrafos, tabelas) e TXT (Latin-1 → UTF-8) alimenta o pipeline existente
-- [ ] PDF sem texto extraível marca `failed` com mensagem em pt-BR
-- [ ] Substituir arquivo reprocessa e recalcula a cota; baixar arquivo original respeita isolamento por Empresa
-- [ ] Feature tests com `Storage::fake()` e fixtures reais pequenas (PDF com texto, PDF só imagem, DOCX com título e tabela, TXT Latin-1)
+- [x] `spatie/pdf-to-text` instalado (compatibilidade com PHP 8.5 confirmada)
+- [x] Upload valida formato (PDF, DOCX, TXT), limite de 20 MB e cota da Empresa, com mensagens claras
+- [x] Arquivo original armazenado em disco configurável; excluir o documento remove o arquivo
+- [x] Extração de PDF, DOCX (títulos, parágrafos, tabelas) e TXT (Latin-1 → UTF-8) alimenta o pipeline existente
+- [x] PDF sem texto extraível marca `failed` com mensagem em pt-BR
+- [x] Substituir arquivo reprocessa e recalcula a cota; baixar arquivo original respeita isolamento por Empresa
+- [x] Feature tests com `Storage::fake()` e fixtures reais pequenas (PDF com texto, PDF só imagem, DOCX com título e tabela, TXT Latin-1)
 - [ ] Dependência de `poppler-utils` documentada para o CI
