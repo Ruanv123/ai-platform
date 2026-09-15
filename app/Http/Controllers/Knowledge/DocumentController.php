@@ -8,6 +8,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\Knowledge\MoveDocumentRequest;
 use App\Http\Requests\Knowledge\SaveDocumentRequest;
 use App\Jobs\IngestDocument;
+use App\Knowledge\DocumentFileStorage;
 use App\Knowledge\DocumentStorageQuota;
 use App\Models\Chunk;
 use App\Models\Collection;
@@ -15,15 +16,20 @@ use App\Models\Document;
 use App\Models\Team;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Str;
 use Inertia\Inertia;
 use Inertia\Response;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class DocumentController extends Controller
 {
-    public function __construct(private readonly DocumentStorageQuota $quota) {}
+    public function __construct(
+        private readonly DocumentStorageQuota $quota,
+        private readonly DocumentFileStorage $fileStorage,
+    ) {}
 
     /**
      * Display documents from a collection.
@@ -79,30 +85,54 @@ class DocumentController extends Controller
         abort_if($team === null, 404);
         Gate::authorize('view', $collection);
 
-        $document = DB::transaction(function () use ($request, $collection, $team): Document {
-            $lockedTeam = $team->newQuery()->lockForUpdate()->whereKey($team->getKey())->firstOrFail();
-            $type = DocumentType::from($request->string('type')->toString());
-            $content = $this->documentContent($type, $request->validated());
-            $faqItems = $this->faqItems($type, $request->validated());
-            $this->quota->assertCanStore($lockedTeam, strlen($content));
-            $token = (string) Str::uuid();
+        $validated = $request->validated();
+        $type = DocumentType::from($request->string('type')->toString());
+        $file = $validated['file'] ?? null;
+        $newFilePath = $file instanceof UploadedFile
+            ? $this->fileStorage->store($file, $team->getKey())
+            : null;
 
-            $document = Document::create([
-                'team_id' => $lockedTeam->getKey(),
-                'collection_id' => $collection->getKey(),
-                'type' => $type,
-                'status' => DocumentStatus::Pending,
-                'title' => $request->string('title')->toString(),
-                'content' => $content,
-                'faq_items' => $faqItems,
-                'size_bytes' => strlen($content),
-                'ingestion_token' => $token,
-            ]);
+        try {
+            $document = DB::transaction(function () use ($request, $collection, $team, $type, $file, $newFilePath, $validated): Document {
+                $lockedTeam = $team->newQuery()->lockForUpdate()->whereKey($team->getKey())->firstOrFail();
+                $content = $this->documentContent($type, $validated);
+                $faqItems = $this->faqItems($type, $validated);
+                $sizeBytes = $type === DocumentType::File
+                    ? ($file instanceof UploadedFile ? (int) ($file->getSize() ?: 0) : 0)
+                    : strlen($content);
+                $this->quota->assertCanStore(
+                    $lockedTeam,
+                    $sizeBytes,
+                    attribute: $type === DocumentType::File ? 'file' : 'content',
+                );
+                $token = (string) Str::uuid();
 
-            $this->dispatchIngestionAfterCommit($document, $token);
+                $document = Document::create([
+                    'team_id' => $lockedTeam->getKey(),
+                    'collection_id' => $collection->getKey(),
+                    'type' => $type,
+                    'status' => DocumentStatus::Pending,
+                    'title' => $request->string('title')->toString(),
+                    'content' => $content,
+                    'faq_items' => $faqItems,
+                    'file_path' => $newFilePath,
+                    'original_filename' => $file instanceof UploadedFile
+                        ? $this->fileStorage->originalFilename($file)
+                        : null,
+                    'mime_type' => $file instanceof UploadedFile ? $file->getMimeType() : null,
+                    'size_bytes' => $sizeBytes,
+                    'ingestion_token' => $token,
+                ]);
 
-            return $document;
-        });
+                $this->dispatchIngestionAfterCommit($document, $token);
+
+                return $document;
+            });
+        } catch (\Throwable $exception) {
+            $this->deleteUnpersistedFile($newFilePath);
+
+            throw $exception;
+        }
 
         Inertia::flash('toast', [
             'type' => 'success',
@@ -120,26 +150,61 @@ class DocumentController extends Controller
         $team = $request->user()->company();
         abort_if($team === null, 404);
 
+        $validated = $request->validated();
+        $file = $validated['file'] ?? null;
+        $newFilePath = $file instanceof UploadedFile
+            ? $this->fileStorage->store($file, $team->getKey())
+            : null;
+        $oldFilePath = $document->file_path;
         $token = (string) Str::uuid();
-        DB::transaction(function () use ($request, $document, $team, $token): void {
-            $lockedTeam = $team->newQuery()->lockForUpdate()->whereKey($team->getKey())->firstOrFail();
-            $content = $this->documentContent($document->type, $request->validated());
-            $faqItems = $this->faqItems($document->type, $request->validated());
-            $this->quota->assertCanStore($lockedTeam, strlen($content), $document);
 
-            $document->update([
-                'title' => $request->string('title')->toString(),
-                'content' => $content,
-                'faq_items' => $faqItems,
-                'size_bytes' => strlen($content),
-                'status' => DocumentStatus::Pending,
-                'error_message' => null,
-                'processed_at' => null,
-                'ingestion_token' => $token,
-            ]);
+        try {
+            DB::transaction(function () use ($request, $document, $team, $token, $file, $newFilePath, $validated): void {
+                $lockedTeam = $team->newQuery()->lockForUpdate()->whereKey($team->getKey())->firstOrFail();
+                $content = $document->type === DocumentType::File
+                    ? $document->content
+                    : $this->documentContent($document->type, $validated);
+                $faqItems = $this->faqItems($document->type, $validated);
+                $sizeBytes = $document->type === DocumentType::File
+                    ? ($file instanceof UploadedFile ? (int) ($file->getSize() ?: 0) : $document->size_bytes)
+                    : strlen($content);
+                $this->quota->assertCanStore(
+                    $lockedTeam,
+                    $sizeBytes,
+                    $document,
+                    $document->type === DocumentType::File ? 'file' : 'content',
+                );
 
-            $this->dispatchIngestionAfterCommit($document, $token);
-        });
+                $updates = [
+                    'title' => $request->string('title')->toString(),
+                    'content' => $content,
+                    'faq_items' => $faqItems,
+                    'size_bytes' => $sizeBytes,
+                    'status' => DocumentStatus::Pending,
+                    'error_message' => null,
+                    'processed_at' => null,
+                    'ingestion_token' => $token,
+                ];
+
+                if ($document->type === DocumentType::File && $file instanceof UploadedFile) {
+                    $updates['file_path'] = $newFilePath;
+                    $updates['original_filename'] = $this->fileStorage->originalFilename($file);
+                    $updates['mime_type'] = $file->getMimeType();
+                }
+
+                $document->update($updates);
+
+                $this->dispatchIngestionAfterCommit($document, $token);
+            });
+        } catch (\Throwable $exception) {
+            $this->deleteUnpersistedFile($newFilePath);
+
+            throw $exception;
+        }
+
+        if ($newFilePath !== null && $oldFilePath !== null) {
+            $this->fileStorage->delete($oldFilePath);
+        }
 
         Inertia::flash('toast', [
             'type' => 'success',
@@ -178,6 +243,7 @@ class DocumentController extends Controller
     {
         Gate::authorize('delete', $document);
         $collectionId = $document->collection_id;
+        $this->fileStorage->delete($document->file_path);
         $document->delete();
 
         Inertia::flash('toast', [
@@ -212,6 +278,16 @@ class DocumentController extends Controller
     }
 
     /**
+     * Download the original file while keeping document isolation in place.
+     */
+    public function download(Document $document): StreamedResponse
+    {
+        Gate::authorize('view', $document);
+
+        return $this->fileStorage->download($document);
+    }
+
+    /**
      * @return array<string, mixed>
      */
     private function documentData(Document $document): array
@@ -221,6 +297,9 @@ class DocumentController extends Controller
             'title' => $document->title,
             'content' => $document->content,
             'faqItems' => $document->faq_items,
+            'originalFilename' => $document->original_filename,
+            'mimeType' => $document->mime_type,
+            'downloadUrl' => $document->file_path === null ? null : route('documents.download', $document),
             'type' => $document->type->value,
             'status' => $document->status->value,
             'statusLabel' => $document->status->label(),
@@ -250,6 +329,15 @@ class DocumentController extends Controller
         DB::afterCommit(fn (): mixed => IngestDocument::dispatch($document->getKey(), $token)->onQueue('ingestion'));
     }
 
+    private function deleteUnpersistedFile(?string $path): void
+    {
+        if ($path === null || Document::withoutGlobalScopes()->where('file_path', $path)->exists()) {
+            return;
+        }
+
+        $this->fileStorage->delete($path);
+    }
+
     /**
      * Build the text representation used for storage accounting and search context.
      *
@@ -257,6 +345,10 @@ class DocumentController extends Controller
      */
     private function documentContent(DocumentType $type, array $data): string
     {
+        if ($type === DocumentType::File) {
+            return '';
+        }
+
         if ($type === DocumentType::Text) {
             return (string) ($data['content'] ?? '');
         }

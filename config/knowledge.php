@@ -2,6 +2,9 @@
 
 return [
     'storage_quota_bytes' => 500 * 1024 * 1024,
+    'files_disk' => env('KNOWLEDGE_FILES_DISK', 'local'),
+    'pdf_to_text_binary' => env('KNOWLEDGE_PDFTOTEXT_BINARY'),
+    'max_file_size_kilobytes' => 20 * 1024,
     'embedding_provider' => env('KNOWLEDGE_EMBEDDING_PROVIDER', 'openai'),
     'embedding_model' => env('KNOWLEDGE_EMBEDDING_MODEL', 'text-embedding-3-small'),
     'embedding_dimensions' => 1536,

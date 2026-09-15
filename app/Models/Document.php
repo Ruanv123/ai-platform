@@ -22,6 +22,9 @@ use Illuminate\Support\Carbon;
  * @property string $title
  * @property string $content
  * @property array<int, array{question: string, answer: string}>|null $faq_items
+ * @property string|null $file_path
+ * @property string|null $original_filename
+ * @property string|null $mime_type
  * @property string|null $error_message
  * @property int $size_bytes
  * @property string|null $ingestion_token
@@ -40,6 +43,9 @@ use Illuminate\Support\Carbon;
     'title',
     'content',
     'faq_items',
+    'file_path',
+    'original_filename',
+    'mime_type',
     'error_message',
     'size_bytes',
     'ingestion_token',

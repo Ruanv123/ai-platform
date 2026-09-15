@@ -4,6 +4,7 @@ namespace App\Jobs;
 
 use App\Enums\DocumentStatus;
 use App\Enums\DocumentType;
+use App\Knowledge\DocumentFileExtractor;
 use App\Knowledge\MarkdownChunker;
 use App\Models\Chunk;
 use App\Models\Document;
@@ -34,7 +35,7 @@ class IngestDocument implements ShouldQueue
     /**
      * Execute the job.
      */
-    public function handle(MarkdownChunker $chunker): void
+    public function handle(MarkdownChunker $chunker, DocumentFileExtractor $fileExtractor): void
     {
         $document = Document::withoutGlobalScopes()->whereKey($this->documentId)->first();
 
@@ -51,9 +52,24 @@ class IngestDocument implements ShouldQueue
             'error_message' => null,
         ]);
 
-        $chunks = $document->type === DocumentType::Faq
-            ? $this->extractFaqChunks($document)
-            : $chunker->chunk($this->extractText($document));
+        $extractedContent = null;
+
+        try {
+            $chunks = $document->type === DocumentType::Faq
+                ? $this->extractFaqChunks($document)
+                : $chunker->chunk($extractedContent = $this->extractText($document, $fileExtractor));
+        } catch (RuntimeException $exception) {
+            if ($exception->getMessage() === 'PDF sem texto extraível') {
+                $document->update([
+                    'status' => DocumentStatus::Failed,
+                    'error_message' => $exception->getMessage(),
+                ]);
+
+                return;
+            }
+
+            throw $exception;
+        }
         $embeddings = Embeddings::for($chunks)
             ->dimensions((int) config('knowledge.embedding_dimensions', 1536))
             ->generate(
@@ -66,7 +82,7 @@ class IngestDocument implements ShouldQueue
             throw new RuntimeException('Não foi possível gerar os vetores do documento.');
         }
 
-        DB::transaction(function () use ($chunks, $document, $embeddings): void {
+        DB::transaction(function () use ($chunks, $document, $embeddings, $extractedContent): void {
             $lockedDocument = Document::withoutGlobalScopes()
                 ->lockForUpdate()
                 ->whereKey($document->getKey())
@@ -91,11 +107,17 @@ class IngestDocument implements ShouldQueue
                 ]);
             }
 
-            $lockedDocument->update([
+            $updates = [
                 'status' => DocumentStatus::Ready,
                 'error_message' => null,
                 'processed_at' => now(),
-            ]);
+            ];
+
+            if ($lockedDocument->type === DocumentType::File && $extractedContent !== null) {
+                $updates['content'] = $extractedContent;
+            }
+
+            $lockedDocument->update($updates);
         });
     }
 
@@ -116,8 +138,12 @@ class IngestDocument implements ShouldQueue
         ]);
     }
 
-    private function extractText(Document $document): string
+    private function extractText(Document $document, DocumentFileExtractor $fileExtractor): string
     {
+        if ($document->type === DocumentType::File) {
+            return $fileExtractor->extract($document);
+        }
+
         if ($document->type !== DocumentType::Text) {
             throw new RuntimeException('Este tipo de documento ainda não está disponível.');
         }

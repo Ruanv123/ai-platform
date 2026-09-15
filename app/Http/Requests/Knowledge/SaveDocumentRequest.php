@@ -49,7 +49,7 @@ class SaveDocumentRequest extends FormRequest
         $document = $this->route('document');
         $allowedTypes = $document instanceof Document
             ? [$document->type->value]
-            : [DocumentType::Text->value, DocumentType::Faq->value];
+            : [DocumentType::Text->value, DocumentType::Faq->value, DocumentType::File->value];
 
         $rules = [
             'type' => ['required', 'string', Rule::in($allowedTypes)],
@@ -62,6 +62,18 @@ class SaveDocumentRequest extends FormRequest
                 'items.*' => ['required', 'array:question,answer'],
                 'items.*.question' => ['required', 'string'],
                 'items.*.answer' => ['required', 'string'],
+            ]);
+        }
+
+        if ($this->input('type') === DocumentType::File->value) {
+            return array_merge($rules, [
+                'file' => [
+                    $document instanceof Document ? 'nullable' : 'required',
+                    'file',
+                    'max:'.config('knowledge.max_file_size_kilobytes', 20 * 1024),
+                    'mimes:pdf,docx,txt',
+                    'extensions:pdf,docx,txt',
+                ],
             ]);
         }
 
@@ -86,6 +98,11 @@ class SaveDocumentRequest extends FormRequest
             'items.min' => 'Adicione pelo menos um par de pergunta e resposta.',
             'items.*.question.required' => 'Informe a pergunta.',
             'items.*.answer.required' => 'Informe a resposta.',
+            'file.required' => 'Selecione um arquivo para enviar.',
+            'file.file' => 'O arquivo enviado não é válido.',
+            'file.max' => 'O arquivo deve ter no máximo 20 MB.',
+            'file.mimes' => 'Envie um arquivo PDF, DOCX ou TXT.',
+            'file.extensions' => 'A extensão do arquivo deve ser PDF, DOCX ou TXT.',
         ];
     }
 }

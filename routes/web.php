@@ -31,6 +31,8 @@ Route::middleware(['auth', EnsureUserHasTeam::class])->group(function () {
         ->name('documents.store');
     Route::patch('knowledge/documents/{document}', [DocumentController::class, 'update'])
         ->name('documents.update');
+    Route::get('knowledge/documents/{document}/file', [DocumentController::class, 'download'])
+        ->name('documents.download');
     Route::patch('knowledge/documents/{document}/move', [DocumentController::class, 'move'])
         ->name('documents.move');
     Route::post('knowledge/documents/{document}/reprocess', [DocumentController::class, 'reprocess'])

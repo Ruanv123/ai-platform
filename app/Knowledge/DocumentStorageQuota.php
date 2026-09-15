@@ -20,8 +20,12 @@ class DocumentStorageQuota
         return (int) config('knowledge.storage_quota_bytes', 500 * 1024 * 1024);
     }
 
-    public function assertCanStore(Team $team, int $sizeBytes, ?Document $replacing = null): void
-    {
+    public function assertCanStore(
+        Team $team,
+        int $sizeBytes,
+        ?Document $replacing = null,
+        string $attribute = 'content',
+    ): void {
         $usage = $this->usage($team);
 
         if ($replacing !== null) {
@@ -33,7 +37,7 @@ class DocumentStorageQuota
         }
 
         throw ValidationException::withMessages([
-            'content' => 'O conteúdo ultrapassa a cota de armazenamento de 500 MB da Empresa.',
+            $attribute => 'O conteúdo ultrapassa a cota de armazenamento de 500 MB da Empresa.',
         ]);
     }
 }

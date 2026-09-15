@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Knowledge;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Knowledge\SaveCollectionRequest;
+use App\Knowledge\DocumentFileStorage;
 use App\Models\Collection;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -13,6 +14,8 @@ use Inertia\Response;
 
 class CollectionController extends Controller
 {
+    public function __construct(private readonly DocumentFileStorage $fileStorage) {}
+
     /**
      * Display the current Empresa's knowledge collections.
      */
@@ -82,6 +85,10 @@ class CollectionController extends Controller
     public function destroy(Collection $collection): RedirectResponse
     {
         Gate::authorize('delete', $collection);
+
+        foreach ($collection->documents()->pluck('file_path') as $filePath) {
+            $this->fileStorage->delete($filePath);
+        }
 
         $collection->delete();
 

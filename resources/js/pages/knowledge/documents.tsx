@@ -4,6 +4,7 @@ import {
     ArrowLeft,
     ArrowDown,
     ArrowUp,
+    File,
     FileText,
     FileQuestion,
     LoaderCircle,
@@ -42,6 +43,7 @@ import {
     reprocess,
     store,
     update,
+    download,
 } from '@/routes/documents';
 import type { TeamPermissions } from '@/types';
 
@@ -55,6 +57,9 @@ type KnowledgeDocument = {
     statusLabel: string;
     errorMessage: string | null;
     sizeBytes: number;
+    originalFilename: string | null;
+    mimeType: string | null;
+    downloadUrl: string | null;
     updatedAt: string | null;
 };
 
@@ -121,8 +126,12 @@ function DocumentFormDialog({
     onOpenChange,
 }: DocumentFormDialogProps) {
     const isEditing = document !== null;
-    const [documentType, setDocumentType] = useState<'text' | 'faq'>(
-        document?.type === 'faq' ? 'faq' : 'text',
+    const [documentType, setDocumentType] = useState<'text' | 'faq' | 'file'>(
+        document?.type === 'faq'
+            ? 'faq'
+            : document?.type === 'file'
+              ? 'file'
+              : 'text',
     );
     const [faqItems, setFaqItems] = useState<FaqItem[]>(
         document?.faqItems?.length
@@ -131,7 +140,13 @@ function DocumentFormDialog({
     );
 
     useEffect(() => {
-        setDocumentType(document?.type === 'faq' ? 'faq' : 'text');
+        setDocumentType(
+            document?.type === 'faq'
+                ? 'faq'
+                : document?.type === 'file'
+                  ? 'file'
+                  : 'text',
+        );
         setFaqItems(
             document?.faqItems?.length
                 ? document.faqItems
@@ -188,12 +203,16 @@ function DocumentFormDialog({
                             ? 'Editar documento'
                             : documentType === 'faq'
                               ? 'Novo documento de FAQ'
-                              : 'Novo documento de texto'}
+                              : documentType === 'file'
+                                ? 'Novo documento de arquivo'
+                                : 'Novo documento de texto'}
                     </DialogTitle>
                     <DialogDescription>
                         {documentType === 'faq'
                             ? 'Organize perguntas e respostas que os Agentes poderão consultar.'
-                            : 'Escreva um conteúdo que os Agentes poderão consultar na base de conhecimento.'}
+                            : documentType === 'file'
+                              ? 'Envie um PDF, DOCX ou TXT para alimentar a base de conhecimento.'
+                              : 'Escreva um conteúdo que os Agentes poderão consultar na base de conhecimento.'}
                     </DialogDescription>
                 </DialogHeader>
                 <Form
@@ -232,7 +251,8 @@ function DocumentFormDialog({
                                         setDocumentType(
                                             event.target.value as
                                                 | 'text'
-                                                | 'faq',
+                                                | 'faq'
+                                                | 'file',
                                         )
                                     }
                                     disabled={isEditing}
@@ -240,6 +260,7 @@ function DocumentFormDialog({
                                 >
                                     <option value="text">Texto livre</option>
                                     <option value="faq">FAQ</option>
+                                    <option value="file">Arquivo</option>
                                 </select>
                                 <InputError message={errors.type} />
                             </div>
@@ -393,6 +414,35 @@ function DocumentFormDialog({
                                             </div>
                                         ))}
                                     </div>
+                                </div>
+                            ) : documentType === 'file' ? (
+                                <div className="grid gap-3">
+                                    <div className="grid gap-1">
+                                        <Label htmlFor="document-file">
+                                            Arquivo
+                                        </Label>
+                                        <p className="text-muted-foreground text-xs">
+                                            Formatos aceitos: PDF, DOCX ou TXT ·
+                                            máximo de 20 MB.
+                                        </p>
+                                    </div>
+                                    {isEditing &&
+                                        document?.originalFilename && (
+                                            <p className="text-muted-foreground text-sm">
+                                                Arquivo atual:{' '}
+                                                <strong className="text-foreground">
+                                                    {document.originalFilename}
+                                                </strong>
+                                            </p>
+                                        )}
+                                    <Input
+                                        id="document-file"
+                                        name="file"
+                                        type="file"
+                                        accept=".pdf,.docx,.txt,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain"
+                                        required={!isEditing}
+                                    />
+                                    <InputError message={errors.file} />
                                 </div>
                             ) : (
                                 <div className="grid gap-2">
@@ -558,6 +608,8 @@ export default function Documents({
                                         <div className="bg-muted flex size-10 shrink-0 items-center justify-center rounded-lg">
                                             {document.type === 'faq' ? (
                                                 <FileQuestion className="text-muted-foreground size-5" />
+                                            ) : document.type === 'file' ? (
+                                                <File className="text-muted-foreground size-5" />
                                             ) : (
                                                 <FileText className="text-muted-foreground size-5" />
                                             )}
@@ -570,7 +622,10 @@ export default function Documents({
                                                 <Badge variant="outline">
                                                     {document.type === 'faq'
                                                         ? 'FAQ'
-                                                        : 'Texto livre'}
+                                                        : document.type ===
+                                                            'file'
+                                                          ? 'Arquivo'
+                                                          : 'Texto livre'}
                                                 </Badge>
                                                 <Badge
                                                     variant={statusVariant(
@@ -603,6 +658,17 @@ export default function Documents({
                                                         <AlertCircle className="size-4" />
                                                         {document.errorMessage}
                                                     </p>
+                                                )}
+                                            {document.type === 'file' &&
+                                                document.downloadUrl && (
+                                                    <a
+                                                        href={download.url(
+                                                            document.id,
+                                                        )}
+                                                        className="text-primary inline-flex text-sm hover:underline"
+                                                    >
+                                                        Baixar arquivo
+                                                    </a>
                                                 )}
                                         </div>
                                     </div>

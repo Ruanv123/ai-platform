@@ -3,12 +3,15 @@
 use App\Enums\DocumentStatus;
 use App\Enums\DocumentType;
 use App\Jobs\IngestDocument;
+use App\Knowledge\DocumentFileExtractor;
 use App\Knowledge\MarkdownChunker;
 use App\Models\Chunk;
 use App\Models\Collection;
 use App\Models\Document;
 use App\Models\User;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Queue;
+use Illuminate\Support\Facades\Storage;
 use Laravel\Ai\Embeddings;
 
 it('creates a text document, ingests it and reports its storage usage', function () {
@@ -182,7 +185,7 @@ it('marks an ingestion as failed and preserves the previous chunks', function ()
     $job = new IngestDocument($document->id, '00000000-0000-0000-0000-000000000001');
 
     try {
-        $job->handle(app(MarkdownChunker::class));
+        $job->handle(app(MarkdownChunker::class), app(DocumentFileExtractor::class));
     } catch (RuntimeException $exception) {
         $job->failed($exception);
     }
@@ -256,3 +259,292 @@ it('forbids members from changing documents', function () {
 
     $response->assertForbidden();
 });
+
+it('uploads a Latin-1 text file, stores the original and indexes normalized content', function () {
+    config(['queue.default' => 'sync', 'knowledge.files_disk' => 'documents']);
+    Storage::fake('documents');
+    Embeddings::fake();
+
+    $user = User::factory()->withTeam()->create();
+    $collection = Collection::factory()->for($user->company())->create();
+    $latin1Content = mb_convert_encoding("Política de troca\n\nAção em até 7 dias.", 'ISO-8859-1', 'UTF-8');
+
+    $response = $this->actingAs($user)->post(route('documents.store', $collection), [
+        'type' => 'file',
+        'title' => 'Política de troca',
+        'file' => UploadedFile::fake()->createWithContent('politica.txt', $latin1Content),
+    ]);
+
+    $response->assertRedirect(route('documents.index', $collection));
+    $document = Document::query()->firstOrFail();
+
+    expect($document->type)->toBe(DocumentType::File)
+        ->and($document->status)->toBe(DocumentStatus::Ready)
+        ->and($document->content)->toBe("Política de troca\n\nAção em até 7 dias.")
+        ->and($document->size_bytes)->toBe(strlen($latin1Content))
+        ->and($document->original_filename)->toBe('politica.txt')
+        ->and($document->mime_type)->toBe('text/plain');
+    Storage::disk('documents')->assertExists($document->file_path);
+    Embeddings::assertGenerated(fn ($prompt) => $prompt->contains('Ação em até 7 dias.'));
+});
+
+it('extracts DOCX headings and table rows before indexing the document', function () {
+    config(['queue.default' => 'sync', 'knowledge.files_disk' => 'documents']);
+    Storage::fake('documents');
+    Embeddings::fake();
+
+    $user = User::factory()->withTeam()->create();
+    $collection = Collection::factory()->for($user->company())->create();
+
+    $response = $this->actingAs($user)->post(route('documents.store', $collection), [
+        'type' => 'file',
+        'title' => 'Manual DOCX',
+        'file' => UploadedFile::fake()->createWithContent('manual.docx', docxContent()),
+    ]);
+
+    $response->assertRedirect(route('documents.index', $collection));
+    $document = Document::query()->firstOrFail();
+
+    expect($document->status)->toBe(DocumentStatus::Ready)
+        ->and($document->content)->toContain('# Procedimento de trocas')
+        ->and($document->content)->toContain('Prazo | 7 dias')
+        ->and($document->content)->toContain('Canal | E-mail');
+});
+
+it('marks an image-only PDF as failed with the extraction message', function () {
+    config(['queue.default' => 'sync', 'knowledge.files_disk' => 'documents']);
+    Storage::fake('documents');
+    Embeddings::fake();
+
+    $user = User::factory()->withTeam()->create();
+    $collection = Collection::factory()->for($user->company())->create();
+
+    $response = $this->actingAs($user)->post(route('documents.store', $collection), [
+        'type' => 'file',
+        'title' => 'PDF escaneado',
+        'file' => UploadedFile::fake()->createWithContent('escaneado.pdf', pdfContent('', true)),
+    ]);
+
+    $response->assertRedirect(route('documents.index', $collection));
+    $document = Document::query()->firstOrFail();
+
+    expect($document->status)->toBe(DocumentStatus::Failed)
+        ->and($document->error_message)->toBe('PDF sem texto extraível');
+    Storage::disk('documents')->assertExists($document->file_path);
+});
+
+it('extracts text from a PDF and indexes it', function () {
+    config(['queue.default' => 'sync', 'knowledge.files_disk' => 'documents']);
+    Storage::fake('documents');
+    Embeddings::fake();
+
+    $user = User::factory()->withTeam()->create();
+    $collection = Collection::factory()->for($user->company())->create();
+
+    $response = $this->actingAs($user)->post(route('documents.store', $collection), [
+        'type' => 'file',
+        'title' => 'PDF textual',
+        'file' => UploadedFile::fake()->createWithContent('manual.pdf', pdfContent('Arquivo PDF')),
+    ]);
+
+    $response->assertRedirect(route('documents.index', $collection));
+    $document = Document::query()->firstOrFail();
+
+    expect($document->status)->toBe(DocumentStatus::Ready)
+        ->and($document->content)->toContain('Arquivo PDF');
+});
+
+it('replaces an uploaded file, recalculates quota and removes the previous original', function () {
+    config(['queue.default' => 'sync', 'knowledge.files_disk' => 'documents']);
+    Storage::fake('documents');
+    Embeddings::fake();
+
+    $user = User::factory()->withTeam()->create();
+    $collection = Collection::factory()->for($user->company())->create();
+    $this->actingAs($user)->post(route('documents.store', $collection), [
+        'type' => 'file',
+        'title' => 'Manual',
+        'file' => UploadedFile::fake()->createWithContent('manual.txt', 'Versão anterior.'),
+    ]);
+    $document = Document::query()->firstOrFail();
+    $oldPath = $document->file_path;
+    $newContent = 'Versão atualizada com mais conteúdo.';
+
+    $response = $this->actingAs($user)->patch(route('documents.update', $document), [
+        'title' => 'Manual atualizado',
+        'file' => UploadedFile::fake()->createWithContent('manual-atualizado.txt', $newContent),
+    ]);
+
+    $response->assertRedirect(route('documents.index', $collection));
+    $document->refresh();
+
+    expect($document->original_filename)->toBe('manual-atualizado.txt')
+        ->and($document->content)->toBe($newContent)
+        ->and($document->size_bytes)->toBe(strlen($newContent));
+    Storage::disk('documents')->assertMissing($oldPath);
+    Storage::disk('documents')->assertExists($document->file_path);
+});
+
+it('downloads an original file and hides another company file', function () {
+    config(['knowledge.files_disk' => 'documents']);
+    Storage::fake('documents');
+
+    $owner = User::factory()->withTeam()->create();
+    $collection = Collection::factory()->for($owner->company())->create();
+    $document = Document::factory()->for($collection)->create([
+        'type' => DocumentType::File,
+        'content' => 'Conteúdo extraído.',
+        'file_path' => 'documents/'.$owner->company()->id.'/arquivo.txt',
+        'original_filename' => 'arquivo.txt',
+        'mime_type' => 'text/plain',
+        'size_bytes' => 18,
+        'status' => DocumentStatus::Ready,
+    ]);
+    Storage::disk('documents')->put($document->file_path, 'conteúdo original');
+
+    $response = $this->actingAs($owner)->get(route('documents.download', $document));
+
+    $response->assertDownload('arquivo.txt');
+
+    $otherUser = User::factory()->withTeam()->create();
+    $this->actingAs($otherUser)
+        ->get(route('documents.download', $document))
+        ->assertNotFound();
+});
+
+it('rejects an unsupported uploaded file', function () {
+    Storage::fake('documents');
+    $user = User::factory()->withTeam()->create();
+    $collection = Collection::factory()->for($user->company())->create();
+
+    $response = $this->actingAs($user)->post(route('documents.store', $collection), [
+        'type' => 'file',
+        'title' => 'Formato inválido',
+        'file' => UploadedFile::fake()->create('arquivo.exe', 1, 'application/octet-stream'),
+    ]);
+
+    $response->assertSessionHasErrors(['file' => 'Envie um arquivo PDF, DOCX ou TXT.']);
+    $this->assertDatabaseCount('documents', 0);
+});
+
+it('rejects a file whose extension does not match its valid MIME type', function () {
+    Storage::fake('documents');
+    $user = User::factory()->withTeam()->create();
+    $collection = Collection::factory()->for($user->company())->create();
+
+    $response = $this->actingAs($user)->post(route('documents.store', $collection), [
+        'type' => 'file',
+        'title' => 'Extensão inválida',
+        'file' => UploadedFile::fake()->create('arquivo.exe', 1, 'text/plain'),
+    ]);
+
+    $response->assertSessionHasErrors(['file' => 'A extensão do arquivo deve ser PDF, DOCX ou TXT.']);
+    $this->assertDatabaseCount('documents', 0);
+});
+
+it('rejects an oversized uploaded file', function () {
+    Storage::fake('documents');
+    $user = User::factory()->withTeam()->create();
+    $collection = Collection::factory()->for($user->company())->create();
+
+    $response = $this->actingAs($user)->post(route('documents.store', $collection), [
+        'type' => 'file',
+        'title' => 'Arquivo grande',
+        'file' => UploadedFile::fake()->create('arquivo.pdf', 20 * 1024 + 1, 'application/pdf'),
+    ]);
+
+    $response->assertSessionHasErrors(['file' => 'O arquivo deve ter no máximo 20 MB.']);
+    $this->assertDatabaseCount('documents', 0);
+});
+
+it('rejects a file that would exceed the company storage quota', function () {
+    config(['knowledge.storage_quota_bytes' => 3, 'knowledge.files_disk' => 'documents']);
+    Storage::fake('documents');
+    $user = User::factory()->withTeam()->create();
+    $collection = Collection::factory()->for($user->company())->create();
+
+    $response = $this->actingAs($user)->post(route('documents.store', $collection), [
+        'type' => 'file',
+        'title' => 'Arquivo acima da cota',
+        'file' => UploadedFile::fake()->createWithContent('arquivo.txt', '1234'),
+    ]);
+
+    $response->assertSessionHasErrors([
+        'file' => 'O conteúdo ultrapassa a cota de armazenamento de 500 MB da Empresa.',
+    ]);
+    $this->assertDatabaseCount('documents', 0);
+});
+
+it('requires authentication to download an original file', function () {
+    config(['knowledge.files_disk' => 'documents']);
+    Storage::fake('documents');
+
+    $user = User::factory()->withTeam()->create();
+    $collection = Collection::factory()->for($user->company())->create();
+    $document = Document::factory()->for($collection)->create([
+        'type' => DocumentType::File,
+        'file_path' => 'documents/'.$user->company()->id.'/arquivo.txt',
+        'original_filename' => 'arquivo.txt',
+    ]);
+    Storage::disk('documents')->put($document->file_path, 'conteúdo original');
+
+    $this->get(route('documents.download', $document))->assertRedirect(route('login'));
+});
+
+function docxContent(): string
+{
+    $path = tempnam(sys_get_temp_dir(), 'document-test-');
+    expect($path)->not->toBeFalse();
+
+    $archive = new ZipArchive;
+    expect($archive->open($path))->toBeTrue();
+    $archive->addFromString('[Content_Types].xml', '<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>');
+    $archive->addFromString('word/document.xml', '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:pPr><w:pStyle w:val="Heading1"/></w:pPr><w:r><w:t>Procedimento de trocas</w:t></w:r></w:p><w:tbl><w:tr><w:tc><w:p><w:r><w:t>Prazo</w:t></w:r></w:p></w:tc><w:tc><w:p><w:r><w:t>7 dias</w:t></w:r></w:p></w:tc></w:tr><w:tr><w:tc><w:p><w:r><w:t>Canal</w:t></w:r></w:p></w:tc><w:tc><w:p><w:r><w:t>E-mail</w:t></w:r></w:p></w:tc></w:tr></w:tbl><w:sectPr/></w:body></w:document>');
+    $archive->close();
+    $contents = file_get_contents($path);
+    unlink($path);
+
+    expect($contents)->toBeString();
+
+    return $contents;
+}
+
+function pdfContent(string $text = '', bool $imageOnly = false): string
+{
+    if ($imageOnly) {
+        $imageData = "\xFF\x00\x00";
+        $stream = "q 100 0 0 100 100 100 cm /Im1 Do Q\n";
+        $objects = [
+            '<< /Type /Catalog /Pages 2 0 R >>',
+            '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
+            '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /XObject << /Im1 5 0 R >> >> /Contents 4 0 R >>',
+            '<< /Length '.strlen($stream).' >>'."\nstream\n".$stream.'endstream',
+            '<< /Type /XObject /Subtype /Image /Width 1 /Height 1 /ColorSpace /DeviceRGB /BitsPerComponent 8 /Length '.strlen($imageData).' >>'."\nstream\n".$imageData.'endstream',
+        ];
+    } else {
+        $stream = 'BT /F1 12 Tf 72 720 Td ('.$text.") Tj ET\n";
+        $objects = [
+            '<< /Type /Catalog /Pages 2 0 R >>',
+            '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
+            '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 5 0 R >> >> /Contents 4 0 R >>',
+            '<< /Length '.strlen($stream).' >>'."\nstream\n".$stream.'endstream',
+            '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>',
+        ];
+    }
+    $pdf = "%PDF-1.4\n";
+    $offsets = [0];
+
+    foreach ($objects as $index => $object) {
+        $offsets[] = strlen($pdf);
+        $pdf .= ($index + 1)." 0 obj\n".$object."\nendobj\n";
+    }
+
+    $xrefOffset = strlen($pdf);
+    $pdf .= "xref\n0 ".(count($objects) + 1)."\n0000000000 65535 f \n";
+
+    foreach (array_slice($offsets, 1) as $offset) {
+        $pdf .= sprintf("%010d 00000 n \n", $offset);
+    }
+
+    return $pdf."trailer\n<< /Size ".(count($objects) + 1).' /Root 1 0 R >>\nstartxref\n'.$xrefOffset."\n%%EOF\n";
+}
