@@ -44,6 +44,19 @@ test('team member roles cannot be updated by non owners', function () {
     $response->assertForbidden();
 });
 
+test('team owner role cannot be changed', function () {
+    $owner = User::factory()->withTeam()->create();
+
+    $response = $this
+        ->actingAs($owner)
+        ->patch(route('teams.members.update', $owner), [
+            'role' => TeamRole::Admin->value,
+        ]);
+
+    $response->assertForbidden();
+    expect($owner->fresh()->teamRole($owner->company()))->toBe(TeamRole::Owner);
+});
+
 test('team members can be removed by owners', function () {
     $owner = User::factory()->create();
     $member = User::factory()->create();
@@ -132,4 +145,31 @@ test('removed member no longer has a current team', function () {
         ->delete(route('teams.members.destroy', $member));
 
     expect($member->fresh()->current_team_id)->toBeNull();
+});
+
+test('team members can leave their company', function () {
+    $owner = User::factory()->withTeam()->create();
+    $member = User::factory()->create();
+    $team = $owner->company();
+    $team->members()->attach($member, ['role' => TeamRole::Member->value]);
+    $member->switchTeam($team);
+
+    $response = $this
+        ->actingAs($member)
+        ->delete(route('teams.leave'));
+
+    $response->assertRedirect(route('onboarding.company'));
+    expect($member->fresh()->company())->toBeNull();
+    expect($member->fresh()->current_team_id)->toBeNull();
+});
+
+test('team owners cannot leave their company', function () {
+    $owner = User::factory()->withTeam()->create();
+
+    $response = $this
+        ->actingAs($owner)
+        ->delete(route('teams.leave'));
+
+    $response->assertForbidden();
+    expect($owner->fresh()->company())->not->toBeNull();
 });

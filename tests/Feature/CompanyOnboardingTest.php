@@ -48,7 +48,7 @@ test('users without a company can render the onboarding form', function () {
     );
 });
 
-test('users without a company can access the dashboard to respond to an invitation', function () {
+test('users without a company can accept an invitation without onboarding', function () {
     $owner = User::factory()->create();
     $team = Team::factory()->create();
     $team->members()->attach($owner, ['role' => TeamRole::Owner->value]);
@@ -59,12 +59,12 @@ test('users without a company can access the dashboard to respond to an invitati
     ]);
     $invitedUser = User::factory()->create(['email' => 'invited@example.com']);
 
-    $response = $this->actingAs($invitedUser)->get(route('dashboard'));
+    $response = $this
+        ->actingAs($invitedUser)
+        ->get(route('invitations.show', $invitation));
 
-    $response->assertOk()->assertInertia(fn (Assert $page) => $page
-        ->component('dashboard')
-        ->where('pendingInvitations.0.code', $invitation->code),
-    );
+    $response->assertRedirect(route('dashboard'));
+    expect($invitedUser->fresh()->company()->is($team))->toBeTrue();
 });
 
 test('completing onboarding creates the company and owner membership', function () {

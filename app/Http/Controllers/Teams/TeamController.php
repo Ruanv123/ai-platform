@@ -56,7 +56,8 @@ class TeamController extends Controller
                 ];
             }),
             'invitations' => $team->invitations()
-                ->whereNull('accepted_at')
+                ->pending()
+                ->latest()
                 ->get()
                 ->map(fn ($invitation) => [
                     'code' => $invitation->code,
@@ -66,6 +67,7 @@ class TeamController extends Controller
                     'created_at' => $invitation->created_at->toISOString(),
                 ]),
             'permissions' => $user->toTeamPermissions($team),
+            'canLeave' => Gate::forUser($user)->allows('leave', $team),
             'availableRoles' => TeamRole::assignable(),
             'segments' => CompanyController::segments(),
             'timezones' => timezone_identifiers_list(),

@@ -1,5 +1,5 @@
 import { Form, Head, router } from '@inertiajs/react';
-import { ChevronDown, Mail, UserPlus, X } from 'lucide-react';
+import { ChevronDown, LogOut, Mail, UserPlus, X } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import CancelInvitationModal from '@/components/cancel-invitation-modal';
 import Heading from '@/components/heading';
@@ -26,6 +26,7 @@ import {
 import { useInitials } from '@/hooks/use-initials';
 import { edit, update } from '@/routes/company';
 import { update as updateMember } from '@/routes/teams/members';
+import { leave } from '@/routes/teams';
 import type {
     CompanyOption,
     RoleOption,
@@ -44,6 +45,7 @@ type Props = {
     segments: CompanyOption[];
     timezones: string[];
     weekdays: CompanyOption[];
+    canLeave: boolean;
 };
 
 export default function TeamEdit({
@@ -55,6 +57,7 @@ export default function TeamEdit({
     segments,
     timezones,
     weekdays,
+    canLeave,
 }: Props) {
     const getInitials = useInitials();
 
@@ -93,6 +96,12 @@ export default function TeamEdit({
         setCancelInvitationDialogOpen(true);
     };
 
+    const leaveTeam = () => {
+        if (window.confirm('Tem certeza de que deseja sair desta Empresa?')) {
+            router.delete(leave());
+        }
+    };
+
     return (
         <>
             <Head title={pageTitle} />
@@ -127,100 +136,267 @@ export default function TeamEdit({
                                         </div>
 
                                         <div className="grid gap-2">
-                                            <Label htmlFor="segment">Segmento</Label>
+                                            <Label htmlFor="segment">
+                                                Segmento
+                                            </Label>
                                             <select
                                                 id="segment"
                                                 name="segment"
-                                                defaultValue={team.segment ?? ''}
+                                                defaultValue={
+                                                    team.segment ?? ''
+                                                }
                                                 className="border-input bg-background h-9 rounded-md border px-3 text-sm"
                                                 required
                                             >
-                                                <option value="">Selecione um segmento</option>
+                                                <option value="">
+                                                    Selecione um segmento
+                                                </option>
                                                 {segments.map((segment) => (
-                                                    <option key={segment.value} value={segment.value}>
+                                                    <option
+                                                        key={segment.value}
+                                                        value={segment.value}
+                                                    >
                                                         {segment.label}
                                                     </option>
                                                 ))}
                                             </select>
-                                            <InputError message={errors.segment} />
+                                            <InputError
+                                                message={errors.segment}
+                                            />
                                         </div>
 
                                         <div className="grid gap-2">
-                                            <Label htmlFor="website">Site</Label>
-                                            <Input id="website" name="website" type="url" defaultValue={team.website ?? ''} placeholder="https://exemplo.com.br" />
-                                            <InputError message={errors.website} />
+                                            <Label htmlFor="website">
+                                                Site
+                                            </Label>
+                                            <Input
+                                                id="website"
+                                                name="website"
+                                                type="url"
+                                                defaultValue={
+                                                    team.website ?? ''
+                                                }
+                                                placeholder="https://exemplo.com.br"
+                                            />
+                                            <InputError
+                                                message={errors.website}
+                                            />
                                         </div>
 
                                         <div className="grid gap-2">
-                                            <Label htmlFor="business_description">Descrição do negócio</Label>
-                                            <textarea id="business_description" name="business_description" defaultValue={team.businessDescription ?? ''} required className="border-input bg-background min-h-24 rounded-md border px-3 py-2 text-sm" />
-                                            <InputError message={errors.business_description} />
+                                            <Label htmlFor="business_description">
+                                                Descrição do negócio
+                                            </Label>
+                                            <textarea
+                                                id="business_description"
+                                                name="business_description"
+                                                defaultValue={
+                                                    team.businessDescription ??
+                                                    ''
+                                                }
+                                                required
+                                                className="border-input bg-background min-h-24 rounded-md border px-3 py-2 text-sm"
+                                            />
+                                            <InputError
+                                                message={
+                                                    errors.business_description
+                                                }
+                                            />
                                         </div>
 
                                         <div className="grid gap-2">
-                                            <Label htmlFor="products_services">Produtos e serviços</Label>
-                                            <textarea id="products_services" name="products_services" defaultValue={team.productsServices ?? ''} required className="border-input bg-background min-h-24 rounded-md border px-3 py-2 text-sm" />
-                                            <InputError message={errors.products_services} />
+                                            <Label htmlFor="products_services">
+                                                Produtos e serviços
+                                            </Label>
+                                            <textarea
+                                                id="products_services"
+                                                name="products_services"
+                                                defaultValue={
+                                                    team.productsServices ?? ''
+                                                }
+                                                required
+                                                className="border-input bg-background min-h-24 rounded-md border px-3 py-2 text-sm"
+                                            />
+                                            <InputError
+                                                message={
+                                                    errors.products_services
+                                                }
+                                            />
                                         </div>
 
                                         <div className="grid gap-2">
-                                            <Label htmlFor="target_audience">Público-alvo</Label>
-                                            <textarea id="target_audience" name="target_audience" defaultValue={team.targetAudience ?? ''} required className="border-input bg-background min-h-24 rounded-md border px-3 py-2 text-sm" />
-                                            <InputError message={errors.target_audience} />
+                                            <Label htmlFor="target_audience">
+                                                Público-alvo
+                                            </Label>
+                                            <textarea
+                                                id="target_audience"
+                                                name="target_audience"
+                                                defaultValue={
+                                                    team.targetAudience ?? ''
+                                                }
+                                                required
+                                                className="border-input bg-background min-h-24 rounded-md border px-3 py-2 text-sm"
+                                            />
+                                            <InputError
+                                                message={errors.target_audience}
+                                            />
                                         </div>
 
                                         <div className="grid gap-4">
                                             <div>
-                                                <Label>Horário de atendimento</Label>
-                                                <p className="text-muted-foreground text-sm">Defina os dias e horários em que sua empresa atende.</p>
+                                                <Label>
+                                                    Horário de atendimento
+                                                </Label>
+                                                <p className="text-muted-foreground text-sm">
+                                                    Defina os dias e horários em
+                                                    que sua empresa atende.
+                                                </p>
                                             </div>
                                             <div className="space-y-3">
                                                 {weekdays.map((weekday) => {
-                                                    const hours = team.businessHours?.[weekday.value];
-                                                    const isEnabled = hours?.enabled === undefined || hours.enabled === true || hours.enabled === '1';
+                                                    const hours =
+                                                        team.businessHours?.[
+                                                            weekday.value
+                                                        ];
+                                                    const isEnabled =
+                                                        hours?.enabled ===
+                                                            undefined ||
+                                                        hours.enabled ===
+                                                            true ||
+                                                        hours.enabled === '1';
 
                                                     return (
-                                                        <div key={weekday.value} className="grid gap-3 rounded-md border p-3 sm:grid-cols-[1fr_auto_auto_auto] sm:items-center">
+                                                        <div
+                                                            key={weekday.value}
+                                                            className="grid gap-3 rounded-md border p-3 sm:grid-cols-[1fr_auto_auto_auto] sm:items-center"
+                                                        >
                                                             <label className="flex items-center gap-2 text-sm">
-                                                                <input type="hidden" name={`business_hours[${weekday.value}][enabled]`} value="0" />
-                                                                <input type="checkbox" name={`business_hours[${weekday.value}][enabled]`} value="1" defaultChecked={isEnabled} className="accent-primary" />
+                                                                <input
+                                                                    type="hidden"
+                                                                    name={`business_hours[${weekday.value}][enabled]`}
+                                                                    value="0"
+                                                                />
+                                                                <input
+                                                                    type="checkbox"
+                                                                    name={`business_hours[${weekday.value}][enabled]`}
+                                                                    value="1"
+                                                                    defaultChecked={
+                                                                        isEnabled
+                                                                    }
+                                                                    className="accent-primary"
+                                                                />
                                                                 {weekday.label}
                                                             </label>
-                                                            <Input type="time" name={`business_hours[${weekday.value}][open]`} defaultValue={hours?.open ?? '09:00'} aria-label={`Abertura ${weekday.label}`} />
-                                                            <span className="text-muted-foreground text-sm">até</span>
-                                                            <Input type="time" name={`business_hours[${weekday.value}][close]`} defaultValue={hours?.close ?? '18:00'} aria-label={`Fechamento ${weekday.label}`} />
+                                                            <Input
+                                                                type="time"
+                                                                name={`business_hours[${weekday.value}][open]`}
+                                                                defaultValue={
+                                                                    hours?.open ??
+                                                                    '09:00'
+                                                                }
+                                                                aria-label={`Abertura ${weekday.label}`}
+                                                            />
+                                                            <span className="text-muted-foreground text-sm">
+                                                                até
+                                                            </span>
+                                                            <Input
+                                                                type="time"
+                                                                name={`business_hours[${weekday.value}][close]`}
+                                                                defaultValue={
+                                                                    hours?.close ??
+                                                                    '18:00'
+                                                                }
+                                                                aria-label={`Fechamento ${weekday.label}`}
+                                                            />
                                                         </div>
                                                     );
                                                 })}
                                             </div>
-                                            <InputError message={errors.business_hours} />
+                                            <InputError
+                                                message={errors.business_hours}
+                                            />
                                         </div>
 
                                         <div className="grid gap-2">
-                                            <Label htmlFor="timezone">Fuso horário</Label>
-                                            <select id="timezone" name="timezone" defaultValue={team.timezone ?? 'America/Sao_Paulo'} className="border-input bg-background h-9 rounded-md border px-3 text-sm" required>
-                                                {timezones.map((timezone) => <option key={timezone} value={timezone}>{timezone}</option>)}
+                                            <Label htmlFor="timezone">
+                                                Fuso horário
+                                            </Label>
+                                            <select
+                                                id="timezone"
+                                                name="timezone"
+                                                defaultValue={
+                                                    team.timezone ??
+                                                    'America/Sao_Paulo'
+                                                }
+                                                className="border-input bg-background h-9 rounded-md border px-3 text-sm"
+                                                required
+                                            >
+                                                {timezones.map((timezone) => (
+                                                    <option
+                                                        key={timezone}
+                                                        value={timezone}
+                                                    >
+                                                        {timezone}
+                                                    </option>
+                                                ))}
                                             </select>
-                                            <InputError message={errors.timezone} />
+                                            <InputError
+                                                message={errors.timezone}
+                                            />
                                         </div>
 
                                         <div className="grid gap-4 sm:grid-cols-2">
                                             <div className="grid gap-2">
-                                                <Label htmlFor="phone">Telefone público</Label>
-                                                <Input id="phone" name="phone" type="tel" defaultValue={team.phone ?? ''} />
-                                                <InputError message={errors.phone} />
+                                                <Label htmlFor="phone">
+                                                    Telefone público
+                                                </Label>
+                                                <Input
+                                                    id="phone"
+                                                    name="phone"
+                                                    type="tel"
+                                                    defaultValue={
+                                                        team.phone ?? ''
+                                                    }
+                                                />
+                                                <InputError
+                                                    message={errors.phone}
+                                                />
                                             </div>
                                             <div className="grid gap-2">
-                                                <Label htmlFor="public_email">E-mail público</Label>
-                                                <Input id="public_email" name="public_email" type="email" defaultValue={team.publicEmail ?? ''} />
-                                                <InputError message={errors.public_email} />
+                                                <Label htmlFor="public_email">
+                                                    E-mail público
+                                                </Label>
+                                                <Input
+                                                    id="public_email"
+                                                    name="public_email"
+                                                    type="email"
+                                                    defaultValue={
+                                                        team.publicEmail ?? ''
+                                                    }
+                                                />
+                                                <InputError
+                                                    message={
+                                                        errors.public_email
+                                                    }
+                                                />
                                             </div>
                                         </div>
 
                                         <div className="grid gap-2">
-                                            <Label htmlFor="address">Endereço</Label>
-                                            <textarea id="address" name="address" defaultValue={team.address ?? ''} className="border-input bg-background min-h-20 rounded-md border px-3 py-2 text-sm" />
-                                            <InputError message={errors.address} />
+                                            <Label htmlFor="address">
+                                                Endereço
+                                            </Label>
+                                            <textarea
+                                                id="address"
+                                                name="address"
+                                                defaultValue={
+                                                    team.address ?? ''
+                                                }
+                                                className="border-input bg-background min-h-20 rounded-md border px-3 py-2 text-sm"
+                                            />
+                                            <InputError
+                                                message={errors.address}
+                                            />
                                         </div>
 
                                         <div className="flex items-center gap-4">
@@ -238,18 +414,89 @@ export default function TeamEdit({
                         </>
                     ) : (
                         <>
-                            <Heading variant="small" title="Dados da Empresa" description="Você pode visualizar os dados da Empresa, mas apenas Owner e Admin podem editá-los." />
+                            <Heading
+                                variant="small"
+                                title="Dados da Empresa"
+                                description="Você pode visualizar os dados da Empresa, mas apenas Owner e Admin podem editá-los."
+                            />
                             <div className="grid gap-5 rounded-xl border p-5 text-sm">
-                                <div><p className="text-muted-foreground">Nome fantasia</p><p className="font-medium">{team.name}</p></div>
-                                <div><p className="text-muted-foreground">Segmento</p><p className="font-medium">{segments.find((segment) => segment.value === team.segment)?.label ?? team.segment}</p></div>
-                                <div><p className="text-muted-foreground">Site</p><p className="font-medium">{team.website || 'Não informado'}</p></div>
-                                <div><p className="text-muted-foreground">Descrição do negócio</p><p className="whitespace-pre-wrap">{team.businessDescription}</p></div>
-                                <div><p className="text-muted-foreground">Produtos e serviços</p><p className="whitespace-pre-wrap">{team.productsServices}</p></div>
-                                <div><p className="text-muted-foreground">Público-alvo</p><p className="whitespace-pre-wrap">{team.targetAudience}</p></div>
-                                <div><p className="text-muted-foreground">Fuso horário</p><p className="font-medium">{team.timezone}</p></div>
-                                <div><p className="text-muted-foreground">Telefone público</p><p>{team.phone || 'Não informado'}</p></div>
-                                <div><p className="text-muted-foreground">E-mail público</p><p>{team.publicEmail || 'Não informado'}</p></div>
-                                <div><p className="text-muted-foreground">Endereço</p><p className="whitespace-pre-wrap">{team.address || 'Não informado'}</p></div>
+                                <div>
+                                    <p className="text-muted-foreground">
+                                        Nome fantasia
+                                    </p>
+                                    <p className="font-medium">{team.name}</p>
+                                </div>
+                                <div>
+                                    <p className="text-muted-foreground">
+                                        Segmento
+                                    </p>
+                                    <p className="font-medium">
+                                        {segments.find(
+                                            (segment) =>
+                                                segment.value === team.segment,
+                                        )?.label ?? team.segment}
+                                    </p>
+                                </div>
+                                <div>
+                                    <p className="text-muted-foreground">
+                                        Site
+                                    </p>
+                                    <p className="font-medium">
+                                        {team.website || 'Não informado'}
+                                    </p>
+                                </div>
+                                <div>
+                                    <p className="text-muted-foreground">
+                                        Descrição do negócio
+                                    </p>
+                                    <p className="whitespace-pre-wrap">
+                                        {team.businessDescription}
+                                    </p>
+                                </div>
+                                <div>
+                                    <p className="text-muted-foreground">
+                                        Produtos e serviços
+                                    </p>
+                                    <p className="whitespace-pre-wrap">
+                                        {team.productsServices}
+                                    </p>
+                                </div>
+                                <div>
+                                    <p className="text-muted-foreground">
+                                        Público-alvo
+                                    </p>
+                                    <p className="whitespace-pre-wrap">
+                                        {team.targetAudience}
+                                    </p>
+                                </div>
+                                <div>
+                                    <p className="text-muted-foreground">
+                                        Fuso horário
+                                    </p>
+                                    <p className="font-medium">
+                                        {team.timezone}
+                                    </p>
+                                </div>
+                                <div>
+                                    <p className="text-muted-foreground">
+                                        Telefone público
+                                    </p>
+                                    <p>{team.phone || 'Não informado'}</p>
+                                </div>
+                                <div>
+                                    <p className="text-muted-foreground">
+                                        E-mail público
+                                    </p>
+                                    <p>{team.publicEmail || 'Não informado'}</p>
+                                </div>
+                                <div>
+                                    <p className="text-muted-foreground">
+                                        Endereço
+                                    </p>
+                                    <p className="whitespace-pre-wrap">
+                                        {team.address || 'Não informado'}
+                                    </p>
+                                </div>
                             </div>
                         </>
                     )}
@@ -430,6 +677,21 @@ export default function TeamEdit({
                         </div>
                     </div>
                 ) : null}
+
+                {canLeave ? (
+                    <div className="border-destructive/30 flex items-center justify-between rounded-lg border p-4">
+                        <div>
+                            <p className="font-medium">Sair da Empresa</p>
+                            <p className="text-muted-foreground text-sm">
+                                Você perderá o acesso à equipe e aos dados desta
+                                Empresa.
+                            </p>
+                        </div>
+                        <Button variant="destructive" onClick={leaveTeam}>
+                            <LogOut /> Sair
+                        </Button>
+                    </div>
+                ) : null}
             </div>
 
             {permissions.canCreateInvitation ? (
@@ -455,7 +717,7 @@ export default function TeamEdit({
     );
 }
 
-TeamEdit.layout = (props: { team: { name: string } }) => ({
+TeamEdit.layout = () => ({
     breadcrumbs: [
         {
             title: 'Empresa',

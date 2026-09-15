@@ -18,6 +18,8 @@ Route::get('dashboard', DashboardController::class)
     ->middleware(['auth', EnsureUserHasTeam::class])
     ->name('dashboard');
 
+Route::get('invitations/{invitation}', [TeamInvitationController::class, 'show'])->name('invitations.show');
+
 Route::middleware(['auth'])->group(function () {
     Route::post('invitations/{invitation}/accept', [TeamInvitationController::class, 'accept'])->name('invitations.accept');
     Route::delete('invitations/{invitation}', [TeamInvitationController::class, 'decline'])->name('invitations.decline');

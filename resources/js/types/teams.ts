@@ -9,11 +9,14 @@ export type Team = {
     businessDescription?: string | null;
     productsServices?: string | null;
     targetAudience?: string | null;
-    businessHours?: Record<string, {
-        enabled?: boolean | string;
-        open?: string | null;
-        close?: string | null;
-    }> | null;
+    businessHours?: Record<
+        string,
+        {
+            enabled?: boolean | string;
+            open?: string | null;
+            close?: string | null;
+        }
+    > | null;
     timezone?: string | null;
     phone?: string | null;
     publicEmail?: string | null;
@@ -48,15 +51,6 @@ export type TeamInvitation = {
 export type TeamInvitationContext = {
     code: string;
     teamName: string;
-};
-
-export type DashboardInvitation = {
-    code: string;
-    inviterName: string;
-    team: {
-        name: string;
-        slug: string;
-    };
 };
 
 export type TeamPermissions = {

@@ -45,6 +45,13 @@ export default function Login({
             >
                 {({ processing, errors }) => (
                     <>
+                        {teamInvitation && (
+                            <input
+                                type="hidden"
+                                name="invitation"
+                                value={teamInvitation.code}
+                            />
+                        )}
                         <div className="grid gap-6">
                             <div className="grid gap-2">
                                 <Label htmlFor="email">Email address</Label>

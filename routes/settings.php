@@ -35,6 +35,7 @@ Route::middleware(['auth', EnsureUserHasTeam::class])->group(function () {
     Route::patch('settings/company', [TeamController::class, 'update'])->name('company.update');
     Route::patch('settings/teams/members/{user}', [TeamMemberController::class, 'update'])->name('teams.members.update');
     Route::delete('settings/teams/members/{user}', [TeamMemberController::class, 'destroy'])->name('teams.members.destroy');
+    Route::delete('settings/teams/leave', [TeamMemberController::class, 'leave'])->name('teams.leave');
     Route::post('settings/teams/invitations', [TeamInvitationController::class, 'store'])->name('teams.invitations.store');
     Route::delete('settings/teams/invitations/{invitation}', [TeamInvitationController::class, 'destroy'])->name('teams.invitations.destroy');
 });

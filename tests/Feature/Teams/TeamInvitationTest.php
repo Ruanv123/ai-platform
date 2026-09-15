@@ -30,9 +30,15 @@ test('team invitations can be created', function () {
         'email' => 'invited@example.com',
         'role' => TeamRole::Member->value,
     ]);
+
+    Notification::assertSentOnDemand(
+        TeamInvitationNotification::class,
+        fn (TeamInvitationNotification $notification, array $channels, object $notifiable): bool => $notifiable->routes['mail'] === 'invited@example.com'
+            && $notification->invitation->email === 'invited@example.com',
+    );
 });
 
-test('invitation email for existing users uses login route', function () {
+test('invitation email for existing users uses the invitation route', function () {
     $owner = User::factory()->create();
     $invitedUser = User::factory()->create(['email' => 'invited@example.com']);
     $team = Team::factory()->create();
@@ -48,11 +54,11 @@ test('invitation email for existing users uses login route', function () {
 
     $mail = (new TeamInvitationNotification($invitation))->toMail($invitedUser);
 
-    expect($mail->actionUrl)->toBe(route('login', ['invitation' => $invitation->code]));
-    $this->assertStringContainsString('dashboard', implode(' ', $mail->introLines));
+    expect($mail->actionUrl)->toBe(route('invitations.show', ['invitation' => $invitation->code]));
+    $this->assertStringContainsString('invitation', strtolower(implode(' ', $mail->introLines)));
 });
 
-test('invitation email for unknown users uses login route', function () {
+test('invitation email for unknown users uses the invitation route', function () {
     $owner = User::factory()->create();
     $team = Team::factory()->create();
 
@@ -66,8 +72,8 @@ test('invitation email for unknown users uses login route', function () {
 
     $mail = (new TeamInvitationNotification($invitation))->toMail((object) []);
 
-    expect($mail->actionUrl)->toBe(route('login', ['invitation' => $invitation->code]));
-    $this->assertStringContainsString('log in', strtolower(implode(' ', $mail->introLines)));
+    expect($mail->actionUrl)->toBe(route('invitations.show', ['invitation' => $invitation->code]));
+    $this->assertStringContainsString('sign in', strtolower(implode(' ', $mail->introLines)));
 });
 
 test('team invitations can be created by admins', function () {
@@ -136,6 +142,40 @@ test('duplicate invitations cannot be created', function () {
     $response->assertSessionHasErrors('email');
 });
 
+test('users who belong to another company cannot be invited', function () {
+    Notification::fake();
+
+    $owner = User::factory()->withTeam()->create();
+    $otherUser = User::factory()->withTeam()->create(['email' => 'member@example.com']);
+
+    $response = $this
+        ->actingAs($owner)
+        ->post(route('teams.invitations.store'), [
+            'email' => $otherUser->email,
+            'role' => TeamRole::Member->value,
+        ]);
+
+    $response->assertSessionHasErrors([
+        'email' => 'Esta pessoa já pertence a outra Empresa.',
+    ]);
+
+    Notification::assertNothingSent();
+});
+
+test('invitations cannot assign the owner role', function () {
+    $owner = User::factory()->withTeam()->create();
+
+    $response = $this
+        ->actingAs($owner)
+        ->post(route('teams.invitations.store'), [
+            'email' => 'invited@example.com',
+            'role' => TeamRole::Owner->value,
+        ]);
+
+    $response->assertSessionHasErrors('role');
+    $this->assertDatabaseCount('team_invitations', 0);
+});
+
 test('team invitations cannot be created by members', function () {
     $owner = User::factory()->create();
     $member = User::factory()->create();
@@ -178,6 +218,28 @@ test('team invitations can be cancelled by owners', function () {
     ]);
 });
 
+test('team invitations can be cancelled by admins', function () {
+    $owner = User::factory()->create();
+    $admin = User::factory()->create();
+    $team = Team::factory()->create();
+
+    $team->members()->attach($owner, ['role' => TeamRole::Owner->value]);
+    $team->members()->attach($admin, ['role' => TeamRole::Admin->value]);
+    $admin->switchTeam($team);
+
+    $invitation = TeamInvitation::factory()->create([
+        'team_id' => $team->id,
+        'invited_by' => $owner->id,
+    ]);
+
+    $response = $this
+        ->actingAs($admin)
+        ->delete(route('teams.invitations.destroy', $invitation));
+
+    $response->assertRedirect(route('teams.edit'));
+    $this->assertDatabaseMissing('team_invitations', ['id' => $invitation->id]);
+});
+
 test('team invitations can be accepted', function () {
     $owner = User::factory()->create();
     $invitedUser = User::factory()->create(['email' => 'invited@example.com']);
@@ -200,6 +262,37 @@ test('team invitations can be accepted', function () {
     $response->assertInertiaFlash('toast', ['type' => 'success', 'message' => 'Invitation accepted.']);
 
     expect($invitedUser->fresh()->belongsToTeam($team))->toBeTrue();
+    expect($invitation->fresh()->accepted_at)->not->toBeNull();
+});
+
+test('an invitation link sends guests to registration with the invitation code', function () {
+    $invitation = TeamInvitation::factory()->create();
+
+    $response = $this->get(route('invitations.show', $invitation));
+
+    $response->assertRedirect(route('register', ['invitation' => $invitation->code]));
+});
+
+test('an unassigned authenticated user can accept an invitation link', function () {
+    $owner = User::factory()->create();
+    $invitedUser = User::factory()->create(['email' => 'invited@example.com']);
+    $team = Team::factory()->create();
+
+    $team->members()->attach($owner, ['role' => TeamRole::Owner->value]);
+
+    $invitation = TeamInvitation::factory()->create([
+        'team_id' => $team->id,
+        'email' => $invitedUser->email,
+        'role' => TeamRole::Admin,
+        'invited_by' => $owner->id,
+    ]);
+
+    $response = $this
+        ->actingAs($invitedUser)
+        ->get(route('invitations.show', $invitation));
+
+    $response->assertRedirect(route('dashboard'));
+    expect($invitedUser->fresh()->teamRole($team))->toBe(TeamRole::Admin);
     expect($invitation->fresh()->accepted_at)->not->toBeNull();
 });
 

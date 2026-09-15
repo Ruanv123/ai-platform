@@ -2,6 +2,7 @@
 
 use App\Enums\TeamRole;
 use App\Models\Team;
+use App\Models\TeamInvitation;
 use App\Models\User;
 use Illuminate\Support\Facades\Route;
 use Inertia\Testing\AssertableInertia as Assert;
@@ -19,8 +20,37 @@ test('the team settings page renders the authenticated users current team', func
             ->component('teams/edit')
             ->where('team.id', $user->currentTeam->id)
             ->where('members.0.role', TeamRole::Owner->value)
-            ->where('members.0.role_label', TeamRole::Owner->label()),
+            ->where('members.0.role_label', TeamRole::Owner->label())
+            ->where('permissions.canDeleteTeam', false)
+            ->where('canLeave', false),
         );
+});
+
+test('team settings only list pending invitations', function () {
+    $owner = User::factory()->withTeam()->create();
+    $team = $owner->company();
+
+    TeamInvitation::factory()->accepted()->create([
+        'team_id' => $team->id,
+        'invited_by' => $owner->id,
+    ]);
+    TeamInvitation::factory()->expired()->create([
+        'team_id' => $team->id,
+        'invited_by' => $owner->id,
+    ]);
+    $pendingInvitation = TeamInvitation::factory()->create([
+        'team_id' => $team->id,
+        'invited_by' => $owner->id,
+    ]);
+
+    $response = $this
+        ->actingAs($owner)
+        ->get(route('teams.edit'));
+
+    $response->assertInertia(fn (Assert $page) => $page
+        ->has('invitations', 1)
+        ->where('invitations.0.code', $pendingInvitation->code),
+    );
 });
 
 test('team settings use the current team instead of a team route parameter', function () {

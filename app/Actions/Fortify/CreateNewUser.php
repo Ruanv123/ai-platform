@@ -2,6 +2,7 @@
 
 namespace App\Actions\Fortify;
 
+use App\Actions\Teams\AcceptTeamInvitation;
 use App\Concerns\PasswordValidationRules;
 use App\Concerns\ProfileValidationRules;
 use App\Models\TeamInvitation;
@@ -14,6 +15,11 @@ use Laravel\Fortify\Contracts\CreatesNewUsers;
 class CreateNewUser implements CreatesNewUsers
 {
     use PasswordValidationRules, ProfileValidationRules;
+
+    public function __construct(private AcceptTeamInvitation $acceptTeamInvitation)
+    {
+        //
+    }
 
     /**
      * Validate and create a newly registered user.
@@ -35,10 +41,7 @@ class CreateNewUser implements CreatesNewUsers
 
                     $invitation = TeamInvitation::query()
                         ->where('code', $value)
-                        ->whereNull('accepted_at')
-                        ->where(fn ($query) => $query
-                            ->whereNull('expires_at')
-                            ->orWhere('expires_at', '>=', now()))
+                        ->pending()
                         ->first();
 
                     if (! $invitation || strtolower($invitation->email) !== strtolower((string) ($input['email'] ?? ''))) {
@@ -57,18 +60,10 @@ class CreateNewUser implements CreatesNewUsers
 
             if (is_string($input['invitation'] ?? null)) {
                 $invitation = TeamInvitation::query()
-                    ->with('team')
                     ->where('code', $input['invitation'])
-                    ->whereNull('accepted_at')
-                    ->lockForUpdate()
                     ->firstOrFail();
 
-                $invitation->team->memberships()->create([
-                    'user_id' => $user->id,
-                    'role' => $invitation->role,
-                ]);
-                $invitation->update(['accepted_at' => now()]);
-                $user->switchTeam($invitation->team);
+                $this->acceptTeamInvitation->handle($user, $invitation);
             }
 
             return $user;

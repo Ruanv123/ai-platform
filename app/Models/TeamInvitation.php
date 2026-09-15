@@ -5,6 +5,7 @@ namespace App\Models;
 use App\Enums\TeamRole;
 use Database\Factories\TeamInvitationFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -79,6 +80,22 @@ class TeamInvitation extends Model
     public function isPending(): bool
     {
         return $this->accepted_at === null && ! $this->isExpired();
+    }
+
+    /**
+     * Scope the query to invitations that can still be accepted.
+     *
+     * @param  Builder<TeamInvitation>  $query
+     * @return Builder<TeamInvitation>
+     */
+    public function scopePending(Builder $query): Builder
+    {
+        return $query
+            ->whereNull('accepted_at')
+            ->where(function (Builder $query): void {
+                $query->whereNull('expires_at')
+                    ->orWhere('expires_at', '>', now());
+            });
     }
 
     /**
