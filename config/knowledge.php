@@ -1,0 +1,17 @@
+<?php
+
+return [
+    'storage_quota_bytes' => 500 * 1024 * 1024,
+    'embedding_provider' => env('KNOWLEDGE_EMBEDDING_PROVIDER', 'openai'),
+    'embedding_model' => env('KNOWLEDGE_EMBEDDING_MODEL', 'text-embedding-3-small'),
+    'embedding_dimensions' => 1536,
+    'chunking' => [
+        'target_tokens' => 800,
+        'overlap_tokens' => 100,
+        'characters_per_token' => 4,
+    ],
+    'search' => [
+        'top_k' => 5,
+        'min_similarity' => 0.35,
+    ],
+];

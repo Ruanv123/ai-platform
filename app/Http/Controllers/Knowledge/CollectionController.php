@@ -26,6 +26,7 @@ class CollectionController extends Controller
 
         return Inertia::render('knowledge/collections', [
             'collections' => $team->collections()
+                ->withCount('documents')
                 ->orderByDesc('is_default')
                 ->orderBy('name')
                 ->get()
@@ -34,7 +35,7 @@ class CollectionController extends Controller
                     'name' => $collection->name,
                     'description' => $collection->description,
                     'isDefault' => $collection->is_default,
-                    'documentsCount' => 0,
+                    'documentsCount' => $collection->documents_count,
                 ])
                 ->values(),
             'permissions' => $user->toTeamPermissions($team),

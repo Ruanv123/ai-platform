@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\Knowledge\CollectionController;
+use App\Http\Controllers\Knowledge\DocumentController;
 use App\Http\Controllers\Onboarding\CompanyController;
 use App\Http\Controllers\Teams\TeamInvitationController;
 use App\Http\Middleware\EnsureUserHasTeam;
@@ -23,6 +24,19 @@ Route::middleware(['auth', EnsureUserHasTeam::class])->group(function () {
     Route::resource('knowledge/collections', CollectionController::class)
         ->only(['index', 'store', 'update', 'destroy'])
         ->names('collections');
+
+    Route::get('knowledge/collections/{collection}/documents', [DocumentController::class, 'index'])
+        ->name('documents.index');
+    Route::post('knowledge/collections/{collection}/documents', [DocumentController::class, 'store'])
+        ->name('documents.store');
+    Route::patch('knowledge/documents/{document}', [DocumentController::class, 'update'])
+        ->name('documents.update');
+    Route::patch('knowledge/documents/{document}/move', [DocumentController::class, 'move'])
+        ->name('documents.move');
+    Route::post('knowledge/documents/{document}/reprocess', [DocumentController::class, 'reprocess'])
+        ->name('documents.reprocess');
+    Route::delete('knowledge/documents/{document}', [DocumentController::class, 'destroy'])
+        ->name('documents.destroy');
 });
 
 Route::get('invitations/{invitation}', [TeamInvitationController::class, 'show'])->name('invitations.show');

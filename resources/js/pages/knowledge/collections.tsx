@@ -1,4 +1,4 @@
-import { Form, Head, router } from '@inertiajs/react';
+import { Form, Head, Link, router } from '@inertiajs/react';
 import { BookOpen, FileText, Pencil, Plus, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 import Heading from '@/components/heading';
@@ -24,6 +24,7 @@ import {
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { destroy, store, update } from '@/routes/collections';
+import { index as documentsIndex } from '@/routes/documents';
 import type { TeamPermissions } from '@/types';
 
 type KnowledgeCollection = {
@@ -275,6 +276,11 @@ export default function Collections({ collections, permissions }: Props) {
                                                 : 'documentos'}
                                         </span>
                                     </div>
+                                    <Button variant="ghost" size="sm" asChild>
+                                        <Link href={documentsIndex.url(collection.id)}>
+                                            Abrir documentos
+                                        </Link>
+                                    </Button>
                                     {permissions.canManageKnowledge && (
                                         <div className="flex items-center gap-1 opacity-100 transition-opacity sm:opacity-0 sm:group-hover:opacity-100 sm:focus-within:opacity-100">
                                             <Button
