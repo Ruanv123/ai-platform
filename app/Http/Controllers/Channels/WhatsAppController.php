@@ -2,15 +2,18 @@
 
 namespace App\Http\Controllers\Channels;
 
+use App\Enums\ChannelStatus;
+use App\Enums\ChannelType;
 use App\Enums\WhatsAppConnectionMethod;
-use App\Enums\WhatsAppConnectionStatus;
 use App\Http\Controllers\Controller;
-use App\Http\Requests\Channels\SaveWhatsAppNumberRequest;
+use App\Http\Requests\Channels\SaveWhatsAppChannelRequest;
 use App\Models\Agent;
-use App\Models\WhatsAppNumber;
+use App\Models\Channel;
+use App\Models\WhatsAppAccount;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;
@@ -20,7 +23,7 @@ use Inertia\Response;
 class WhatsAppController extends Controller
 {
     /**
-     * Display the channel configuration page.
+     * Display the WhatsApp channel configuration page.
      */
     public function index(Request $request): Response
     {
@@ -28,14 +31,17 @@ class WhatsAppController extends Controller
         $team = $user?->company();
 
         abort_if($team === null, 404);
-        Gate::authorize('viewAny', WhatsAppNumber::class);
+        Gate::authorize('viewAny', Channel::class);
 
-        $whatsappNumber = $team->whatsappNumbers()->with('agent:id,name')->first();
+        $channel = $team->channels()
+            ->where('type', ChannelType::WhatsApp)
+            ->with(['agent:id,name', 'whatsappPhoneNumber.whatsappAccount'])
+            ->first();
 
         return Inertia::render('channels/whatsapp', [
-            'whatsapp' => $whatsappNumber === null ? null : $this->toFrontend(
-                $whatsappNumber,
-                $user->can('update', $whatsappNumber),
+            'whatsapp' => $channel === null ? null : $this->toFrontend(
+                $channel,
+                $user->can('update', $channel),
             ),
             'agents' => $team->agents()
                 ->orderBy('name')
@@ -51,20 +57,39 @@ class WhatsAppController extends Controller
     }
 
     /**
-     * Store the WhatsApp channel configuration.
+     * Store the WhatsApp channel, account and phone number atomically.
      */
-    public function store(SaveWhatsAppNumberRequest $request): RedirectResponse
+    public function store(SaveWhatsAppChannelRequest $request): RedirectResponse
     {
         $team = $request->user()->company();
         abort_if($team === null, 404);
-        Gate::authorize('create', WhatsAppNumber::class);
+        Gate::authorize('create', Channel::class);
 
         $validated = $request->validated();
-        $validated['method'] = WhatsAppConnectionMethod::Manual;
-        $validated['verify_token'] = $this->generateVerifyToken();
-        $validated['status'] = WhatsAppConnectionStatus::Unverified;
+        $agentId = $validated['agent_id'] ?? null;
 
-        $team->whatsappNumbers()->create($validated);
+        unset($validated['agent_id']);
+
+        DB::transaction(function () use ($team, $validated, $agentId): void {
+            $channel = $team->channels()->create([
+                'type' => ChannelType::WhatsApp,
+                'agent_id' => $agentId,
+                'status' => ChannelStatus::NotConfigured,
+                'last_error' => null,
+            ]);
+
+            $phoneNumber = $channel->whatsappPhoneNumber()->create([
+                'phone_number_id' => $validated['phone_number_id'],
+            ]);
+
+            $phoneNumber->whatsappAccount()->create([
+                'method' => WhatsAppConnectionMethod::Manual,
+                'waba_id' => $validated['waba_id'],
+                'access_token' => $validated['access_token'],
+                'app_secret' => $validated['app_secret'],
+                'verify_token' => $this->generateVerifyToken(),
+            ]);
+        });
 
         Inertia::flash('toast', [
             'type' => 'success',
@@ -75,21 +100,32 @@ class WhatsAppController extends Controller
     }
 
     /**
-     * Update the WhatsApp channel configuration.
+     * Update the WhatsApp channel, account and phone number.
      */
-    public function update(SaveWhatsAppNumberRequest $request, WhatsAppNumber $whatsappNumber): RedirectResponse
+    public function update(SaveWhatsAppChannelRequest $request, Channel $channel): RedirectResponse
     {
-        Gate::authorize('update', $whatsappNumber);
+        Gate::authorize('update', $channel);
 
         $validated = $request->validated();
+        $phoneNumber = $channel->whatsappPhoneNumber()->firstOrFail();
+        $account = $phoneNumber->whatsappAccount()->firstOrFail();
+        $accountAttributes = ['waba_id' => $validated['waba_id']];
 
         foreach (['access_token', 'app_secret'] as $secret) {
-            if (blank($validated[$secret] ?? null)) {
-                unset($validated[$secret]);
+            if (filled($validated[$secret] ?? null)) {
+                $accountAttributes[$secret] = $validated[$secret];
             }
         }
 
-        $whatsappNumber->update($validated);
+        DB::transaction(function () use ($channel, $phoneNumber, $account, $validated, $accountAttributes): void {
+            $channel->update([
+                'agent_id' => $validated['agent_id'] ?? null,
+            ]);
+            $phoneNumber->update([
+                'phone_number_id' => $validated['phone_number_id'],
+            ]);
+            $account->update($accountAttributes);
+        });
 
         Inertia::flash('toast', [
             'type' => 'success',
@@ -102,30 +138,36 @@ class WhatsAppController extends Controller
     /**
      * Test the saved credentials against the WhatsApp Graph API.
      */
-    public function test(WhatsAppNumber $whatsappNumber): RedirectResponse
+    public function test(Channel $channel): RedirectResponse
     {
-        Gate::authorize('update', $whatsappNumber);
+        Gate::authorize('update', $channel);
 
+        $phoneNumber = $channel->whatsappPhoneNumber()->firstOrFail();
+        $account = $phoneNumber->whatsappAccount()->firstOrFail();
         $testedAt = now();
 
         try {
             $response = Http::connectTimeout(3)
                 ->timeout(10)
-                ->withToken($whatsappNumber->access_token)
+                ->withToken($account->access_token)
                 ->get(
-                    rtrim((string) config('services.whatsapp.graph_api_url'), '/').'/'.config('services.whatsapp.graph_api_version').'/'.$whatsappNumber->phone_number_id,
+                    rtrim((string) config('services.whatsapp.graph_api_url'), '/').'/'.config('services.whatsapp.graph_api_version').'/'.$phoneNumber->phone_number_id,
                     ['fields' => 'display_phone_number,verified_name,quality_rating'],
                 );
 
             if ($response->successful()) {
-                $whatsappNumber->update([
-                    'status' => WhatsAppConnectionStatus::Connected,
-                    'last_error' => null,
-                    'display_phone_number' => $response->json('display_phone_number'),
-                    'verified_name' => $response->json('verified_name'),
-                    'quality_rating' => $response->json('quality_rating'),
-                    'last_tested_at' => $testedAt,
-                ]);
+                DB::transaction(function () use ($channel, $phoneNumber, $account, $response, $testedAt): void {
+                    $channel->update([
+                        'status' => ChannelStatus::Connected,
+                        'last_error' => null,
+                    ]);
+                    $phoneNumber->update([
+                        'display_phone_number' => $response->json('display_phone_number'),
+                        'verified_name' => $response->json('verified_name'),
+                        'quality_rating' => $response->json('quality_rating'),
+                    ]);
+                    $account->update(['last_tested_at' => $testedAt]);
+                });
 
                 Inertia::flash('toast', [
                     'type' => 'success',
@@ -140,14 +182,18 @@ class WhatsAppController extends Controller
             $errorMessage = 'Não foi possível conectar à Meta. Verifique sua conexão e tente novamente.';
         }
 
-        $whatsappNumber->update([
-            'status' => WhatsAppConnectionStatus::Error,
-            'last_error' => $errorMessage,
-            'display_phone_number' => null,
-            'verified_name' => null,
-            'quality_rating' => null,
-            'last_tested_at' => $testedAt,
-        ]);
+        DB::transaction(function () use ($channel, $phoneNumber, $account, $errorMessage, $testedAt): void {
+            $channel->update([
+                'status' => ChannelStatus::Error,
+                'last_error' => $errorMessage,
+            ]);
+            $phoneNumber->update([
+                'display_phone_number' => null,
+                'verified_name' => null,
+                'quality_rating' => null,
+            ]);
+            $account->update(['last_tested_at' => $testedAt]);
+        });
 
         Inertia::flash('toast', [
             'type' => 'error',
@@ -158,12 +204,12 @@ class WhatsAppController extends Controller
     }
 
     /**
-     * Remove the WhatsApp channel configuration.
+     * Remove the WhatsApp channel and its specific configuration.
      */
-    public function destroy(WhatsAppNumber $whatsappNumber): RedirectResponse
+    public function destroy(Channel $channel): RedirectResponse
     {
-        Gate::authorize('delete', $whatsappNumber);
-        $whatsappNumber->delete();
+        Gate::authorize('delete', $channel);
+        $channel->delete();
 
         Inertia::flash('toast', [
             'type' => 'success',
@@ -178,29 +224,32 @@ class WhatsAppController extends Controller
      *
      * @return array<string, mixed>
      */
-    private function toFrontend(WhatsAppNumber $whatsappNumber, bool $canManage): array
+    private function toFrontend(Channel $channel, bool $canManage): array
     {
+        $phoneNumber = $channel->whatsappPhoneNumber;
+        $account = $phoneNumber?->whatsappAccount;
+
         return [
-            'id' => $whatsappNumber->id,
-            'wabaId' => $whatsappNumber->waba_id,
-            'phoneNumberId' => $whatsappNumber->phone_number_id,
-            'accessTokenSet' => $canManage && filled($whatsappNumber->access_token),
-            'accessTokenMasked' => $canManage ? $this->maskSecret($whatsappNumber->access_token) : null,
-            'appSecretSet' => $canManage && filled($whatsappNumber->app_secret),
-            'appSecretMasked' => $canManage ? $this->maskSecret($whatsappNumber->app_secret) : null,
-            'verifyToken' => $canManage ? $whatsappNumber->verify_token : null,
-            'method' => $whatsappNumber->method->value,
-            'status' => $whatsappNumber->status->value,
-            'statusLabel' => $whatsappNumber->status->label(),
-            'lastError' => $whatsappNumber->last_error,
-            'displayPhoneNumber' => $whatsappNumber->display_phone_number,
-            'verifiedName' => $whatsappNumber->verified_name,
-            'qualityRating' => $whatsappNumber->quality_rating,
-            'lastTestedAt' => $whatsappNumber->last_tested_at?->toIso8601String(),
-            'webhookVerifiedAt' => $whatsappNumber->webhook_verified_at?->toIso8601String(),
-            'agent' => $whatsappNumber->agent === null ? null : [
-                'id' => $whatsappNumber->agent->id,
-                'name' => $whatsappNumber->agent->name,
+            'id' => $channel->id,
+            'wabaId' => $account?->waba_id,
+            'phoneNumberId' => $phoneNumber?->phone_number_id,
+            'accessTokenSet' => $canManage && filled($account?->access_token),
+            'accessTokenMasked' => $canManage ? $this->maskSecret($account?->access_token) : null,
+            'appSecretSet' => $canManage && filled($account?->app_secret),
+            'appSecretMasked' => $canManage ? $this->maskSecret($account?->app_secret) : null,
+            'verifyToken' => $canManage ? $account?->verify_token : null,
+            'method' => $account?->method?->value,
+            'status' => $channel->status->value,
+            'statusLabel' => $channel->status->label(),
+            'lastError' => $channel->last_error,
+            'displayPhoneNumber' => $phoneNumber?->display_phone_number,
+            'verifiedName' => $phoneNumber?->verified_name,
+            'qualityRating' => $phoneNumber?->quality_rating,
+            'lastTestedAt' => $account?->last_tested_at?->toIso8601String(),
+            'webhookVerifiedAt' => $account?->webhook_verified_at?->toIso8601String(),
+            'agent' => $channel->agent === null ? null : [
+                'id' => $channel->agent->id,
+                'name' => $channel->agent->name,
             ],
         ];
     }
@@ -214,13 +263,13 @@ class WhatsAppController extends Controller
     }
 
     /**
-     * Generate a verify token that is unique across every Empresa.
+     * Generate a verify token that is unique across every WhatsApp account.
      */
     private function generateVerifyToken(): string
     {
         do {
             $verifyToken = Str::random(64);
-        } while (WhatsAppNumber::withoutGlobalScopes()->where('verify_token', $verifyToken)->exists());
+        } while (WhatsAppAccount::query()->where('verify_token', $verifyToken)->exists());
 
         return $verifyToken;
     }

@@ -3,7 +3,8 @@
 namespace App\Http\Controllers\Channels;
 
 use App\Http\Controllers\Controller;
-use App\Models\WhatsAppNumber;
+use App\Models\WhatsAppAccount;
+use App\Models\WhatsAppPhoneNumber;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 
@@ -32,15 +33,15 @@ class WhatsAppWebhookController extends Controller
             return response('Forbidden', 403);
         }
 
-        $whatsappNumber = WhatsAppNumber::withoutGlobalScopes()
+        $account = WhatsAppAccount::query()
             ->where('verify_token', $verifyToken)
             ->first();
 
-        if ($whatsappNumber === null) {
+        if ($account === null) {
             return response('Forbidden', 403);
         }
 
-        $whatsappNumber->update([
+        $account->update([
             'webhook_verified_at' => now(),
         ]);
 
@@ -65,18 +66,19 @@ class WhatsAppWebhookController extends Controller
             return response('Forbidden', 403);
         }
 
-        $whatsappNumber = WhatsAppNumber::withoutGlobalScopes()
+        $phoneNumber = WhatsAppPhoneNumber::query()
             ->where('phone_number_id', $phoneNumberId)
+            ->with(['channel.agent', 'whatsappAccount'])
             ->first();
 
-        if ($whatsappNumber === null) {
+        if ($phoneNumber === null || $phoneNumber->whatsappAccount === null) {
             return response('Forbidden', 403);
         }
 
         $expectedSignature = 'sha256='.hash_hmac(
             'sha256',
             $rawBody,
-            $whatsappNumber->app_secret,
+            $phoneNumber->whatsappAccount->app_secret,
         );
 
         if (! hash_equals($expectedSignature, $signature)) {

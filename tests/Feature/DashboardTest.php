@@ -1,15 +1,15 @@
 <?php
 
+use App\Enums\ChannelStatus;
 use App\Enums\DocumentStatus;
 use App\Enums\TeamRole;
-use App\Enums\WhatsAppConnectionStatus;
 use App\Models\Agent;
+use App\Models\Channel;
 use App\Models\Collection;
 use App\Models\Document;
 use App\Models\Team;
 use App\Models\TeamInvitation;
 use App\Models\User;
-use App\Models\WhatsAppNumber;
 use Inertia\Testing\AssertableInertia as Assert;
 
 function dashboardCompanyDetails(): array
@@ -123,8 +123,9 @@ test('dashboard reflects a fully activated company', function () {
         'status' => DocumentStatus::Failed,
         'size_bytes' => 80,
     ]);
-    WhatsAppNumber::factory()->for($team)->forAgent($activeAgent)->create([
-        'status' => WhatsAppConnectionStatus::Connected,
+    Channel::factory()->for($team)->create([
+        'agent_id' => $activeAgent->id,
+        'status' => ChannelStatus::Connected,
     ]);
 
     $response = $this
@@ -157,8 +158,8 @@ test('dashboard only includes resources from the users company', function () {
         'status' => DocumentStatus::Ready,
         'size_bytes' => 900,
     ]);
-    WhatsAppNumber::factory()->for($otherTeam)->create([
-        'status' => WhatsAppConnectionStatus::Connected,
+    Channel::factory()->for($otherTeam)->create([
+        'status' => ChannelStatus::Connected,
     ]);
 
     $response = $this

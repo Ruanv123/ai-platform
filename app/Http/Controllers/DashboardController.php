@@ -2,8 +2,9 @@
 
 namespace App\Http\Controllers;
 
+use App\Enums\ChannelStatus;
+use App\Enums\ChannelType;
 use App\Enums\DocumentStatus;
-use App\Enums\WhatsAppConnectionStatus;
 use App\Knowledge\DocumentStorageQuota;
 use App\Models\Team;
 use Illuminate\Http\Request;
@@ -28,11 +29,15 @@ class DashboardController extends Controller
         $failedDocumentCount = $team->documents()
             ->where('status', DocumentStatus::Failed->value)
             ->count();
-        $whatsapp = $team->whatsappNumbers()->first(['id', 'status']);
-        $hasConnectedWhatsApp = $team->whatsappNumbers()
-            ->where('status', WhatsAppConnectionStatus::Connected->value)
+        $whatsapp = $team->channels()
+            ->where('type', ChannelType::WhatsApp->value)
+            ->first(['id', 'status']);
+        $hasConnectedWhatsApp = $team->channels()
+            ->where('type', ChannelType::WhatsApp->value)
+            ->where('status', ChannelStatus::Connected->value)
             ->exists();
-        $hasLinkedAgent = $team->whatsappNumbers()
+        $hasLinkedAgent = $team->channels()
+            ->where('type', ChannelType::WhatsApp->value)
             ->whereNotNull('agent_id')
             ->whereHas('agent')
             ->exists();

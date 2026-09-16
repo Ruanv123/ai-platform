@@ -2,19 +2,19 @@
 
 namespace App\Enums;
 
-enum WhatsAppConnectionStatus: string
+enum ChannelStatus: string
 {
-    case Unverified = 'unverified';
+    case NotConfigured = 'not_configured';
     case Connected = 'connected';
     case Error = 'error';
 
     /**
-     * Get the display label for the status.
+     * Get the display label for the channel status.
      */
     public function label(): string
     {
         return match ($this) {
-            self::Unverified => 'Não verificado',
+            self::NotConfigured => 'Não conectado',
             self::Connected => 'Conectado',
             self::Error => 'Erro',
         };

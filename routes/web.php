@@ -47,11 +47,11 @@ Route::middleware(['auth', EnsureUserHasTeam::class])->group(function () {
         ->name('integrations.index');
     Route::post('channels/whatsapp', [WhatsAppController::class, 'store'])
         ->name('channels.whatsapp.store');
-    Route::patch('channels/whatsapp/{whatsappNumber}', [WhatsAppController::class, 'update'])
+    Route::patch('channels/whatsapp/{channel}', [WhatsAppController::class, 'update'])
         ->name('channels.whatsapp.update');
-    Route::post('channels/whatsapp/{whatsappNumber}/test', [WhatsAppController::class, 'test'])
+    Route::post('channels/whatsapp/{channel}/test', [WhatsAppController::class, 'test'])
         ->name('channels.whatsapp.test');
-    Route::delete('channels/whatsapp/{whatsappNumber}', [WhatsAppController::class, 'destroy'])
+    Route::delete('channels/whatsapp/{channel}', [WhatsAppController::class, 'destroy'])
         ->name('channels.whatsapp.destroy');
 
     Route::resource('knowledge/collections', CollectionController::class)

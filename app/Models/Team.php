@@ -35,7 +35,7 @@ use Illuminate\Support\Carbon;
  * @property-read Collection<int, TeamInvitation> $invitations
  * @property-read Collection<int, TeamCollection> $collections
  * @property-read Collection<int, Agent> $agents
- * @property-read Collection<int, WhatsAppNumber> $whatsappNumbers
+ * @property-read Collection<int, Channel> $channels
  * @property-read Collection<int, Document> $documents
  * @property-read Collection<int, Membership> $memberships
  * @property-read Collection<int, User> $members
@@ -143,13 +143,13 @@ class Team extends Model
     }
 
     /**
-     * Get the WhatsApp numbers configured for this Empresa.
+     * Get the atendimento Channels configured for this Empresa.
      *
-     * @return HasMany<WhatsAppNumber, $this>
+     * @return HasMany<Channel, $this>
      */
-    public function whatsappNumbers(): HasMany
+    public function channels(): HasMany
     {
-        return $this->hasMany(WhatsAppNumber::class);
+        return $this->hasMany(Channel::class);
     }
 
     /**

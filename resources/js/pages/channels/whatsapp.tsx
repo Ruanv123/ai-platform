@@ -41,7 +41,7 @@ type AgentOption = {
     name: string;
 };
 
-type WhatsAppNumber = {
+type WhatsAppChannel = {
     id: number;
     wabaId: string;
     phoneNumberId: string;
@@ -51,7 +51,7 @@ type WhatsAppNumber = {
     appSecretMasked: string | null;
     verifyToken: string | null;
     method: string;
-    status: 'unverified' | 'connected' | 'error';
+    status: 'not_configured' | 'connected' | 'error';
     statusLabel: string;
     lastError: string | null;
     displayPhoneNumber: string | null;
@@ -63,7 +63,7 @@ type WhatsAppNumber = {
 };
 
 type Props = {
-    whatsapp: WhatsAppNumber | null;
+    whatsapp: WhatsAppChannel | null;
     agents: AgentOption[];
     permissions: TeamPermissions;
     webhookUrl: string;
@@ -81,7 +81,7 @@ function formatDate(value: string | null): string {
 }
 
 function statusVariant(
-    status: WhatsAppNumber['status'],
+    status: WhatsAppChannel['status'],
 ): 'default' | 'secondary' | 'destructive' | 'outline' {
     return status === 'connected'
         ? 'default'
@@ -112,7 +112,7 @@ function WhatsAppForm({
     agents,
     canManage,
 }: {
-    whatsapp: WhatsAppNumber | null;
+    whatsapp: WhatsAppChannel | null;
     agents: AgentOption[];
     canManage: boolean;
 }) {
@@ -247,7 +247,7 @@ function WhatsAppForm({
     );
 }
 
-function WhatsAppStatus({ whatsapp }: { whatsapp: WhatsAppNumber }) {
+function WhatsAppStatus({ whatsapp }: { whatsapp: WhatsAppChannel }) {
     return (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
             <div>
