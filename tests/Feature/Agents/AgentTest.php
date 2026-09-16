@@ -33,6 +33,40 @@ it('redirects guests to login when they visit agents', function () {
     $response->assertRedirect(route('login'));
 });
 
+it('renders the create editor for an owner', function () {
+    $user = User::factory()->withTeam()->create();
+
+    $response = $this->actingAs($user)->get(route('agents.create'));
+
+    $response->assertOk()->assertInertia(fn (Assert $page) => $page
+        ->component('agents/edit')
+        ->where('agent', null)
+        ->has('collections')
+        ->has('objectives')
+        ->has('tones')
+        ->has('responseLengths'),
+    );
+});
+
+it('renders the edit editor with the current company agent', function () {
+    $user = User::factory()->withTeam()->create();
+    $agent = Agent::factory()->for($user->company())->create([
+        'name' => 'Lia',
+        'instructions' => ['Seja objetiva.'],
+        'rules' => ['Não invente informações.'],
+    ]);
+
+    $response = $this->actingAs($user)->get(route('agents.edit', $agent));
+
+    $response->assertOk()->assertInertia(fn (Assert $page) => $page
+        ->component('agents/edit')
+        ->where('agent.id', $agent->id)
+        ->where('agent.name', 'Lia')
+        ->where('agent.instructions.0', 'Seja objetiva.')
+        ->where('agent.rules.0', 'Não invente informações.'),
+    );
+});
+
 it('renders only the current company agents and collections', function () {
     $user = User::factory()->withTeam()->create();
     $team = $user->company();
@@ -84,13 +118,13 @@ it('allows an owner to create an agent with ordered lists and selected collectio
         'team_id' => 999999,
     ]));
 
-    $response->assertRedirect(route('agents.index'));
+    $agent = Agent::query()->where('name', 'Lia')->firstOrFail();
+
+    $response->assertRedirect(route('agents.edit', $agent));
     $response->assertInertiaFlash('toast', [
         'type' => 'success',
         'message' => 'Agente criado com sucesso.',
     ]);
-
-    $agent = Agent::query()->where('name', 'Lia')->firstOrFail();
 
     expect($agent->team_id)->toBe($team->id)
         ->and($agent->instructions)->toBe(['Seja objetiva.', 'Confirme o contexto antes de responder.'])
@@ -105,8 +139,9 @@ it('ignores removed transfer triggers and never returns them', function () {
         'transfer_triggers' => ['O cliente pedir um humano.'],
     ]));
 
-    $response->assertRedirect(route('agents.index'));
     $agent = Agent::query()->where('name', 'Lia')->firstOrFail();
+
+    $response->assertRedirect(route('agents.edit', $agent));
 
     expect($agent->getAttributes())->not->toHaveKey('transfer_triggers');
 
@@ -172,7 +207,7 @@ it('allows an admin to update every agent field and its collections', function (
         ]),
     );
 
-    $response->assertRedirect(route('agents.index'));
+    $response->assertRedirect(route('agents.edit', $agent));
     $response->assertInertiaFlash('toast', [
         'type' => 'success',
         'message' => 'Agente atualizado com sucesso.',
@@ -245,6 +280,40 @@ it('allows a member to view agents but forbids agent mutations', function () {
     $toggleResponse->assertForbidden();
     $deleteResponse->assertForbidden();
     $this->assertModelExists($agent);
+});
+
+it('forbids a member from opening the create editor', function () {
+    $owner = User::factory()->withTeam()->create();
+    $team = $owner->company();
+    $member = User::factory()->create();
+    $team->members()->attach($member, ['role' => TeamRole::Member->value]);
+    $member->switchTeam($team);
+
+    $createResponse = $this->actingAs($member)->get(route('agents.create'));
+
+    $createResponse->assertForbidden();
+});
+
+it('forbids a member from opening the edit editor', function () {
+    $owner = User::factory()->withTeam()->create();
+    $team = $owner->company();
+    $member = User::factory()->create();
+    $team->members()->attach($member, ['role' => TeamRole::Member->value]);
+    $member->switchTeam($team);
+    $agent = Agent::factory()->for($team)->create();
+
+    $editResponse = $this->actingAs($member)->get(route('agents.edit', $agent));
+
+    $editResponse->assertForbidden();
+});
+
+it('returns not found when a company opens another company agent editor', function () {
+    $user = User::factory()->withTeam()->create();
+    $otherAgent = Agent::factory()->create(['name' => 'Isolado']);
+
+    $response = $this->actingAs($user)->get(route('agents.edit', $otherAgent));
+
+    $response->assertNotFound();
 });
 
 it('returns not found when a company accesses another company agent', function () {

@@ -1,15 +1,15 @@
 <?php
 
 use App\Enums\ChannelType;
+use App\Http\Controllers\Agents\AgentController;
+use App\Http\Controllers\Agents\PlaygroundController;
 use App\Http\Controllers\Channels\ChannelController;
 use App\Http\Controllers\Channels\WhatsAppController;
 use App\Http\Controllers\Channels\WhatsAppWebhookController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\Integrations\IntegrationController;
-use App\Http\Controllers\Knowledge\AgentController;
 use App\Http\Controllers\Knowledge\CollectionController;
 use App\Http\Controllers\Knowledge\DocumentController;
-use App\Http\Controllers\Knowledge\PlaygroundController;
 use App\Http\Controllers\Onboarding\CompanyController;
 use App\Http\Controllers\Teams\TeamInvitationController;
 use App\Http\Middleware\EnsureUserHasTeam;
@@ -40,14 +40,14 @@ Route::get('dashboard', DashboardController::class)
     ->name('dashboard');
 
 Route::middleware(['auth', EnsureUserHasTeam::class])->group(function () {
-    Route::resource('knowledge/agents', AgentController::class)
-        ->only(['index', 'store', 'update', 'destroy'])
+    Route::resource('agents', AgentController::class)
+        ->only(['index', 'create', 'store', 'edit', 'update', 'destroy'])
         ->names('agents');
-    Route::patch('knowledge/agents/{agent}/toggle', [AgentController::class, 'toggle'])
+    Route::patch('agents/{agent}/toggle', [AgentController::class, 'toggle'])
         ->name('agents.toggle');
-    Route::get('knowledge/agents/{agent}/playground', [PlaygroundController::class, 'show'])
+    Route::get('agents/{agent}/playground', [PlaygroundController::class, 'show'])
         ->name('agents.playground');
-    Route::post('knowledge/agents/{agent}/playground', [PlaygroundController::class, 'stream'])
+    Route::post('agents/{agent}/playground', [PlaygroundController::class, 'stream'])
         ->middleware('throttle:playground')
         ->name('agents.playground.stream');
 

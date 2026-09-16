@@ -1,6 +1,6 @@
 <?php
 
-namespace App\Http\Requests\Knowledge;
+namespace App\Http\Requests\Agents;
 
 use App\Enums\AgentObjective;
 use App\Enums\AgentResponseLength;

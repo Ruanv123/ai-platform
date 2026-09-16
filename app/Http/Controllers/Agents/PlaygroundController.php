@@ -1,6 +1,6 @@
 <?php
 
-namespace App\Http\Controllers\Knowledge;
+namespace App\Http\Controllers\Agents;
 
 use App\Ai\Agents\PlaygroundAgent;
 use App\Http\Controllers\Controller;
