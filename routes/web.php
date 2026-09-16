@@ -1,5 +1,7 @@
 <?php
 
+use App\Enums\ChannelType;
+use App\Http\Controllers\Channels\ChannelController;
 use App\Http\Controllers\Channels\WhatsAppController;
 use App\Http\Controllers\Channels\WhatsAppWebhookController;
 use App\Http\Controllers\DashboardController;
@@ -12,6 +14,7 @@ use App\Http\Controllers\Onboarding\CompanyController;
 use App\Http\Controllers\Teams\TeamInvitationController;
 use App\Http\Middleware\EnsureUserHasTeam;
 use App\Http\Middleware\RedirectIfUserHasTeam;
+use App\Models\Channel;
 use Illuminate\Support\Facades\Route;
 
 Route::inertia('/', 'welcome')->name('home');
@@ -19,6 +22,13 @@ Route::inertia('/', 'welcome')->name('home');
 Route::match(['get', 'post'], 'webhooks/whatsapp', [WhatsAppWebhookController::class, 'handle'])
     ->middleware('throttle:whatsapp-webhook')
     ->name('webhooks.whatsapp');
+
+Route::bind('channel', function (string $value): Channel {
+    return Channel::query()
+        ->whereKey($value)
+        ->where('type', ChannelType::WhatsApp)
+        ->firstOrFail();
+});
 
 Route::middleware(['auth', RedirectIfUserHasTeam::class])->group(function () {
     Route::get('onboarding/company', [CompanyController::class, 'create'])->name('onboarding.company');
@@ -41,8 +51,10 @@ Route::middleware(['auth', EnsureUserHasTeam::class])->group(function () {
         ->middleware('throttle:playground')
         ->name('agents.playground.stream');
 
-    Route::get('channels', [WhatsAppController::class, 'index'])
+    Route::get('channels', [ChannelController::class, 'index'])
         ->name('channels.index');
+    Route::get('channels/whatsapp', [WhatsAppController::class, 'edit'])
+        ->name('channels.whatsapp.edit');
     Route::get('integrations', [IntegrationController::class, 'index'])
         ->name('integrations.index');
     Route::post('channels/whatsapp', [WhatsAppController::class, 'store'])

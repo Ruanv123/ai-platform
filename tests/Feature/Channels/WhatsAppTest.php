@@ -38,6 +38,12 @@ it('redirects guests to login when they visit channels', function () {
     $response->assertRedirect(route('login'));
 });
 
+it('redirects guests to login when they visit WhatsApp configuration', function () {
+    $response = $this->get(route('channels.whatsapp.edit'));
+
+    $response->assertRedirect(route('login'));
+});
+
 it('renders the WhatsApp channel without returning its secrets', function () {
     $user = User::factory()->withTeam()->create();
     [$channel] = createWhatsAppChannel($user, ['status' => ChannelStatus::Connected], [], [
@@ -49,7 +55,7 @@ it('renders the WhatsApp channel without returning its secrets', function () {
         'app_secret' => 'secret-that-must-stay-private',
     ]);
 
-    $response = $this->actingAs($user)->get(route('channels.index'));
+    $response = $this->actingAs($user)->get(route('channels.whatsapp.edit'));
 
     $response->assertOk()->assertInertia(fn (Assert $page) => $page
         ->component('channels/whatsapp')
@@ -74,7 +80,7 @@ it('allows an owner to configure one WhatsApp channel with its account and numbe
         whatsappDetails(),
     );
 
-    $response->assertRedirect(route('channels.index'));
+    $response->assertRedirect(route('channels.whatsapp.edit'));
     $response->assertInertiaFlash('toast', [
         'type' => 'success',
         'message' => 'WhatsApp configurado com sucesso.',
@@ -130,7 +136,7 @@ it('preserves account secrets when an owner edits the other WhatsApp fields', fu
         ]),
     );
 
-    $response->assertRedirect(route('channels.index'));
+    $response->assertRedirect(route('channels.whatsapp.edit'));
     $channel->refresh();
     expect($channel->whatsappPhoneNumber->phone_number_id)->toBe('updated-phone')
         ->and($channel->whatsappPhoneNumber->whatsappAccount->waba_id)->toBe('updated-waba')
@@ -157,8 +163,8 @@ it('allows an admin to link and replace the WhatsApp Agent', function () {
         whatsappDetails(['agent_id' => $secondAgent->id]),
     );
 
-    $firstResponse->assertRedirect(route('channels.index'));
-    $secondResponse->assertRedirect(route('channels.index'));
+    $firstResponse->assertRedirect(route('channels.whatsapp.edit'));
+    $secondResponse->assertRedirect(route('channels.whatsapp.edit'));
     expect($channel->fresh()->agent_id)->toBe($secondAgent->id);
 });
 
@@ -182,7 +188,7 @@ it('tests a WhatsApp connection and stores the Meta response on the number and a
         route('channels.whatsapp.test', $channel),
     );
 
-    $response->assertRedirect(route('channels.index'));
+    $response->assertRedirect(route('channels.whatsapp.edit'));
     $response->assertInertiaFlash('toast', [
         'type' => 'success',
         'message' => 'Conexão testada com sucesso.',
@@ -211,7 +217,7 @@ it('translates a Meta connection error and stores the failed channel status', fu
         route('channels.whatsapp.test', $channel),
     );
 
-    $response->assertRedirect(route('channels.index'));
+    $response->assertRedirect(route('channels.whatsapp.edit'));
     $response->assertInertiaFlash('toast', [
         'type' => 'error',
         'message' => 'O access token é inválido ou expirou.',
@@ -229,7 +235,7 @@ it('allows a member to view the channel but forbids channel mutations', function
     $member->switchTeam($team);
     [$channel] = createWhatsAppChannel($member);
 
-    $getResponse = $this->actingAs($member)->get(route('channels.index'));
+    $getResponse = $this->actingAs($member)->get(route('channels.whatsapp.edit'));
     $postResponse = $this->actingAs($member)->post(
         route('channels.whatsapp.store'),
         whatsappDetails(),
@@ -282,7 +288,7 @@ it('allows an owner to remove the WhatsApp channel and its specific records', fu
         route('channels.whatsapp.destroy', $channel),
     );
 
-    $response->assertRedirect(route('channels.index'));
+    $response->assertRedirect(route('channels.whatsapp.edit'));
     $this->assertModelMissing($channel);
     $this->assertModelMissing($phoneNumber);
     $this->assertModelMissing($account);

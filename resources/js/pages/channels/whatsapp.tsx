@@ -1,8 +1,7 @@
-import { Form, Head, router } from '@inertiajs/react';
+import { Form, Head, Link, router } from '@inertiajs/react';
 import {
     Check,
     Clipboard,
-    ExternalLink,
     MessageCircle,
     RefreshCw,
     Trash2,
@@ -34,6 +33,7 @@ import {
     update,
     store,
 } from '@/routes/channels/whatsapp';
+import { index as channelsIndex } from '@/routes/channels';
 import type { TeamPermissions } from '@/types';
 
 type AgentOption = {
@@ -311,12 +311,18 @@ export default function WhatsApp({
 
     return (
         <>
-            <Head title="Canais" />
+            <Head title="Configuração do WhatsApp" />
 
             <div className="flex h-full flex-1 flex-col gap-6 rounded-xl p-4 md:p-6">
+                <Link
+                    href={channelsIndex()}
+                    className="text-muted-foreground hover:text-foreground w-fit text-sm font-medium transition-colors"
+                >
+                    ← Voltar para Canais
+                </Link>
                 <Heading
-                    title="Canais"
-                    description="Configure por onde seus Agentes poderão atender."
+                    title="Configuração do WhatsApp"
+                    description="Conecte o número oficial da sua Empresa à Meta."
                 />
 
                 <div className="grid gap-6 xl:grid-cols-[minmax(0,2fr)_minmax(280px,1fr)]">
@@ -456,28 +462,6 @@ export default function WhatsApp({
                                         </p>
                                     </>
                                 )}
-                            </CardContent>
-                        </Card>
-
-                        <Card className="bg-muted/30">
-                            <CardHeader>
-                                <CardTitle className="text-base">
-                                    Chat no site
-                                </CardTitle>
-                                <CardDescription>
-                                    Um widget de atendimento para o seu site.
-                                </CardDescription>
-                            </CardHeader>
-                            <CardContent className="flex items-center justify-between gap-3">
-                                <Badge variant="secondary">Em breve</Badge>
-                                <Button
-                                    type="button"
-                                    variant="outline"
-                                    disabled
-                                >
-                                    <ExternalLink />
-                                    Conectar
-                                </Button>
                             </CardContent>
                         </Card>
                     </div>

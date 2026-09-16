@@ -25,7 +25,7 @@ class WhatsAppController extends Controller
     /**
      * Display the WhatsApp channel configuration page.
      */
-    public function index(Request $request): Response
+    public function edit(Request $request): Response
     {
         $user = $request->user();
         $team = $user?->company();
@@ -96,7 +96,7 @@ class WhatsAppController extends Controller
             'message' => 'WhatsApp configurado com sucesso.',
         ]);
 
-        return to_route('channels.index');
+        return to_route('channels.whatsapp.edit');
     }
 
     /**
@@ -132,7 +132,7 @@ class WhatsAppController extends Controller
             'message' => 'Configuração do WhatsApp atualizada com sucesso.',
         ]);
 
-        return to_route('channels.index');
+        return to_route('channels.whatsapp.edit');
     }
 
     /**
@@ -174,7 +174,7 @@ class WhatsAppController extends Controller
                     'message' => 'Conexão testada com sucesso.',
                 ]);
 
-                return to_route('channels.index');
+                return to_route('channels.whatsapp.edit');
             }
 
             $errorMessage = $this->translateMetaError($response->json('error'));
@@ -200,7 +200,7 @@ class WhatsAppController extends Controller
             'message' => $errorMessage,
         ]);
 
-        return to_route('channels.index');
+        return to_route('channels.whatsapp.edit');
     }
 
     /**
@@ -216,7 +216,7 @@ class WhatsAppController extends Controller
             'message' => 'Número do WhatsApp removido com sucesso.',
         ]);
 
-        return to_route('channels.index');
+        return to_route('channels.whatsapp.edit');
     }
 
     /**
