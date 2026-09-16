@@ -4,11 +4,11 @@
 
 **Blocked by:** 07 (Documentos de texto livre + ingestão + busca), 11 (Agentes CRUD), 13 (Canais: configuração do WhatsApp)
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] Checklist de ativação com os 5 itens refletindo o estado da Empresa, cada item com link para a tela correspondente
-- [ ] Resumo com Agentes ativos/total, documentos `ready` e `failed`, uso da cota e status do WhatsApp
-- [ ] Cards de métricas de atendimento "em breve", sem dados
-- [ ] Sidebar final na ordem: Dashboard, Agentes, Base de conhecimento, Canais, Integrações, Equipe, Configurações
-- [ ] Dados sempre restritos à Empresa do usuário
-- [ ] Feature tests: checklist e resumo refletindo diferentes estados (conta vazia, parcialmente configurada, totalmente ativada) e isolamento entre Empresas
+- [x] Checklist de ativação com os 5 itens refletindo o estado da Empresa, cada item com link para a tela correspondente
+- [x] Resumo com Agentes ativos/total, documentos `ready` e `failed`, uso da cota e status do WhatsApp
+- [x] Cards de métricas de atendimento "em breve", sem dados
+- [x] Sidebar final na ordem: Dashboard, Agentes, Base de conhecimento, Canais, Integrações, Equipe, Configurações
+- [x] Dados sempre restritos à Empresa do usuário
+- [x] Feature tests: checklist e resumo refletindo diferentes estados (conta vazia, parcialmente configurada, totalmente ativada) e isolamento entre Empresas
