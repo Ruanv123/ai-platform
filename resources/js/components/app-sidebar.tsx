@@ -1,15 +1,14 @@
 import { Link } from '@inertiajs/react';
 import {
     Bot,
-    BookOpen,
     Brain,
-    FolderGit2,
     LayoutGrid,
     MessageSquare,
     Plug,
+    Settings,
+    Users,
 } from 'lucide-react';
 import AppLogo from '@/components/app-logo';
-import { NavFooter } from '@/components/nav-footer';
 import { NavMain } from '@/components/nav-main';
 import { NavUser } from '@/components/nav-user';
 import {
@@ -26,6 +25,8 @@ import { index as collections } from '@/routes/collections';
 import { index as agents } from '@/routes/agents';
 import { index as channels } from '@/routes/channels';
 import { index as integrations } from '@/routes/integrations';
+import { edit as profile } from '@/routes/profile';
+import { edit as team } from '@/routes/teams';
 import type { NavItem } from '@/types';
 
 export function AppSidebar() {
@@ -33,19 +34,19 @@ export function AppSidebar() {
 
     const mainNavItems: NavItem[] = [
         {
-            title: 'Painel',
+            title: 'Dashboard',
             href: dashboardUrl,
             icon: LayoutGrid,
-        },
-        {
-            title: 'Base de conhecimento',
-            href: collections(),
-            icon: Brain,
         },
         {
             title: 'Agentes',
             href: agents(),
             icon: Bot,
+        },
+        {
+            title: 'Base de conhecimento',
+            href: collections(),
+            icon: Brain,
         },
         {
             title: 'Canais',
@@ -57,18 +58,15 @@ export function AppSidebar() {
             href: integrations(),
             icon: Plug,
         },
-    ];
-
-    const footerNavItems: NavItem[] = [
         {
-            title: 'Repositório',
-            href: 'https://github.com/laravel/react-starter-kit',
-            icon: FolderGit2,
+            title: 'Equipe',
+            href: team(),
+            icon: Users,
         },
         {
-            title: 'Documentação',
-            href: 'https://laravel.com/docs/starter-kits#react',
-            icon: BookOpen,
+            title: 'Configurações',
+            href: profile(),
+            icon: Settings,
         },
     ];
 
@@ -91,7 +89,6 @@ export function AppSidebar() {
             </SidebarContent>
 
             <SidebarFooter>
-                <NavFooter items={footerNavItems} className="mt-auto" />
                 <NavUser />
             </SidebarFooter>
         </Sidebar>
