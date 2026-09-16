@@ -31,6 +31,7 @@ class DocumentFactory extends Factory
             'file_path' => null,
             'original_filename' => null,
             'mime_type' => null,
+            'url' => null,
             'error_message' => null,
             'size_bytes' => 0,
             'ingestion_token' => fake()->uuid(),

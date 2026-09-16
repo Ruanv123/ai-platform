@@ -25,6 +25,7 @@ use Illuminate\Support\Carbon;
  * @property string|null $file_path
  * @property string|null $original_filename
  * @property string|null $mime_type
+ * @property string|null $url
  * @property string|null $error_message
  * @property int $size_bytes
  * @property string|null $ingestion_token
@@ -46,6 +47,7 @@ use Illuminate\Support\Carbon;
     'file_path',
     'original_filename',
     'mime_type',
+    'url',
     'error_message',
     'size_bytes',
     'ingestion_token',

@@ -97,9 +97,11 @@ class DocumentController extends Controller
                 $lockedTeam = $team->newQuery()->lockForUpdate()->whereKey($team->getKey())->firstOrFail();
                 $content = $this->documentContent($type, $validated);
                 $faqItems = $this->faqItems($type, $validated);
-                $sizeBytes = $type === DocumentType::File
-                    ? ($file instanceof UploadedFile ? (int) ($file->getSize() ?: 0) : 0)
-                    : strlen($content);
+                $sizeBytes = match ($type) {
+                    DocumentType::File => $file instanceof UploadedFile ? (int) ($file->getSize() ?: 0) : 0,
+                    DocumentType::Url => 0,
+                    default => strlen($content),
+                };
                 $this->quota->assertCanStore(
                     $lockedTeam,
                     $sizeBytes,
@@ -120,6 +122,7 @@ class DocumentController extends Controller
                         ? $this->fileStorage->originalFilename($file)
                         : null,
                     'mime_type' => $file instanceof UploadedFile ? $file->getMimeType() : null,
+                    'url' => $type === DocumentType::Url ? $validated['url'] : null,
                     'size_bytes' => $sizeBytes,
                     'ingestion_token' => $token,
                 ]);
@@ -161,13 +164,17 @@ class DocumentController extends Controller
         try {
             DB::transaction(function () use ($request, $document, $team, $token, $file, $newFilePath, $validated): void {
                 $lockedTeam = $team->newQuery()->lockForUpdate()->whereKey($team->getKey())->firstOrFail();
-                $content = $document->type === DocumentType::File
+                $content = in_array($document->type, [DocumentType::File, DocumentType::Url], true)
                     ? $document->content
                     : $this->documentContent($document->type, $validated);
                 $faqItems = $this->faqItems($document->type, $validated);
-                $sizeBytes = $document->type === DocumentType::File
-                    ? ($file instanceof UploadedFile ? (int) ($file->getSize() ?: 0) : $document->size_bytes)
-                    : strlen($content);
+                $sizeBytes = match ($document->type) {
+                    DocumentType::File => $file instanceof UploadedFile
+                        ? (int) ($file->getSize() ?: 0)
+                        : $document->size_bytes,
+                    DocumentType::Url => $document->size_bytes,
+                    default => strlen($content),
+                };
                 $this->quota->assertCanStore(
                     $lockedTeam,
                     $sizeBytes,
@@ -185,6 +192,10 @@ class DocumentController extends Controller
                     'processed_at' => null,
                     'ingestion_token' => $token,
                 ];
+
+                if ($document->type === DocumentType::Url) {
+                    $updates['url'] = $validated['url'];
+                }
 
                 if ($document->type === DocumentType::File && $file instanceof UploadedFile) {
                     $updates['file_path'] = $newFilePath;
@@ -299,6 +310,7 @@ class DocumentController extends Controller
             'faqItems' => $document->faq_items,
             'originalFilename' => $document->original_filename,
             'mimeType' => $document->mime_type,
+            'url' => $document->url,
             'downloadUrl' => $document->file_path === null ? null : route('documents.download', $document),
             'type' => $document->type->value,
             'status' => $document->status->value,
@@ -346,6 +358,10 @@ class DocumentController extends Controller
     private function documentContent(DocumentType $type, array $data): string
     {
         if ($type === DocumentType::File) {
+            return '';
+        }
+
+        if ($type === DocumentType::Url) {
             return '';
         }
 

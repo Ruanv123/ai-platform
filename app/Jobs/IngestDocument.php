@@ -5,12 +5,17 @@ namespace App\Jobs;
 use App\Enums\DocumentStatus;
 use App\Enums\DocumentType;
 use App\Knowledge\DocumentFileExtractor;
+use App\Knowledge\DocumentStorageQuota;
+use App\Knowledge\DocumentUrlExtractor;
 use App\Knowledge\MarkdownChunker;
+use App\Knowledge\UrlDocumentException;
 use App\Models\Chunk;
 use App\Models\Document;
+use App\Models\Team;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
 use Laravel\Ai\Embeddings;
 use RuntimeException;
 use Throwable;
@@ -35,8 +40,12 @@ class IngestDocument implements ShouldQueue
     /**
      * Execute the job.
      */
-    public function handle(MarkdownChunker $chunker, DocumentFileExtractor $fileExtractor): void
-    {
+    public function handle(
+        MarkdownChunker $chunker,
+        DocumentFileExtractor $fileExtractor,
+        DocumentUrlExtractor $urlExtractor,
+        DocumentStorageQuota $quota,
+    ): void {
         $document = Document::withoutGlobalScopes()->whereKey($this->documentId)->first();
 
         if ($document === null || $document->ingestion_token !== $this->ingestionToken) {
@@ -57,7 +66,11 @@ class IngestDocument implements ShouldQueue
         try {
             $chunks = $document->type === DocumentType::Faq
                 ? $this->extractFaqChunks($document)
-                : $chunker->chunk($extractedContent = $this->extractText($document, $fileExtractor));
+                : $chunker->chunk($extractedContent = $this->extractText($document, $fileExtractor, $urlExtractor));
+        } catch (UrlDocumentException|ValidationException $exception) {
+            $this->markAsFailed($document, $this->friendlyErrorMessage($exception));
+
+            return;
         } catch (RuntimeException $exception) {
             if ($exception->getMessage() === 'PDF sem texto extraível') {
                 $document->update([
@@ -70,55 +83,79 @@ class IngestDocument implements ShouldQueue
 
             throw $exception;
         }
-        $embeddings = Embeddings::for($chunks)
-            ->dimensions((int) config('knowledge.embedding_dimensions', 1536))
-            ->generate(
-                config('knowledge.embedding_provider', 'openai'),
-                config('knowledge.embedding_model', 'text-embedding-3-small'),
-            )
-            ->embeddings;
+        try {
+            $embeddings = Embeddings::for($chunks)
+                ->dimensions((int) config('knowledge.embedding_dimensions', 1536))
+                ->generate(
+                    config('knowledge.embedding_provider', 'openai'),
+                    config('knowledge.embedding_model', 'text-embedding-3-small'),
+                )
+                ->embeddings;
 
-        if (count($chunks) !== count($embeddings)) {
-            throw new RuntimeException('Não foi possível gerar os vetores do documento.');
+            if (count($chunks) !== count($embeddings)) {
+                throw new RuntimeException('Não foi possível gerar os vetores do documento.');
+            }
+
+            DB::transaction(function () use ($chunks, $document, $embeddings, $extractedContent, $quota): void {
+                $lockedDocument = Document::withoutGlobalScopes()
+                    ->lockForUpdate()
+                    ->whereKey($document->getKey())
+                    ->first();
+
+                if ($lockedDocument === null || $lockedDocument->ingestion_token !== $this->ingestionToken) {
+                    return;
+                }
+
+                if ($lockedDocument->type === DocumentType::Url && $extractedContent !== null) {
+                    $lockedTeam = Team::withoutGlobalScopes()
+                        ->lockForUpdate()
+                        ->whereKey($lockedDocument->team_id)
+                        ->firstOrFail();
+                    $quota->assertCanStore(
+                        $lockedTeam,
+                        strlen($extractedContent),
+                        $lockedDocument,
+                        'url',
+                    );
+                }
+
+                Chunk::withoutGlobalScopes()
+                    ->where('document_id', $lockedDocument->getKey())
+                    ->delete();
+
+                foreach ($chunks as $position => $content) {
+                    Chunk::create([
+                        'document_id' => $lockedDocument->getKey(),
+                        'team_id' => $lockedDocument->team_id,
+                        'collection_id' => $lockedDocument->collection_id,
+                        'position' => $position,
+                        'content' => $content,
+                        'embedding' => $embeddings[$position],
+                    ]);
+                }
+
+                $updates = [
+                    'status' => DocumentStatus::Ready,
+                    'error_message' => null,
+                    'processed_at' => now(),
+                ];
+
+                if ($lockedDocument->type === DocumentType::File && $extractedContent !== null) {
+                    $updates['content'] = $extractedContent;
+                }
+
+                if ($lockedDocument->type === DocumentType::Url && $extractedContent !== null) {
+                    $updates['content'] = $extractedContent;
+                    $updates['size_bytes'] = strlen($extractedContent);
+                }
+
+                $lockedDocument->update($updates);
+            });
+        } catch (ValidationException $exception) {
+            $this->markAsFailed($document, $this->friendlyErrorMessage($exception));
+
+            return;
         }
-
-        DB::transaction(function () use ($chunks, $document, $embeddings, $extractedContent): void {
-            $lockedDocument = Document::withoutGlobalScopes()
-                ->lockForUpdate()
-                ->whereKey($document->getKey())
-                ->first();
-
-            if ($lockedDocument === null || $lockedDocument->ingestion_token !== $this->ingestionToken) {
-                return;
-            }
-
-            Chunk::withoutGlobalScopes()
-                ->where('document_id', $lockedDocument->getKey())
-                ->delete();
-
-            foreach ($chunks as $position => $content) {
-                Chunk::create([
-                    'document_id' => $lockedDocument->getKey(),
-                    'team_id' => $lockedDocument->team_id,
-                    'collection_id' => $lockedDocument->collection_id,
-                    'position' => $position,
-                    'content' => $content,
-                    'embedding' => $embeddings[$position],
-                ]);
-            }
-
-            $updates = [
-                'status' => DocumentStatus::Ready,
-                'error_message' => null,
-                'processed_at' => now(),
-            ];
-
-            if ($lockedDocument->type === DocumentType::File && $extractedContent !== null) {
-                $updates['content'] = $extractedContent;
-            }
-
-            $lockedDocument->update($updates);
-        });
     }
 
     /**
@@ -138,13 +175,20 @@ class IngestDocument implements ShouldQueue
         ]);
     }
 
-    private function extractText(Document $document, DocumentFileExtractor $fileExtractor): string
-    {
+    private function extractText(
+        Document $document,
+        DocumentFileExtractor $fileExtractor,
+        DocumentUrlExtractor $urlExtractor,
+    ): string {
         if ($document->type === DocumentType::File) {
             return $fileExtractor->extract($document);
         }
 
         if ($document->type !== DocumentType::Text) {
+            if ($document->type === DocumentType::Url && $document->url !== null) {
+                return $urlExtractor->extract($document->url);
+            }
+
             throw new RuntimeException('Este tipo de documento ainda não está disponível.');
         }
 
@@ -175,12 +219,24 @@ class IngestDocument implements ShouldQueue
 
     private function friendlyErrorMessage(?Throwable $exception): string
     {
+        if ($exception instanceof ValidationException) {
+            return (string) collect($exception->errors())->flatten()->first();
+        }
+
         $message = $exception?->getMessage();
 
-        if ($message !== null && preg_match('/^(PDF sem texto extraível|O documento não contém texto|O FAQ não contém pares|Este tipo de documento)/u', $message)) {
+        if ($message !== null && preg_match('/^(A página|Não foi possível acessar|Não foi possível extrair|PDF sem texto extraível|O documento não contém texto|O FAQ não contém pares|Este tipo de documento)/u', $message)) {
             return $message;
         }
 
         return 'Não foi possível processar o documento. Tente novamente.';
+    }
+
+    private function markAsFailed(Document $document, string $message): void
+    {
+        $document->update([
+            'status' => DocumentStatus::Failed,
+            'error_message' => $message,
+        ]);
     }
 }

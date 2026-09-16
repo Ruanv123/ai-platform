@@ -13,4 +13,4 @@
 - [x] PDF sem texto extraível marca `failed` com mensagem em pt-BR
 - [x] Substituir arquivo reprocessa e recalcula a cota; baixar arquivo original respeita isolamento por Empresa
 - [x] Feature tests com `Storage::fake()` e fixtures reais pequenas (PDF com texto, PDF só imagem, DOCX com título e tabela, TXT Latin-1)
-- [ ] Dependência de `poppler-utils` documentada para o CI
+- [x] Dependência de `poppler-utils` documentada para o CI

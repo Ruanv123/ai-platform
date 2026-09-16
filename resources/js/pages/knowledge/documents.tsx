@@ -7,6 +7,7 @@ import {
     File,
     FileText,
     FileQuestion,
+    Globe,
     LoaderCircle,
     Pencil,
     Plus,
@@ -60,6 +61,7 @@ type KnowledgeDocument = {
     originalFilename: string | null;
     mimeType: string | null;
     downloadUrl: string | null;
+    url: string | null;
     updatedAt: string | null;
 };
 
@@ -126,12 +128,16 @@ function DocumentFormDialog({
     onOpenChange,
 }: DocumentFormDialogProps) {
     const isEditing = document !== null;
-    const [documentType, setDocumentType] = useState<'text' | 'faq' | 'file'>(
+    const [documentType, setDocumentType] = useState<
+        'text' | 'faq' | 'file' | 'url'
+    >(
         document?.type === 'faq'
             ? 'faq'
             : document?.type === 'file'
               ? 'file'
-              : 'text',
+              : document?.type === 'url'
+                ? 'url'
+                : 'text',
     );
     const [faqItems, setFaqItems] = useState<FaqItem[]>(
         document?.faqItems?.length
@@ -145,7 +151,9 @@ function DocumentFormDialog({
                 ? 'faq'
                 : document?.type === 'file'
                   ? 'file'
-                  : 'text',
+                  : document?.type === 'url'
+                    ? 'url'
+                    : 'text',
         );
         setFaqItems(
             document?.faqItems?.length
@@ -205,14 +213,18 @@ function DocumentFormDialog({
                               ? 'Novo documento de FAQ'
                               : documentType === 'file'
                                 ? 'Novo documento de arquivo'
-                                : 'Novo documento de texto'}
+                                : documentType === 'url'
+                                  ? 'Novo documento de URL'
+                                  : 'Novo documento de texto'}
                     </DialogTitle>
                     <DialogDescription>
                         {documentType === 'faq'
                             ? 'Organize perguntas e respostas que os Agentes poderão consultar.'
                             : documentType === 'file'
                               ? 'Envie um PDF, DOCX ou TXT para alimentar a base de conhecimento.'
-                              : 'Escreva um conteúdo que os Agentes poderão consultar na base de conhecimento.'}
+                              : documentType === 'url'
+                                ? 'Sincronize o conteúdo principal de uma página para alimentar a base de conhecimento.'
+                                : 'Escreva um conteúdo que os Agentes poderão consultar na base de conhecimento.'}
                     </DialogDescription>
                 </DialogHeader>
                 <Form
@@ -252,7 +264,8 @@ function DocumentFormDialog({
                                             event.target.value as
                                                 | 'text'
                                                 | 'faq'
-                                                | 'file',
+                                                | 'file'
+                                                | 'url',
                                         )
                                     }
                                     disabled={isEditing}
@@ -261,6 +274,7 @@ function DocumentFormDialog({
                                     <option value="text">Texto livre</option>
                                     <option value="faq">FAQ</option>
                                     <option value="file">Arquivo</option>
+                                    <option value="url">URL</option>
                                 </select>
                                 <InputError message={errors.type} />
                             </div>
@@ -444,6 +458,25 @@ function DocumentFormDialog({
                                     />
                                     <InputError message={errors.file} />
                                 </div>
+                            ) : documentType === 'url' ? (
+                                <div className="grid gap-2">
+                                    <Label htmlFor="document-url">
+                                        URL da página
+                                    </Label>
+                                    <Input
+                                        id="document-url"
+                                        name="url"
+                                        type="url"
+                                        defaultValue={document?.url ?? ''}
+                                        placeholder="https://exemplo.com/manual"
+                                        required
+                                    />
+                                    <p className="text-muted-foreground text-xs">
+                                        O menu, rodapé e avisos da página serão
+                                        descartados automaticamente.
+                                    </p>
+                                    <InputError message={errors.url} />
+                                </div>
                             ) : (
                                 <div className="grid gap-2">
                                     <Label htmlFor="document-content">
@@ -610,6 +643,8 @@ export default function Documents({
                                                 <FileQuestion className="text-muted-foreground size-5" />
                                             ) : document.type === 'file' ? (
                                                 <File className="text-muted-foreground size-5" />
+                                            ) : document.type === 'url' ? (
+                                                <Globe className="text-muted-foreground size-5" />
                                             ) : (
                                                 <FileText className="text-muted-foreground size-5" />
                                             )}
@@ -625,7 +660,10 @@ export default function Documents({
                                                         : document.type ===
                                                             'file'
                                                           ? 'Arquivo'
-                                                          : 'Texto livre'}
+                                                          : document.type ===
+                                                              'url'
+                                                            ? 'URL'
+                                                            : 'Texto livre'}
                                                 </Badge>
                                                 <Badge
                                                     variant={statusVariant(
@@ -670,11 +708,27 @@ export default function Documents({
                                                         Baixar arquivo
                                                     </a>
                                                 )}
+                                            {document.type === 'url' &&
+                                                document.url && (
+                                                    <a
+                                                        href={document.url}
+                                                        target="_blank"
+                                                        rel="noreferrer"
+                                                        className="text-primary inline-flex max-w-full truncate text-sm hover:underline"
+                                                    >
+                                                        {document.url}
+                                                    </a>
+                                                )}
                                         </div>
                                     </div>
                                     {permissions.canManageKnowledge && (
                                         <div className="flex shrink-0 items-center gap-1">
-                                            {document.status === 'failed' && (
+                                            {((document.type === 'url' &&
+                                                document.status !==
+                                                    'processing') ||
+                                                (document.type !== 'url' &&
+                                                    document.status ===
+                                                        'failed')) && (
                                                 <Button
                                                     variant="outline"
                                                     size="sm"
@@ -687,7 +741,9 @@ export default function Documents({
                                                     }
                                                 >
                                                     <RefreshCw />
-                                                    Reprocessar
+                                                    {document.type === 'url'
+                                                        ? 'Sincronizar'
+                                                        : 'Reprocessar'}
                                                 </Button>
                                             )}
                                             <Button

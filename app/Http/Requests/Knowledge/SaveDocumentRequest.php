@@ -49,7 +49,7 @@ class SaveDocumentRequest extends FormRequest
         $document = $this->route('document');
         $allowedTypes = $document instanceof Document
             ? [$document->type->value]
-            : [DocumentType::Text->value, DocumentType::Faq->value, DocumentType::File->value];
+            : [DocumentType::Text->value, DocumentType::Faq->value, DocumentType::File->value, DocumentType::Url->value];
 
         $rules = [
             'type' => ['required', 'string', Rule::in($allowedTypes)],
@@ -74,6 +74,12 @@ class SaveDocumentRequest extends FormRequest
                     'mimes:pdf,docx,txt',
                     'extensions:pdf,docx,txt',
                 ],
+            ]);
+        }
+
+        if ($this->input('type') === DocumentType::Url->value) {
+            return array_merge($rules, [
+                'url' => ['required', 'url:http,https', 'max:2048'],
             ]);
         }
 
@@ -103,6 +109,9 @@ class SaveDocumentRequest extends FormRequest
             'file.max' => 'O arquivo deve ter no máximo 20 MB.',
             'file.mimes' => 'Envie um arquivo PDF, DOCX ou TXT.',
             'file.extensions' => 'A extensão do arquivo deve ser PDF, DOCX ou TXT.',
+            'url.required' => 'Informe a URL da página.',
+            'url.url' => 'Informe uma URL válida, começando por http:// ou https://.',
+            'url.max' => 'A URL deve ter no máximo 2048 caracteres.',
         ];
     }
 }

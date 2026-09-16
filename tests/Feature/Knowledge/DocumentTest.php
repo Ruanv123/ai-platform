@@ -4,6 +4,8 @@ use App\Enums\DocumentStatus;
 use App\Enums\DocumentType;
 use App\Jobs\IngestDocument;
 use App\Knowledge\DocumentFileExtractor;
+use App\Knowledge\DocumentStorageQuota;
+use App\Knowledge\DocumentUrlExtractor;
 use App\Knowledge\MarkdownChunker;
 use App\Models\Chunk;
 use App\Models\Collection;
@@ -185,7 +187,12 @@ it('marks an ingestion as failed and preserves the previous chunks', function ()
     $job = new IngestDocument($document->id, '00000000-0000-0000-0000-000000000001');
 
     try {
-        $job->handle(app(MarkdownChunker::class), app(DocumentFileExtractor::class));
+        $job->handle(
+            app(MarkdownChunker::class),
+            app(DocumentFileExtractor::class),
+            app(DocumentUrlExtractor::class),
+            app(DocumentStorageQuota::class),
+        );
     } catch (RuntimeException $exception) {
         $job->failed($exception);
     }
