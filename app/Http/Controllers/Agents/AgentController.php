@@ -30,7 +30,7 @@ class AgentController extends Controller
         abort_if($team === null, 404);
         Gate::authorize('create', Agent::class);
 
-        return Inertia::render('agents/edit', $this->editorProps($team));
+        return Inertia::render('agents/edit', $this->editorProps($team, canManageAgents: true));
     }
 
     /**
@@ -98,11 +98,15 @@ class AgentController extends Controller
      */
     public function edit(Agent $agent): Response
     {
-        Gate::authorize('update', $agent);
+        Gate::authorize('view', $agent);
 
         $agent->loadMissing('collections');
 
-        return Inertia::render('agents/edit', $this->editorProps($agent->team, $agent));
+        return Inertia::render('agents/edit', $this->editorProps(
+            $agent->team,
+            $agent,
+            Gate::allows('update', $agent),
+        ));
     }
 
     /**
@@ -189,8 +193,11 @@ class AgentController extends Controller
      *
      * @return array<string, mixed>
      */
-    private function editorProps(Team $team, ?Agent $agent = null): array
-    {
+    private function editorProps(
+        Team $team,
+        ?Agent $agent = null,
+        bool $canManageAgents = false,
+    ): array {
         return [
             'agent' => $agent === null ? null : [
                 'id' => $agent->id,
@@ -215,6 +222,9 @@ class AgentController extends Controller
             'objectives' => AgentObjective::options(),
             'tones' => AgentTone::options(),
             'responseLengths' => AgentResponseLength::options(),
+            'permissions' => [
+                'canManageAgents' => $canManageAgents,
+            ],
         ];
     }
 }

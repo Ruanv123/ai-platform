@@ -2,22 +2,18 @@
 
 namespace App\Http\Requests\Knowledge;
 
-use App\Models\Agent;
+use App\Http\Requests\Agents\SaveAgentRequest;
 use Illuminate\Contracts\Validation\ValidationRule;
-use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
-class PlaygroundRequest extends FormRequest
+class PlaygroundRequest extends SaveAgentRequest
 {
     /**
-     * Determine whether the user can use this Agent's Playground.
+     * Determine whether the user can use the draft Playground.
      */
     public function authorize(): bool
     {
-        $agent = $this->route('agent');
-
-        return $agent instanceof Agent
-            && ($this->user()?->can('view', $agent) ?? false);
+        return $this->user()?->company() !== null;
     }
 
     /**
@@ -27,12 +23,12 @@ class PlaygroundRequest extends FormRequest
      */
     public function rules(): array
     {
-        return [
+        return array_merge(parent::rules(), [
             'history' => ['nullable', 'array', 'max:50'],
             'history.*.role' => ['required', Rule::in(['user', 'assistant'])],
             'history.*.content' => ['required', 'string', 'max:10000'],
             'message' => ['required', 'string', 'max:4000'],
-        ];
+        ]);
     }
 
     /**
@@ -42,7 +38,7 @@ class PlaygroundRequest extends FormRequest
      */
     public function messages(): array
     {
-        return [
+        return array_merge(parent::messages(), [
             'history.array' => 'O histórico da conversa é inválido.',
             'history.max' => 'A conversa atingiu o limite de histórico.',
             'history.*.role.in' => 'O papel da mensagem é inválido.',
@@ -50,6 +46,6 @@ class PlaygroundRequest extends FormRequest
             'history.*.content.max' => 'Uma mensagem do histórico é longa demais.',
             'message.required' => 'Digite uma mensagem para o Agente.',
             'message.max' => 'A mensagem deve ter no máximo 4.000 caracteres.',
-        ];
+        ]);
     }
 }

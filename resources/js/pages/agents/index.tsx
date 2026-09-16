@@ -1,13 +1,5 @@
 import { Head, Link, router } from '@inertiajs/react';
-import {
-    Bot,
-    MessageCircle,
-    MoreHorizontal,
-    Pencil,
-    Plus,
-    Power,
-    Trash2,
-} from 'lucide-react';
+import { Bot, MoreHorizontal, Pencil, Plus, Power, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 import Heading from '@/components/heading';
 import { Badge } from '@/components/ui/badge';
@@ -37,13 +29,7 @@ import {
     TableHeader,
     TableRow,
 } from '@/components/ui/table';
-import {
-    create as createAgent,
-    destroy,
-    edit,
-    playground,
-    toggle,
-} from '@/routes/agents';
+import { create as createAgent, destroy, edit, toggle } from '@/routes/agents';
 import type { TeamPermissions } from '@/types';
 
 type AgentChannel = {
@@ -247,12 +233,7 @@ export default function Agents({ agents, permissions }: Props) {
                             <TableBody>
                                 {agents.map((agent) => {
                                     const activateAgent = () => {
-                                        if (permissions.canManageAgents) {
-                                            router.visit(edit(agent.id).url);
-                                            return;
-                                        }
-
-                                        router.visit(playground(agent.id).url);
+                                        router.visit(edit(agent.id).url);
                                     };
 
                                     return (
@@ -352,22 +333,6 @@ export default function Agents({ agents, permissions }: Props) {
                                                             </Button>
                                                         </DropdownMenuTrigger>
                                                         <DropdownMenuContent align="end">
-                                                            <DropdownMenuItem
-                                                                asChild
-                                                            >
-                                                                <Link
-                                                                    href={
-                                                                        playground(
-                                                                            agent.id,
-                                                                        ).url
-                                                                    }
-                                                                >
-                                                                    <MessageCircle />
-                                                                    Testar no
-                                                                    Playground
-                                                                </Link>
-                                                            </DropdownMenuItem>
-                                                            <DropdownMenuSeparator />
                                                             <DropdownMenuItem
                                                                 asChild
                                                             >

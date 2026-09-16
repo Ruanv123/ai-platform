@@ -1,9 +1,11 @@
 import { Form, Head, Link } from '@inertiajs/react';
 import { ArrowDown, ArrowLeft, ArrowUp, Bot, Plus, X } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { useState } from 'react';
+import AgentPlayground, {
+    type AgentDraft,
+} from '@/components/agent-playground';
 import Heading from '@/components/heading';
 import InputError from '@/components/input-error';
-import { useAgentPlaygroundDirty } from '@/hooks/use-agent-playground-dirty';
 import { Button } from '@/components/ui/button';
 import {
     Card,
@@ -33,17 +35,8 @@ type CollectionOption = {
     name: string;
 };
 
-type Agent = {
+type Agent = AgentDraft & {
     id: number;
-    name: string;
-    objective: string;
-    tone: string;
-    usesEmojis: boolean;
-    responseLength: string;
-    welcomeMessage: string;
-    instructions: string[];
-    rules: string[];
-    collectionIds: number[];
 };
 
 type Props = {
@@ -52,18 +45,9 @@ type Props = {
     objectives: Option[];
     tones: Option[];
     responseLengths: Option[];
-};
-
-type AgentFormSnapshot = {
-    name: string;
-    objective: string;
-    tone: string;
-    responseLength: string;
-    usesEmojis: boolean;
-    welcomeMessage: string;
-    instructions: string[];
-    rules: string[];
-    collectionIds: number[];
+    permissions: {
+        canManageAgents: boolean;
+    };
 };
 
 type ListEditorProps = {
@@ -76,10 +60,6 @@ type ListEditorProps = {
     errors: Record<string, string>;
     error?: string;
 };
-
-function serializeAgentForm(values: AgentFormSnapshot): string {
-    return JSON.stringify(values);
-}
 
 function nestedError(
     errors: Record<string, string>,
@@ -257,6 +237,7 @@ function AgentForm({
     objectives,
     tones,
     responseLengths,
+    permissions,
 }: Props) {
     const isEditing = agent !== null;
     const [name, setName] = useState(agent?.name ?? '');
@@ -276,54 +257,20 @@ function AgentForm({
     const [welcomeMessage, setWelcomeMessage] = useState(
         agent?.welcomeMessage ?? '',
     );
-    const dirtyStorageKey = agent ? `agent-playground-dirty-${agent.id}` : null;
-    const initialFormSnapshot = useMemo(
-        () =>
-            agent
-                ? serializeAgentForm({
-                      name: agent.name,
-                      objective: agent.objective,
-                      tone: agent.tone,
-                      responseLength: agent.responseLength,
-                      usesEmojis: agent.usesEmojis,
-                      welcomeMessage: agent.welcomeMessage,
-                      instructions: agent.instructions,
-                      rules: agent.rules,
-                      collectionIds: agent.collectionIds,
-                  })
-                : null,
-        [agent],
+    const [activePanel, setActivePanel] = useState<'config' | 'playground'>(
+        'config',
     );
-    const currentFormSnapshot = useMemo(
-        () =>
-            serializeAgentForm({
-                name,
-                objective,
-                tone,
-                responseLength,
-                usesEmojis,
-                welcomeMessage,
-                instructions,
-                rules,
-                collectionIds: selectedCollectionIds,
-            }),
-        [
-            name,
-            objective,
-            tone,
-            responseLength,
-            usesEmojis,
-            welcomeMessage,
-            instructions,
-            rules,
-            selectedCollectionIds,
-        ],
-    );
-    useAgentPlaygroundDirty(
-        agent?.id ?? null,
-        initialFormSnapshot !== null &&
-            currentFormSnapshot !== initialFormSnapshot,
-    );
+    const draft: AgentDraft = {
+        name,
+        objective,
+        tone,
+        usesEmojis,
+        responseLength,
+        welcomeMessage,
+        instructions,
+        rules,
+        collectionIds: selectedCollectionIds,
+    };
 
     const toggleCollection = (collectionId: number) => {
         setSelectedCollectionIds((current) =>
@@ -333,194 +280,282 @@ function AgentForm({
         );
     };
 
-    const handleSuccess = () => {
-        if (dirtyStorageKey !== null) {
-            window.localStorage.removeItem(dirtyStorageKey);
-        }
-    };
-
     return (
         <Form
             {...(isEditing ? update.form(agent.id) : store.form())}
-            className="grid gap-8"
-            onSuccess={handleSuccess}
+            className="grid gap-5"
         >
             {({ errors, processing }) => (
                 <>
-                    <input type="hidden" name="objective" value={objective} />
-                    <input type="hidden" name="tone" value={tone} />
-                    <input
-                        type="hidden"
-                        name="response_length"
-                        value={responseLength}
-                    />
-                    <input
-                        type="hidden"
-                        name="uses_emojis"
-                        value={usesEmojis ? '1' : '0'}
-                    />
-                    {selectedCollectionIds.map((collectionId) => (
-                        <input
-                            key={collectionId}
-                            type="hidden"
-                            name="collection_ids[]"
-                            value={collectionId}
-                        />
-                    ))}
-
-                    <div className="grid gap-5 sm:grid-cols-2">
-                        <div className="grid gap-2 sm:col-span-2">
-                            <Label htmlFor="agent-name">Nome da persona</Label>
-                            <Input
-                                id="agent-name"
-                                name="name"
-                                value={name}
-                                onChange={(event) =>
-                                    setName(event.target.value)
-                                }
-                                placeholder="Ex.: Lia, sua consultora de vendas"
-                                autoFocus
-                                required
-                            />
-                            <InputError message={errors.name} />
-                        </div>
-
-                        <SelectField
-                            id="agent-objective"
-                            label="Objetivo"
-                            value={objective}
-                            onValueChange={setObjective}
-                            options={objectives}
-                            error={errors.objective}
-                        />
-                        <SelectField
-                            id="agent-tone"
-                            label="Tom de voz"
-                            value={tone}
-                            onValueChange={setTone}
-                            options={tones}
-                            error={errors.tone}
-                        />
-                        <SelectField
-                            id="agent-response-length"
-                            label="Tamanho das respostas"
-                            value={responseLength}
-                            onValueChange={setResponseLength}
-                            options={responseLengths}
-                            error={errors.response_length}
-                        />
-
-                        <div className="grid gap-2">
-                            <Label>Emojis</Label>
-                            <Button
-                                type="button"
-                                variant={usesEmojis ? 'default' : 'outline'}
-                                className="justify-start"
-                                onClick={() =>
-                                    setUsesEmojis((current) => !current)
-                                }
-                            >
-                                {usesEmojis
-                                    ? 'O Agente pode usar emojis'
-                                    : 'Sem emojis'}
-                            </Button>
-                            <InputError message={errors.uses_emojis} />
-                        </div>
-
-                        <div className="grid gap-2 sm:col-span-2">
-                            <Label htmlFor="agent-welcome-message">
-                                Mensagem de boas-vindas
-                            </Label>
-                            <textarea
-                                id="agent-welcome-message"
-                                name="welcome_message"
-                                value={welcomeMessage}
-                                onChange={(event) =>
-                                    setWelcomeMessage(event.target.value)
-                                }
-                                placeholder="Ex.: Olá! Sou a Lia. Como posso ajudar?"
-                                className="border-input bg-background placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-ring/50 min-h-24 rounded-md border px-3 py-2 text-sm shadow-xs outline-none focus-visible:ring-[3px]"
-                                required
-                            />
-                            <InputError message={errors.welcome_message} />
-                        </div>
+                    <div className="bg-muted grid grid-cols-2 rounded-lg p-1 lg:hidden">
+                        <Button
+                            type="button"
+                            variant={
+                                activePanel === 'config' ? 'secondary' : 'ghost'
+                            }
+                            onClick={() => setActivePanel('config')}
+                        >
+                            Configuração
+                        </Button>
+                        <Button
+                            type="button"
+                            variant={
+                                activePanel === 'playground'
+                                    ? 'secondary'
+                                    : 'ghost'
+                            }
+                            onClick={() => setActivePanel('playground')}
+                        >
+                            Playground
+                        </Button>
                     </div>
 
-                    <ListEditor
-                        label="Instruções"
-                        description="Oriente o Agente sobre como conduzir cada conversa."
-                        placeholder="Ex.: Faça uma pergunta por vez."
-                        name="instructions"
-                        values={instructions}
-                        onChange={setInstructions}
-                        errors={errors}
-                        error={nestedError(errors, 'instructions')}
-                    />
-                    <ListEditor
-                        label="Regras"
-                        description="Defina o que o Agente nunca deve fazer."
-                        placeholder="Ex.: Não informe preços sem consultar a base."
-                        name="rules"
-                        values={rules}
-                        onChange={setRules}
-                        errors={errors}
-                        error={nestedError(errors, 'rules')}
-                    />
+                    <div className="grid min-h-0 gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(22rem,0.85fr)]">
+                        <Card
+                            className={`${activePanel === 'config' ? '' : 'hidden'} min-w-0 shadow-none lg:block`}
+                        >
+                            <CardHeader>
+                                <CardTitle>Configuração do Agente</CardTitle>
+                                <CardDescription>
+                                    Essas informações orientam como o Agente
+                                    conduz cada conversa.
+                                </CardDescription>
+                            </CardHeader>
+                            <CardContent>
+                                <fieldset
+                                    disabled={!permissions.canManageAgents}
+                                    className="grid gap-8"
+                                >
+                                    <input
+                                        type="hidden"
+                                        name="objective"
+                                        value={objective}
+                                    />
+                                    <input
+                                        type="hidden"
+                                        name="tone"
+                                        value={tone}
+                                    />
+                                    <input
+                                        type="hidden"
+                                        name="response_length"
+                                        value={responseLength}
+                                    />
+                                    <input
+                                        type="hidden"
+                                        name="uses_emojis"
+                                        value={usesEmojis ? '1' : '0'}
+                                    />
+                                    {selectedCollectionIds.map(
+                                        (collectionId) => (
+                                            <input
+                                                key={collectionId}
+                                                type="hidden"
+                                                name="collection_ids[]"
+                                                value={collectionId}
+                                            />
+                                        ),
+                                    )}
 
-                    <section className="grid gap-3">
-                        <div className="grid gap-1">
-                            <Label>Coleções consultadas</Label>
-                            <p className="text-muted-foreground text-sm">
-                                O Agente poderá consultar apenas o conhecimento
-                                selecionado.
-                            </p>
-                        </div>
-                        <div className="grid gap-2 sm:grid-cols-2">
-                            {collections.map((collection) => {
-                                const selected = selectedCollectionIds.includes(
-                                    collection.id,
-                                );
+                                    <div className="grid gap-5 sm:grid-cols-2">
+                                        <div className="grid gap-2 sm:col-span-2">
+                                            <Label htmlFor="agent-name">
+                                                Nome da persona
+                                            </Label>
+                                            <Input
+                                                id="agent-name"
+                                                name="name"
+                                                value={name}
+                                                onChange={(event) =>
+                                                    setName(event.target.value)
+                                                }
+                                                placeholder="Ex.: Lia, sua consultora de vendas"
+                                                autoFocus
+                                                required
+                                            />
+                                            <InputError message={errors.name} />
+                                        </div>
 
-                                return (
-                                    <label
-                                        key={collection.id}
-                                        className="border-input hover:bg-muted/50 flex cursor-pointer items-center gap-3 rounded-md border px-3 py-2 text-sm"
-                                    >
-                                        <input
-                                            type="checkbox"
-                                            checked={selected}
-                                            onChange={() =>
-                                                toggleCollection(collection.id)
-                                            }
-                                            className="accent-primary size-4"
+                                        <SelectField
+                                            id="agent-objective"
+                                            label="Objetivo"
+                                            value={objective}
+                                            onValueChange={setObjective}
+                                            options={objectives}
+                                            error={errors.objective}
                                         />
-                                        <span>{collection.name}</span>
-                                    </label>
-                                );
-                            })}
-                        </div>
-                        {collections.length === 0 && (
-                            <p className="text-muted-foreground text-sm">
-                                Crie uma Coleção na Base de conhecimento para
-                                disponibilizar conteúdo ao Agente.
-                            </p>
-                        )}
-                        <InputError
-                            message={nestedError(errors, 'collection_ids')}
-                        />
-                    </section>
+                                        <SelectField
+                                            id="agent-tone"
+                                            label="Tom de voz"
+                                            value={tone}
+                                            onValueChange={setTone}
+                                            options={tones}
+                                            error={errors.tone}
+                                        />
+                                        <SelectField
+                                            id="agent-response-length"
+                                            label="Tamanho das respostas"
+                                            value={responseLength}
+                                            onValueChange={setResponseLength}
+                                            options={responseLengths}
+                                            error={errors.response_length}
+                                        />
 
-                    <div className="flex flex-col-reverse gap-3 border-t pt-6 sm:flex-row sm:justify-end">
-                        <Button type="button" variant="outline" asChild>
-                            <Link href={index.url()}>Cancelar</Link>
-                        </Button>
-                        <Button type="submit" disabled={processing}>
-                            {processing
-                                ? 'Salvando...'
-                                : isEditing
-                                  ? 'Salvar alterações'
-                                  : 'Criar Agente'}
-                        </Button>
+                                        <div className="grid gap-2">
+                                            <Label>Emojis</Label>
+                                            <Button
+                                                type="button"
+                                                variant={
+                                                    usesEmojis
+                                                        ? 'default'
+                                                        : 'outline'
+                                                }
+                                                className="justify-start"
+                                                onClick={() =>
+                                                    setUsesEmojis(
+                                                        (current) => !current,
+                                                    )
+                                                }
+                                            >
+                                                {usesEmojis
+                                                    ? 'O Agente pode usar emojis'
+                                                    : 'Sem emojis'}
+                                            </Button>
+                                            <InputError
+                                                message={errors.uses_emojis}
+                                            />
+                                        </div>
+
+                                        <div className="grid gap-2 sm:col-span-2">
+                                            <Label htmlFor="agent-welcome-message">
+                                                Mensagem de boas-vindas
+                                            </Label>
+                                            <textarea
+                                                id="agent-welcome-message"
+                                                name="welcome_message"
+                                                value={welcomeMessage}
+                                                onChange={(event) =>
+                                                    setWelcomeMessage(
+                                                        event.target.value,
+                                                    )
+                                                }
+                                                placeholder="Ex.: Olá! Sou a Lia. Como posso ajudar?"
+                                                className="border-input bg-background placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-ring/50 min-h-24 rounded-md border px-3 py-2 text-sm shadow-xs outline-none focus-visible:ring-[3px]"
+                                                required
+                                            />
+                                            <InputError
+                                                message={errors.welcome_message}
+                                            />
+                                        </div>
+                                    </div>
+
+                                    <ListEditor
+                                        label="Instruções"
+                                        description="Oriente o Agente sobre como conduzir cada conversa."
+                                        placeholder="Ex.: Faça uma pergunta por vez."
+                                        name="instructions"
+                                        values={instructions}
+                                        onChange={setInstructions}
+                                        errors={errors}
+                                        error={nestedError(
+                                            errors,
+                                            'instructions',
+                                        )}
+                                    />
+                                    <ListEditor
+                                        label="Regras"
+                                        description="Defina o que o Agente nunca deve fazer."
+                                        placeholder="Ex.: Não informe preços sem consultar a base."
+                                        name="rules"
+                                        values={rules}
+                                        onChange={setRules}
+                                        errors={errors}
+                                        error={nestedError(errors, 'rules')}
+                                    />
+
+                                    <section className="grid gap-3">
+                                        <div className="grid gap-1">
+                                            <Label>Coleções consultadas</Label>
+                                            <p className="text-muted-foreground text-sm">
+                                                O Agente poderá consultar apenas
+                                                o conhecimento selecionado.
+                                            </p>
+                                        </div>
+                                        <div className="grid gap-2 sm:grid-cols-2">
+                                            {collections.map((collection) => {
+                                                const selected =
+                                                    selectedCollectionIds.includes(
+                                                        collection.id,
+                                                    );
+
+                                                return (
+                                                    <label
+                                                        key={collection.id}
+                                                        className="border-input hover:bg-muted/50 flex cursor-pointer items-center gap-3 rounded-md border px-3 py-2 text-sm"
+                                                    >
+                                                        <input
+                                                            type="checkbox"
+                                                            checked={selected}
+                                                            onChange={() =>
+                                                                toggleCollection(
+                                                                    collection.id,
+                                                                )
+                                                            }
+                                                            className="accent-primary size-4"
+                                                        />
+                                                        <span>
+                                                            {collection.name}
+                                                        </span>
+                                                    </label>
+                                                );
+                                            })}
+                                        </div>
+                                        {collections.length === 0 && (
+                                            <p className="text-muted-foreground text-sm">
+                                                Crie uma Coleção na Base de
+                                                conhecimento para disponibilizar
+                                                conteúdo ao Agente.
+                                            </p>
+                                        )}
+                                        <InputError
+                                            message={nestedError(
+                                                errors,
+                                                'collection_ids',
+                                            )}
+                                        />
+                                    </section>
+
+                                    {permissions.canManageAgents && (
+                                        <div className="flex flex-col-reverse gap-3 border-t pt-6 sm:flex-row sm:justify-end">
+                                            <Button
+                                                type="button"
+                                                variant="outline"
+                                                asChild
+                                            >
+                                                <Link href={index.url()}>
+                                                    Cancelar
+                                                </Link>
+                                            </Button>
+                                            <Button
+                                                type="submit"
+                                                disabled={processing}
+                                            >
+                                                {processing
+                                                    ? 'Salvando...'
+                                                    : isEditing
+                                                      ? 'Salvar alterações'
+                                                      : 'Criar Agente'}
+                                            </Button>
+                                        </div>
+                                    )}
+                                </fieldset>
+                            </CardContent>
+                        </Card>
+                        <div
+                            className={`${activePanel === 'playground' ? '' : 'hidden'} min-w-0 lg:block`}
+                        >
+                            <AgentPlayground draft={draft} />
+                        </div>
                     </div>
                 </>
             )}
@@ -549,23 +584,16 @@ export default function AgentEditor(props: Props) {
                         </div>
                         <Heading
                             title={isEditing ? 'Editar Agente' : 'Novo Agente'}
-                            description="Configure a persona, o estilo e o conhecimento que o Agente poderá consultar."
+                            description={
+                                props.permissions.canManageAgents
+                                    ? 'Configure a persona, o estilo e o conhecimento que o Agente poderá consultar.'
+                                    : 'Veja a configuração e teste o Agente sem alterar os dados da Empresa.'
+                            }
                         />
                     </div>
                 </div>
 
-                <Card className="w-full max-w-4xl">
-                    <CardHeader>
-                        <CardTitle>Configuração do Agente</CardTitle>
-                        <CardDescription>
-                            Essas informações orientam como o Agente conduz cada
-                            conversa.
-                        </CardDescription>
-                    </CardHeader>
-                    <CardContent>
-                        <AgentForm key={props.agent?.id ?? 'new'} {...props} />
-                    </CardContent>
-                </Card>
+                <AgentForm key={props.agent?.id ?? 'new'} {...props} />
             </div>
         </>
     );

@@ -21,7 +21,7 @@ class PlaygroundAgent implements Agent, Conversational, HasTools
     use Promptable;
 
     /**
-     * Create an agent from the saved platform configuration.
+     * Create an agent from the current, non-persisted platform configuration.
      *
      * @param  array<int, array{role: string, content: string}>  $conversationMessages
      */

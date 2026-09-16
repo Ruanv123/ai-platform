@@ -8,10 +8,10 @@ use App\Http\Requests\Knowledge\PlaygroundRequest;
 use App\Knowledge\AgentInstructionTemplate;
 use App\Knowledge\KnowledgeBaseSearch;
 use App\Models\Agent;
-use Illuminate\Support\Facades\Gate;
+use App\Models\Collection;
+use App\Models\Team;
+use Illuminate\Support\Arr;
 use Illuminate\Support\Str;
-use Inertia\Inertia;
-use Inertia\Response;
 use Laravel\Ai\Streaming\Events\Error;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 use Throwable;
@@ -19,39 +19,30 @@ use Throwable;
 class PlaygroundController extends Controller
 {
     /**
-     * Show the disposable Playground for a saved Agent.
-     */
-    public function show(Agent $agent): Response
-    {
-        Gate::authorize('view', $agent);
-        $agent->loadMissing(['team', 'collections']);
-
-        return Inertia::render('agents/playground', [
-            'agent' => [
-                'id' => $agent->id,
-                'name' => $agent->name,
-                'objectiveLabel' => $agent->objective->label(),
-                'welcomeMessage' => $agent->welcome_message,
-                'collectionCount' => $agent->collections->count(),
-                'isActive' => $agent->is_active,
-            ],
-        ]);
-    }
-
-    /**
-     * Stream one saved-Agent response without persisting the conversation.
+     * Stream one draft-Agent response without persisting the conversation.
      */
     public function stream(
         PlaygroundRequest $request,
-        Agent $agent,
         AgentInstructionTemplate $instructionTemplate,
         KnowledgeBaseSearch $knowledgeBaseSearch,
     ): StreamedResponse {
-        $agent->loadMissing(['team', 'collections']);
         $validated = $request->validated();
+        $team = $request->user()->company();
+        abort_if($team === null, 404);
+
+        $draftAgent = (new Agent)->fill(Arr::except($validated, [
+            'history',
+            'message',
+            'collection_ids',
+        ]));
+        $draftAgent->setRelation('team', $team);
+        $draftAgent->setRelation(
+            'collections',
+            $this->draftCollections($team, $validated['collection_ids'] ?? []),
+        );
 
         return response()->stream(function () use (
-            $agent,
+            $draftAgent,
             $validated,
             $instructionTemplate,
             $knowledgeBaseSearch,
@@ -60,7 +51,7 @@ class PlaygroundController extends Controller
 
             try {
                 $playgroundAgent = new PlaygroundAgent(
-                    $agent,
+                    $draftAgent,
                     $validated['history'] ?? [],
                     $instructionTemplate,
                     $knowledgeBaseSearch,
@@ -95,6 +86,17 @@ class PlaygroundController extends Controller
             'Content-Type' => 'text/event-stream',
             'X-Accel-Buffering' => 'no',
         ]);
+    }
+
+    /**
+     * Load only the validated Collections belonging to the current Empresa.
+     *
+     * @param  list<int>  $collectionIds
+     * @return \Illuminate\Database\Eloquent\Collection<int, Collection>
+     */
+    private function draftCollections(Team $team, array $collectionIds): \Illuminate\Database\Eloquent\Collection
+    {
+        return $team->collections()->whereKey($collectionIds)->get();
     }
 
     /**

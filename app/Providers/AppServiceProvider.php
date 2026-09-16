@@ -30,10 +30,10 @@ class AppServiceProvider extends ServiceProvider
         $this->configureDefaults();
 
         RateLimiter::for('playground', function (Request $request): Limit {
-            return Limit::perHour(30)
+            return Limit::perHour(60)
                 ->by('playground:user:'.$request->user()->getKey())
                 ->response(fn (Request $request, array $headers): JsonResponse => response()->json([
-                    'message' => 'Você atingiu o limite de 30 mensagens por hora no Playground. Tente novamente mais tarde.',
+                    'message' => 'Você atingiu o limite de 60 mensagens por hora no Playground. Tente novamente mais tarde.',
                 ], 429, $headers));
         });
 

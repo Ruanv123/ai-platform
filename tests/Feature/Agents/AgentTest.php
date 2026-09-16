@@ -294,7 +294,7 @@ it('forbids a member from opening the create editor', function () {
     $createResponse->assertForbidden();
 });
 
-it('forbids a member from opening the edit editor', function () {
+it('allows a member to open the editor and use the Playground read-only', function () {
     $owner = User::factory()->withTeam()->create();
     $team = $owner->company();
     $member = User::factory()->create();
@@ -304,7 +304,11 @@ it('forbids a member from opening the edit editor', function () {
 
     $editResponse = $this->actingAs($member)->get(route('agents.edit', $agent));
 
-    $editResponse->assertForbidden();
+    $editResponse->assertOk()->assertInertia(fn (Assert $page) => $page
+        ->component('agents/edit')
+        ->where('permissions.canManageAgents', false)
+        ->where('agent.id', $agent->id),
+    );
 });
 
 it('returns not found when a company opens another company agent editor', function () {

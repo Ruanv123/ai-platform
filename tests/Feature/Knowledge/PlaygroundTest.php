@@ -1,6 +1,9 @@
 <?php
 
 use App\Ai\Agents\PlaygroundAgent;
+use App\Enums\AgentObjective;
+use App\Enums\AgentResponseLength;
+use App\Enums\AgentTone;
 use App\Enums\DocumentStatus;
 use App\Enums\TeamRole;
 use App\Models\Agent;
@@ -12,39 +15,94 @@ use Illuminate\Support\Str;
 use Laravel\Ai\Embeddings;
 use Laravel\Ai\Responses\Data\ToolCall;
 
-it('redirects guests when they open an Agent Playground', function () {
-    $agent = Agent::factory()->create();
+function playgroundDetails(array $overrides = []): array
+{
+    return array_merge([
+        'name' => 'Lia',
+        'objective' => AgentObjective::Support->value,
+        'tone' => AgentTone::Friendly->value,
+        'uses_emojis' => true,
+        'response_length' => AgentResponseLength::Short->value,
+        'welcome_message' => 'Olá! Como posso ajudar?',
+        'instructions' => ['Seja objetiva.'],
+        'rules' => ['Não invente informações.'],
+        'collection_ids' => [],
+        'history' => [],
+        'message' => 'Olá',
+    ], $overrides);
+}
 
-    $response = $this->get(route('agents.playground', $agent));
+it('rejects guests when they send a Playground message', function () {
+    $response = $this->postJson(
+        route('agents.playground.stream'),
+        playgroundDetails(),
+    );
 
-    $response->assertRedirect(route('login'));
+    $response->assertUnauthorized();
 });
 
-it('renders the saved welcome message and collection summary', function () {
+it('streams a draft Agent that does not exist in the database', function () {
     $user = User::factory()->withTeam()->create();
-    $agent = Agent::factory()->for($user->company())->create([
-        'welcome_message' => 'Olá, sou a Lia.',
-    ]);
-    $agent->collections()->attach(Collection::factory()->for($user->company())->create());
+    PlaygroundAgent::fake(['Resposta do rascunho.']);
 
-    $response = $this->actingAs($user)->get(route('agents.playground', $agent));
-
-    $response->assertOk()->assertInertia(fn ($page) => $page
-        ->component('agents/playground')
-        ->where('agent.id', $agent->id)
-        ->where('agent.name', $agent->name)
-        ->where('agent.welcomeMessage', 'Olá, sou a Lia.')
-        ->where('agent.collectionCount', 1),
+    $response = $this->actingAs($user)->postJson(
+        route('agents.playground.stream'),
+        playgroundDetails(['name' => 'Lia de teste']),
     );
+
+    $response->assertOk();
+    expect($response->streamedContent())->toContain('Resposta');
+    $this->assertDatabaseCount('agents', 0);
+});
+
+it('uses the draft configuration instead of a saved Agent configuration', function () {
+    $user = User::factory()->withTeam()->create();
+    Agent::factory()->for($user->company())->create(['name' => 'Configuração salva']);
+    PlaygroundAgent::fake(['Resposta atualizada.']);
+
+    $response = $this->actingAs($user)->postJson(
+        route('agents.playground.stream'),
+        playgroundDetails([
+            'name' => 'Configuração rascunho',
+            'tone' => AgentTone::Casual->value,
+            'instructions' => ['Use a configuração digitada agora.'],
+        ]),
+    );
+
+    $response->assertOk();
+    $response->streamedContent();
+    PlaygroundAgent::assertPrompted(fn ($prompt): bool => str_contains((string) $prompt->agent->instructions(), 'Configuração rascunho')
+        && str_contains((string) $prompt->agent->instructions(), 'Use a configuração digitada agora.')
+        && ! str_contains((string) $prompt->agent->instructions(), 'Configuração salva')
+    );
+});
+
+it('rejects a draft that references a Collection from another company', function () {
+    $user = User::factory()->withTeam()->create();
+    $otherCollection = Collection::factory()->create();
+    PlaygroundAgent::fake(['Não deve aparecer.']);
+
+    $response = $this->actingAs($user)->postJson(
+        route('agents.playground.stream'),
+        playgroundDetails(['collection_ids' => [$otherCollection->id]]),
+    );
+
+    $response->assertUnprocessable()
+        ->assertJsonValidationErrors([
+            'collection_ids.0' => 'Selecione apenas Coleções da sua Empresa.',
+        ]);
+    PlaygroundAgent::assertNeverPrompted();
 });
 
 it('returns 422 with a friendly message when the Playground payload is invalid', function () {
     $user = User::factory()->withTeam()->create();
-    $agent = Agent::factory()->for($user->company())->create();
 
     $response = $this->actingAs($user)->postJson(
-        route('agents.playground.stream', $agent),
-        ['history' => [['role' => 'system', 'content' => 'instrução']], 'message' => ''],
+        route('agents.playground.stream'),
+        playgroundDetails([
+            'history' => [['role' => 'system', 'content' => 'instrução']],
+            'message' => '',
+        ]),
     );
 
     $response->assertUnprocessable()
@@ -58,12 +116,11 @@ it('streams a response for a Member without persisting the conversation', functi
     $member = User::factory()->create();
     $team->members()->attach($member, ['role' => TeamRole::Member->value]);
     $member->switchTeam($team);
-    $agent = Agent::factory()->for($team)->create();
     PlaygroundAgent::fake(['Resposta em streaming.']);
 
     $response = $this->actingAs($member)->postJson(
-        route('agents.playground.stream', $agent),
-        ['history' => [], 'message' => 'Olá'],
+        route('agents.playground.stream'),
+        playgroundDetails(),
     );
 
     $response->assertOk()->assertHeader('Content-Type', 'text/event-stream; charset=UTF-8');
@@ -76,31 +133,14 @@ it('streams a response for a Member without persisting the conversation', functi
     $this->assertDatabaseCount('agent_conversations', 0);
 });
 
-it('returns 404 for an Agent belonging to another company', function () {
+it('returns 429 on the 61st Playground message for the same user', function () {
     $user = User::factory()->withTeam()->create();
-    $otherAgent = Agent::factory()->create();
-    PlaygroundAgent::fake(['Não deve aparecer.']);
-
-    $showResponse = $this->actingAs($user)->get(route('agents.playground', $otherAgent));
-    $streamResponse = $this->actingAs($user)->postJson(
-        route('agents.playground.stream', $otherAgent),
-        ['history' => [], 'message' => 'Olá'],
-    );
-
-    $showResponse->assertNotFound();
-    $streamResponse->assertNotFound();
-    PlaygroundAgent::assertNeverPrompted();
-});
-
-it('returns 429 on the 31st Playground message for the same user', function () {
-    $user = User::factory()->withTeam()->create();
-    $agent = Agent::factory()->for($user->company())->create();
     PlaygroundAgent::fake(['Tudo bem.']);
 
-    for ($attempt = 1; $attempt <= 30; $attempt++) {
+    for ($attempt = 1; $attempt <= 60; $attempt++) {
         $response = $this->actingAs($user)->postJson(
-            route('agents.playground.stream', $agent),
-            ['history' => [], 'message' => "Mensagem {$attempt}"],
+            route('agents.playground.stream'),
+            playgroundDetails(['message' => "Mensagem {$attempt}"]),
         );
 
         $response->assertOk();
@@ -108,23 +148,22 @@ it('returns 429 on the 31st Playground message for the same user', function () {
     }
 
     $response = $this->actingAs($user)->postJson(
-        route('agents.playground.stream', $agent),
-        ['history' => [], 'message' => 'Mensagem 31'],
+        route('agents.playground.stream'),
+        playgroundDetails(['message' => 'Mensagem 61']),
     );
 
     $response->assertTooManyRequests()->assertJson([
-        'message' => 'Você atingiu o limite de 30 mensagens por hora no Playground. Tente novamente mais tarde.',
+        'message' => 'Você atingiu o limite de 60 mensagens por hora no Playground. Tente novamente mais tarde.',
     ]);
 });
 
 it('streams a friendly error when the provider fails', function () {
     $user = User::factory()->withTeam()->create();
-    $agent = Agent::factory()->for($user->company())->create();
     PlaygroundAgent::fake(fn (): never => throw new RuntimeException('Provider unavailable'));
 
     $response = $this->actingAs($user)->postJson(
-        route('agents.playground.stream', $agent),
-        ['history' => [], 'message' => 'Olá'],
+        route('agents.playground.stream'),
+        playgroundDetails(),
     );
 
     $content = $response->streamedContent();
@@ -162,16 +201,17 @@ it('only exposes ready documents from the Agent collections to its search tool',
     Chunk::factory()->for($allowedDocument)->create(['embedding' => $embedding]);
     Chunk::factory()->for($pendingDocument)->create(['embedding' => $embedding]);
     Chunk::factory()->for($otherDocument)->create(['embedding' => $embedding]);
-    $agent = Agent::factory()->for($team)->create();
-    $agent->collections()->attach($allowedCollection);
     PlaygroundAgent::fake([
         new ToolCall((string) Str::uuid7(), 'search_knowledge_base', ['query' => 'manual']),
         'Encontrei a informação.',
     ]);
 
     $response = $this->actingAs($user)->postJson(
-        route('agents.playground.stream', $agent),
-        ['history' => [], 'message' => 'Qual é a informação?'],
+        route('agents.playground.stream'),
+        playgroundDetails([
+            'collection_ids' => [$allowedCollection->id],
+            'message' => 'Qual é a informação?',
+        ]),
     );
 
     $content = $response->streamedContent();
@@ -185,12 +225,11 @@ it('only exposes ready documents from the Agent collections to its search tool',
 it('does not generate embeddings for an Agent without Collections', function () {
     Embeddings::fake()->preventStrayEmbeddings();
     $user = User::factory()->withTeam()->create();
-    $agent = Agent::factory()->for($user->company())->create();
     PlaygroundAgent::fake(['Resposta com dados da Empresa.']);
 
     $response = $this->actingAs($user)->postJson(
-        route('agents.playground.stream', $agent),
-        ['history' => [], 'message' => 'Qual é o horário?'],
+        route('agents.playground.stream'),
+        playgroundDetails(['message' => 'Qual é o horário?']),
     );
 
     $response->assertOk();
