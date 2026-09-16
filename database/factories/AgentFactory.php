@@ -31,7 +31,6 @@ class AgentFactory extends Factory
             'welcome_message' => 'Olá! Como posso ajudar?',
             'instructions' => ['Seja objetiva.'],
             'rules' => ['Não invente informações.'],
-            'transfer_triggers' => [],
             'is_active' => true,
         ];
     }

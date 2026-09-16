@@ -91,7 +91,7 @@ PROMPT;
     }
 
     /**
-     * Format an ordered client list without adding transfer triggers to the prompt.
+     * Format an ordered client list without changing the configured order.
      *
      * @param  array<int, string>|null  $values
      */

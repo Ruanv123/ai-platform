@@ -26,7 +26,6 @@ use Illuminate\Support\Carbon;
  * @property string $welcome_message
  * @property array<int, string> $instructions
  * @property array<int, string> $rules
- * @property array<int, string> $transfer_triggers
  * @property bool $is_active
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
@@ -44,7 +43,6 @@ use Illuminate\Support\Carbon;
     'welcome_message',
     'instructions',
     'rules',
-    'transfer_triggers',
     'is_active',
 ])]
 
@@ -97,7 +95,6 @@ class Agent extends Model
             'response_length' => AgentResponseLength::class,
             'instructions' => 'array',
             'rules' => 'array',
-            'transfer_triggers' => 'array',
             'is_active' => 'boolean',
         ];
     }

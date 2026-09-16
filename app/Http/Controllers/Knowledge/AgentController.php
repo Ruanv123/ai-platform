@@ -8,6 +8,7 @@ use App\Enums\AgentTone;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Knowledge\SaveAgentRequest;
 use App\Models\Agent;
+use App\Models\Channel;
 use App\Models\Collection;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -30,6 +31,7 @@ class AgentController extends Controller
 
         return Inertia::render('agents/index', [
             'agents' => $team->agents()
+                ->withCount(['collections', 'channels'])
                 ->with(['collections', 'channels'])
                 ->orderBy('name')
                 ->get()
@@ -46,10 +48,19 @@ class AgentController extends Controller
                     'welcomeMessage' => $agent->welcome_message,
                     'instructions' => $agent->instructions,
                     'rules' => $agent->rules,
-                    'transferTriggers' => $agent->transfer_triggers,
                     'isActive' => $agent->is_active,
                     'collectionIds' => $agent->collections->modelKeys(),
-                    'whatsappLinked' => $agent->channels->isNotEmpty(),
+                    'collectionCount' => $agent->collections_count,
+                    'channelCount' => $agent->channels_count,
+                    'channels' => $agent->channels
+                        ->map(fn (Channel $channel): array => [
+                            'id' => $channel->id,
+                            'type' => $channel->type->value,
+                            'typeLabel' => $channel->type->label(),
+                            'status' => $channel->status->value,
+                            'statusLabel' => $channel->status->label(),
+                        ])
+                        ->values(),
                 ])
                 ->values(),
             'collections' => $team->collections()

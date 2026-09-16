@@ -4,24 +4,20 @@ import {
     ArrowUp,
     Bot,
     MessageCircle,
+    MoreHorizontal,
     Pencil,
     Plus,
     Power,
     Trash2,
     X,
 } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useMemo, useState } from 'react';
 import Heading from '@/components/heading';
 import InputError from '@/components/input-error';
+import { useAgentPlaygroundDirty } from '@/hooks/use-agent-playground-dirty';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import {
-    Card,
-    CardContent,
-    CardDescription,
-    CardHeader,
-    CardTitle,
-} from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import {
     Dialog,
     DialogClose,
@@ -34,12 +30,27 @@ import {
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import {
+    DropdownMenu,
+    DropdownMenuContent,
+    DropdownMenuItem,
+    DropdownMenuSeparator,
+    DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import {
     Select,
     SelectContent,
     SelectItem,
     SelectTrigger,
     SelectValue,
 } from '@/components/ui/select';
+import {
+    Table,
+    TableBody,
+    TableCell,
+    TableHead,
+    TableHeader,
+    TableRow,
+} from '@/components/ui/table';
 import { destroy, playground, store, toggle, update } from '@/routes/agents';
 import type { TeamPermissions } from '@/types';
 
@@ -51,6 +62,14 @@ type Option = {
 type CollectionOption = {
     id: number;
     name: string;
+};
+
+type AgentChannel = {
+    id: number;
+    type: string;
+    typeLabel: string;
+    status: string;
+    statusLabel: string;
 };
 
 type Agent = {
@@ -66,10 +85,11 @@ type Agent = {
     welcomeMessage: string;
     instructions: string[];
     rules: string[];
-    transferTriggers: string[];
     isActive: boolean;
     collectionIds: number[];
-    whatsappLinked: boolean;
+    collectionCount: number;
+    channelCount: number;
+    channels: AgentChannel[];
 };
 
 type AgentFormSnapshot = {
@@ -81,7 +101,6 @@ type AgentFormSnapshot = {
     welcomeMessage: string;
     instructions: string[];
     rules: string[];
-    transferTriggers: string[];
     collectionIds: number[];
 };
 
@@ -112,7 +131,7 @@ type ListEditorProps = {
     label: string;
     description: string;
     placeholder: string;
-    name: 'instructions' | 'rules' | 'transfer_triggers';
+    name: 'instructions' | 'rules';
     values: string[];
     onChange: (values: string[]) => void;
     error?: string;
@@ -262,9 +281,6 @@ function AgentFormFields({
     const [usesEmojis, setUsesEmojis] = useState(agent?.usesEmojis ?? false);
     const [instructions, setInstructions] = useState(agent?.instructions ?? []);
     const [rules, setRules] = useState(agent?.rules ?? []);
-    const [transferTriggers, setTransferTriggers] = useState(
-        agent?.transferTriggers ?? [],
-    );
     const [selectedCollectionIds, setSelectedCollectionIds] = useState(
         agent?.collectionIds ?? [],
     );
@@ -272,27 +288,37 @@ function AgentFormFields({
         agent?.welcomeMessage ?? '',
     );
     const dirtyStorageKey = agent ? `agent-playground-dirty-${agent.id}` : null;
-    const initialFormSnapshot = agent
-        ? serializeAgentForm({
-              name: agent.name,
-              objective: agent.objective,
-              tone: agent.tone,
-              responseLength: agent.responseLength,
-              usesEmojis: agent.usesEmojis,
-              welcomeMessage: agent.welcomeMessage,
-              instructions: agent.instructions,
-              rules: agent.rules,
-              transferTriggers: agent.transferTriggers,
-              collectionIds: agent.collectionIds,
-          })
-        : null;
-
-    useEffect(() => {
-        if (dirtyStorageKey === null || initialFormSnapshot === null) {
-            return;
-        }
-
-        const currentFormSnapshot = serializeAgentForm({
+    const initialFormSnapshot = useMemo(
+        () =>
+            agent
+                ? serializeAgentForm({
+                      name: agent.name,
+                      objective: agent.objective,
+                      tone: agent.tone,
+                      responseLength: agent.responseLength,
+                      usesEmojis: agent.usesEmojis,
+                      welcomeMessage: agent.welcomeMessage,
+                      instructions: agent.instructions,
+                      rules: agent.rules,
+                      collectionIds: agent.collectionIds,
+                  })
+                : null,
+        [agent],
+    );
+    const currentFormSnapshot = useMemo(
+        () =>
+            serializeAgentForm({
+                name,
+                objective,
+                tone,
+                responseLength,
+                usesEmojis,
+                welcomeMessage,
+                instructions,
+                rules,
+                collectionIds: selectedCollectionIds,
+            }),
+        [
             name,
             objective,
             tone,
@@ -301,28 +327,14 @@ function AgentFormFields({
             welcomeMessage,
             instructions,
             rules,
-            transferTriggers,
-            collectionIds: selectedCollectionIds,
-        });
-
-        window.localStorage.setItem(
-            dirtyStorageKey,
-            String(currentFormSnapshot !== initialFormSnapshot),
-        );
-    }, [
-        dirtyStorageKey,
-        initialFormSnapshot,
-        name,
-        objective,
-        tone,
-        responseLength,
-        usesEmojis,
-        welcomeMessage,
-        instructions,
-        rules,
-        transferTriggers,
-        selectedCollectionIds,
-    ]);
+            selectedCollectionIds,
+        ],
+    );
+    useAgentPlaygroundDirty(
+        agent?.id ?? null,
+        initialFormSnapshot !== null &&
+            currentFormSnapshot !== initialFormSnapshot,
+    );
 
     const handleSuccess = () => {
         if (dirtyStorageKey !== null) {
@@ -465,16 +477,6 @@ function AgentFormFields({
                         onChange={setRules}
                         error={nestedError(errors, 'rules')}
                     />
-                    <ListEditor
-                        label="Gatilhos de transferência"
-                        description="Registre situações que deverão ser transferidas para uma pessoa."
-                        placeholder="Ex.: O cliente pedir para falar com um atendente."
-                        name="transfer_triggers"
-                        values={transferTriggers}
-                        onChange={setTransferTriggers}
-                        error={nestedError(errors, 'transfer_triggers')}
-                    />
-
                     <div className="grid gap-3">
                         <div className="grid gap-1">
                             <Label>Coleções consultadas</Label>
@@ -641,10 +643,10 @@ function DeleteAgentDialog({
                         não poderá mais ser usado no Playground. Essa ação não
                         pode ser desfeita.
                     </DialogDescription>
-                    {agent.whatsappLinked && (
+                    {agent.channelCount > 0 && (
                         <p className="text-destructive text-sm">
-                            Este Agente está vinculado ao WhatsApp. O número
-                            será desvinculado automaticamente.
+                            Os Canais vinculados continuarão conectados, mas
+                            ficarão sem Agente para atender novas conversas.
                         </p>
                     )}
                 </DialogHeader>
@@ -783,101 +785,193 @@ export default function Agents({
                         </CardContent>
                     </Card>
                 ) : (
-                    <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-                        {agents.map((agent) => (
-                            <Card
-                                key={agent.id}
-                                className="group relative overflow-hidden shadow-none transition-shadow hover:shadow-sm"
-                            >
-                                <CardHeader className="gap-3">
-                                    <div className="flex items-start justify-between gap-4">
-                                        <div className="bg-muted flex size-10 shrink-0 items-center justify-center rounded-lg">
-                                            <Bot className="text-muted-foreground size-5" />
-                                        </div>
-                                        <Badge
-                                            variant={
-                                                agent.isActive
-                                                    ? 'default'
-                                                    : 'secondary'
-                                            }
+                    <div className="border-border/70 bg-card overflow-hidden rounded-xl border shadow-xs">
+                        <Table>
+                            <TableHeader>
+                                <TableRow>
+                                    <TableHead className="min-w-64">
+                                        Agente
+                                    </TableHead>
+                                    <TableHead>Objetivo</TableHead>
+                                    <TableHead>Coleções</TableHead>
+                                    <TableHead>Canais vinculados</TableHead>
+                                    <TableHead>Status</TableHead>
+                                    {permissions.canManageAgents && (
+                                        <TableHead className="w-14">
+                                            <span className="sr-only">
+                                                Ações
+                                            </span>
+                                        </TableHead>
+                                    )}
+                                </TableRow>
+                            </TableHeader>
+                            <TableBody>
+                                {agents.map((agent) => {
+                                    const activateAgent = () => {
+                                        if (permissions.canManageAgents) {
+                                            openEditDialog(agent);
+                                            return;
+                                        }
+
+                                        router.visit(playground(agent.id).url);
+                                    };
+
+                                    return (
+                                        <TableRow
+                                            key={agent.id}
+                                            className="group cursor-pointer"
+                                            tabIndex={0}
+                                            onClick={activateAgent}
+                                            onKeyDown={(event) => {
+                                                if (
+                                                    event.key === 'Enter' ||
+                                                    event.key === ' '
+                                                ) {
+                                                    event.preventDefault();
+                                                    activateAgent();
+                                                }
+                                            }}
+                                            aria-label={`${permissions.canManageAgents ? 'Editar' : 'Testar'} ${agent.name}`}
                                         >
-                                            {agent.isActive
-                                                ? 'Ativo'
-                                                : 'Inativo'}
-                                        </Badge>
-                                    </div>
-                                    <div className="grid gap-1">
-                                        <CardTitle className="text-base">
-                                            {agent.name}
-                                        </CardTitle>
-                                        <CardDescription>
-                                            {agent.objectiveLabel}
-                                        </CardDescription>
-                                    </div>
-                                </CardHeader>
-                                <CardContent className="flex items-center justify-between gap-3">
-                                    <div className="text-muted-foreground grid gap-1 text-sm">
-                                        <span>{agent.toneLabel}</span>
-                                        <span>
-                                            {agent.responseLengthLabel} ·{' '}
-                                            {agent.collectionIds.length}{' '}
-                                            {agent.collectionIds.length === 1
-                                                ? 'Coleção'
-                                                : 'Coleções'}
-                                        </span>
-                                    </div>
-                                    <div className="flex items-center gap-1">
-                                        <Button
-                                            variant="outline"
-                                            size="sm"
-                                            asChild
-                                        >
-                                            <Link
-                                                href={playground(agent.id).url}
-                                            >
-                                                <MessageCircle />
-                                                Testar
-                                            </Link>
-                                        </Button>
-                                        {permissions.canManageAgents && (
-                                            <div className="flex items-center gap-1 opacity-100 transition-opacity sm:opacity-0 sm:group-hover:opacity-100 sm:focus-within:opacity-100">
-                                                <Button
-                                                    variant="ghost"
-                                                    size="icon"
-                                                    onClick={() =>
-                                                        setAgentToToggle(agent)
+                                            <TableCell>
+                                                <div className="flex items-center gap-3">
+                                                    <div className="bg-muted flex size-9 shrink-0 items-center justify-center rounded-lg">
+                                                        <Bot className="text-muted-foreground size-4" />
+                                                    </div>
+                                                    <div className="min-w-0">
+                                                        <p className="truncate font-medium">
+                                                            {agent.name}
+                                                        </p>
+                                                        <p className="text-muted-foreground truncate text-xs">
+                                                            {agent.toneLabel} ·{' '}
+                                                            {
+                                                                agent.responseLengthLabel
+                                                            }
+                                                        </p>
+                                                    </div>
+                                                </div>
+                                            </TableCell>
+                                            <TableCell className="text-muted-foreground">
+                                                {agent.objectiveLabel}
+                                            </TableCell>
+                                            <TableCell className="font-medium tabular-nums">
+                                                {agent.collectionCount}
+                                            </TableCell>
+                                            <TableCell>
+                                                {agent.channelCount === 0 ? (
+                                                    <span className="text-muted-foreground">
+                                                        Nenhum
+                                                    </span>
+                                                ) : (
+                                                    <div className="flex max-w-xs flex-wrap gap-1.5">
+                                                        {agent.channels.map(
+                                                            (channel) => (
+                                                                <Badge
+                                                                    key={
+                                                                        channel.id
+                                                                    }
+                                                                    variant="outline"
+                                                                >
+                                                                    {
+                                                                        channel.typeLabel
+                                                                    }
+                                                                </Badge>
+                                                            ),
+                                                        )}
+                                                    </div>
+                                                )}
+                                            </TableCell>
+                                            <TableCell>
+                                                <Badge
+                                                    variant={
+                                                        agent.isActive
+                                                            ? 'default'
+                                                            : 'secondary'
                                                     }
-                                                    aria-label={`${agent.isActive ? 'Desativar' : 'Ativar'} ${agent.name}`}
                                                 >
-                                                    <Power />
-                                                </Button>
-                                                <Button
-                                                    variant="ghost"
-                                                    size="icon"
-                                                    onClick={() =>
-                                                        openEditDialog(agent)
+                                                    {agent.isActive
+                                                        ? 'Ativo'
+                                                        : 'Inativo'}
+                                                </Badge>
+                                            </TableCell>
+                                            {permissions.canManageAgents && (
+                                                <TableCell
+                                                    onClick={(event) =>
+                                                        event.stopPropagation()
                                                     }
-                                                    aria-label={`Editar ${agent.name}`}
                                                 >
-                                                    <Pencil />
-                                                </Button>
-                                                <Button
-                                                    variant="ghost"
-                                                    size="icon"
-                                                    className="text-destructive hover:text-destructive"
-                                                    onClick={() =>
-                                                        setAgentToDelete(agent)
-                                                    }
-                                                    aria-label={`Excluir ${agent.name}`}
-                                                >
-                                                    <Trash2 />
-                                                </Button>
-                                            </div>
-                                        )}
-                                    </div>
-                                </CardContent>
-                            </Card>
-                        ))}
+                                                    <DropdownMenu>
+                                                        <DropdownMenuTrigger
+                                                            asChild
+                                                        >
+                                                            <Button
+                                                                variant="ghost"
+                                                                size="icon"
+                                                                aria-label={`Ações para ${agent.name}`}
+                                                            >
+                                                                <MoreHorizontal />
+                                                            </Button>
+                                                        </DropdownMenuTrigger>
+                                                        <DropdownMenuContent align="end">
+                                                            <DropdownMenuItem
+                                                                asChild
+                                                            >
+                                                                <Link
+                                                                    href={
+                                                                        playground(
+                                                                            agent.id,
+                                                                        ).url
+                                                                    }
+                                                                >
+                                                                    <MessageCircle />
+                                                                    Testar no
+                                                                    Playground
+                                                                </Link>
+                                                            </DropdownMenuItem>
+                                                            <DropdownMenuSeparator />
+                                                            <DropdownMenuItem
+                                                                onSelect={() =>
+                                                                    openEditDialog(
+                                                                        agent,
+                                                                    )
+                                                                }
+                                                            >
+                                                                <Pencil />
+                                                                Editar
+                                                            </DropdownMenuItem>
+                                                            <DropdownMenuItem
+                                                                onSelect={() =>
+                                                                    setAgentToToggle(
+                                                                        agent,
+                                                                    )
+                                                                }
+                                                            >
+                                                                <Power />
+                                                                {agent.isActive
+                                                                    ? 'Desativar'
+                                                                    : 'Ativar'}
+                                                            </DropdownMenuItem>
+                                                            <DropdownMenuSeparator />
+                                                            <DropdownMenuItem
+                                                                variant="destructive"
+                                                                onSelect={() =>
+                                                                    setAgentToDelete(
+                                                                        agent,
+                                                                    )
+                                                                }
+                                                            >
+                                                                <Trash2 />
+                                                                Excluir
+                                                            </DropdownMenuItem>
+                                                        </DropdownMenuContent>
+                                                    </DropdownMenu>
+                                                </TableCell>
+                                            )}
+                                        </TableRow>
+                                    );
+                                })}
+                            </TableBody>
+                        </Table>
                     </div>
                 )}
             </div>

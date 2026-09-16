@@ -3,8 +3,11 @@
 use App\Enums\AgentObjective;
 use App\Enums\AgentResponseLength;
 use App\Enums\AgentTone;
+use App\Enums\ChannelStatus;
+use App\Enums\ChannelType;
 use App\Enums\TeamRole;
 use App\Models\Agent;
+use App\Models\Channel;
 use App\Models\Collection;
 use App\Models\User;
 use Inertia\Testing\AssertableInertia as Assert;
@@ -20,7 +23,6 @@ function agentDetails(array $overrides = []): array
         'welcome_message' => 'Olá! Como posso ajudar?',
         'instructions' => ['Seja objetiva.', 'Confirme o contexto antes de responder.'],
         'rules' => ['Não invente informações.'],
-        'transfer_triggers' => ['O cliente pedir um humano.'],
         'collection_ids' => [],
     ], $overrides);
 }
@@ -40,6 +42,14 @@ it('renders only the current company agents and collections', function () {
         'objective' => AgentObjective::Support,
     ]);
     $agent->collections()->attach($collection);
+    Channel::factory()->for($team)->create([
+        'agent_id' => $agent->id,
+        'type' => ChannelType::WhatsApp,
+    ]);
+    Channel::factory()->for($team)->create([
+        'agent_id' => $agent->id,
+        'type' => ChannelType::WebsiteChat,
+    ]);
     Agent::factory()->create(['name' => 'Outro agente']);
 
     $response = $this->actingAs($user)->get(route('agents.index'));
@@ -52,6 +62,11 @@ it('renders only the current company agents and collections', function () {
         ->where('agents.0.objective', AgentObjective::Support->value)
         ->where('agents.0.objectiveLabel', 'Atendimento / Suporte')
         ->where('agents.0.isActive', true)
+        ->where('agents.0.collectionCount', 1)
+        ->where('agents.0.channelCount', 2)
+        ->where('agents.0.channels.0.typeLabel', 'WhatsApp')
+        ->where('agents.0.channels.1.typeLabel', 'Chat no site')
+        ->missing('agents.0.transferTriggers')
         ->where('collections.0.name', 'Suporte')
         ->where('objectives.0.value', AgentObjective::Support->value)
         ->where('tones.1.label', 'Amigável')
@@ -79,9 +94,27 @@ it('allows an owner to create an agent with ordered lists and selected collectio
 
     expect($agent->team_id)->toBe($team->id)
         ->and($agent->instructions)->toBe(['Seja objetiva.', 'Confirme o contexto antes de responder.'])
-        ->and($agent->rules)->toBe(['Não invente informações.'])
-        ->and($agent->transfer_triggers)->toBe(['O cliente pedir um humano.']);
+        ->and($agent->rules)->toBe(['Não invente informações.']);
     expect($agent->collections()->pluck('collections.id')->all())->toBe([$collection->id]);
+});
+
+it('ignores removed transfer triggers and never returns them', function () {
+    $user = User::factory()->withTeam()->create();
+
+    $response = $this->actingAs($user)->post(route('agents.store'), agentDetails([
+        'transfer_triggers' => ['O cliente pedir um humano.'],
+    ]));
+
+    $response->assertRedirect(route('agents.index'));
+    $agent = Agent::query()->where('name', 'Lia')->firstOrFail();
+
+    expect($agent->getAttributes())->not->toHaveKey('transfer_triggers');
+
+    $indexResponse = $this->actingAs($user)->get(route('agents.index'));
+
+    $indexResponse->assertInertia(fn (Assert $page) => $page
+        ->missing('agents.0.transferTriggers'),
+    );
 });
 
 it('rejects an agent that references a collection from another company', function () {
@@ -135,7 +168,6 @@ it('allows an admin to update every agent field and its collections', function (
             'welcome_message' => 'Oi! Vamos encontrar uma solução.',
             'instructions' => ['Apresente as opções disponíveis.'],
             'rules' => ['Não pressione o cliente.'],
-            'transfer_triggers' => ['O cliente solicitar orçamento personalizado.'],
             'collection_ids' => [$newCollection->id],
         ]),
     );
@@ -169,6 +201,13 @@ it('allows an owner to activate and deactivate an agent', function () {
 it('allows an owner to delete an agent', function () {
     $user = User::factory()->withTeam()->create();
     $agent = Agent::factory()->for($user->company())->create();
+    $channel = Channel::factory()
+        ->for($user->company())
+        ->connected()
+        ->create([
+            'agent_id' => $agent->id,
+            'type' => ChannelType::WhatsApp,
+        ]);
 
     $response = $this->actingAs($user)->delete(route('agents.destroy', $agent));
 
@@ -178,6 +217,9 @@ it('allows an owner to delete an agent', function () {
         'message' => 'Agente excluído com sucesso.',
     ]);
     $this->assertModelMissing($agent);
+    $this->assertModelExists($channel);
+    expect($channel->fresh()->agent_id)->toBeNull()
+        ->and($channel->fresh()->status)->toBe(ChannelStatus::Connected);
 });
 
 it('allows a member to view agents but forbids agent mutations', function () {
