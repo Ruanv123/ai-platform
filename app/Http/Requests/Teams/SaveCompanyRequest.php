@@ -3,6 +3,7 @@
 namespace App\Http\Requests\Teams;
 
 use App\Enums\TeamSegment;
+use App\Enums\Weekday;
 use App\Models\Team;
 use App\Rules\TeamName;
 use Illuminate\Contracts\Validation\ValidationRule;
@@ -34,15 +35,7 @@ class SaveCompanyRequest extends FormRequest
     public function rules(): array
     {
         $required = $this->routeIs('onboarding.company.store') ? 'required' : 'sometimes';
-        $weekdays = implode(',', [
-            'monday',
-            'tuesday',
-            'wednesday',
-            'thursday',
-            'friday',
-            'saturday',
-            'sunday',
-        ]);
+        $weekdays = implode(',', array_column(Weekday::cases(), 'value'));
 
         return [
             'name' => [$required, 'string', 'max:255', new TeamName],

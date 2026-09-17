@@ -3,8 +3,9 @@
 namespace App\Http\Controllers\Teams;
 
 use App\Enums\TeamRole;
+use App\Enums\TeamSegment;
+use App\Enums\Weekday;
 use App\Http\Controllers\Controller;
-use App\Http\Controllers\Onboarding\CompanyController;
 use App\Http\Requests\Teams\SaveCompanyRequest;
 use App\Models\Membership;
 use App\Models\User;
@@ -69,9 +70,9 @@ class TeamController extends Controller
             'permissions' => $user->toTeamPermissions($team),
             'canLeave' => Gate::forUser($user)->allows('leave', $team),
             'availableRoles' => TeamRole::assignable(),
-            'segments' => CompanyController::segments(),
+            'segments' => TeamSegment::options(),
             'timezones' => timezone_identifiers_list(),
-            'weekdays' => CompanyController::weekdays(),
+            'weekdays' => Weekday::options(),
         ]);
     }
 

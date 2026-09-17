@@ -23,13 +23,13 @@ const sidebarNavItems: NavItem[] = [
         icon: null,
     },
     {
-        title: 'Empresa',
-        href: company(),
+        title: 'Aparência',
+        href: editAppearance(),
         icon: null,
     },
     {
-        title: 'Aparência',
-        href: editAppearance(),
+        title: 'Empresa',
+        href: company(),
         icon: null,
     },
 ];
@@ -41,7 +41,7 @@ export default function SettingsLayout({ children }: PropsWithChildren) {
         <div className="px-4 py-6">
             <Heading
                 title="Configurações"
-                description="Gerencie seu perfil e as configurações da sua conta"
+                description="Gerencie sua conta e as configurações da sua Empresa"
             />
 
             <div className="flex flex-col lg:flex-row lg:space-x-12">
