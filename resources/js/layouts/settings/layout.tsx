@@ -9,6 +9,7 @@ import { edit as editAppearance } from '@/routes/appearance';
 import { edit } from '@/routes/profile';
 import { edit as editSecurity } from '@/routes/security';
 import { edit as company } from '@/routes/company';
+import { edit as team } from '@/routes/team';
 import { edit as businessHours } from '@/routes/business-hours';
 import type { NavItem } from '@/types';
 
@@ -31,6 +32,11 @@ const sidebarNavItems: NavItem[] = [
     {
         title: 'Empresa',
         href: company(),
+        icon: null,
+    },
+    {
+        title: 'Equipe',
+        href: team(),
         icon: null,
     },
     {

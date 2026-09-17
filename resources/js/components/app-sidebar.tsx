@@ -6,7 +6,6 @@ import {
     MessageSquare,
     Plug,
     Settings,
-    Users,
 } from 'lucide-react';
 import AppLogo from '@/components/app-logo';
 import { NavMain } from '@/components/nav-main';
@@ -26,7 +25,6 @@ import { index as agents } from '@/routes/agents';
 import { index as channels } from '@/routes/channels';
 import { index as integrations } from '@/routes/integrations';
 import { edit as profile } from '@/routes/profile';
-import { edit as team } from '@/routes/teams';
 import type { NavItem } from '@/types';
 
 export function AppSidebar() {
@@ -57,11 +55,6 @@ export function AppSidebar() {
             title: 'Integrações',
             href: integrations(),
             icon: Plug,
-        },
-        {
-            title: 'Equipe',
-            href: team(),
-            icon: Users,
         },
         {
             title: 'Configurações',

@@ -19,7 +19,6 @@ void createInertiaApp({
             case name.startsWith('onboarding/'):
                 return null;
             case name.startsWith('settings/'):
-            case name.startsWith('teams/'):
                 return [AppLayout, SettingsLayout];
             default:
                 return AppLayout;

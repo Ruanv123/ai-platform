@@ -20,7 +20,7 @@ import {
     SelectTrigger,
     SelectValue,
 } from '@/components/ui/select';
-import { store as storeInvitation } from '@/routes/teams/invitations';
+import { store as storeInvitation } from '@/routes/team/invitations';
 import type { RoleOption } from '@/types';
 
 type Props = {
@@ -56,15 +56,20 @@ export default function InviteMemberModal({
                     {({ errors, processing }) => (
                         <>
                             <DialogHeader>
-                                <DialogTitle>Convidar membro da equipe</DialogTitle>
+                                <DialogTitle>
+                                    Convidar membro da equipe
+                                </DialogTitle>
                                 <DialogDescription>
-                                    Envie um convite para participar desta equipe.
+                                    Envie um convite para participar desta
+                                    equipe.
                                 </DialogDescription>
                             </DialogHeader>
 
                             <div className="grid gap-4">
                                 <div className="grid gap-2">
-                                    <Label htmlFor="email">Endereço de e-mail</Label>
+                                    <Label htmlFor="email">
+                                        Endereço de e-mail
+                                    </Label>
                                     <Input
                                         id="email"
                                         name="email"
@@ -108,7 +113,9 @@ export default function InviteMemberModal({
 
                             <DialogFooter className="gap-2">
                                 <DialogClose asChild>
-                                    <Button variant="secondary">Cancelar</Button>
+                                    <Button variant="secondary">
+                                        Cancelar
+                                    </Button>
                                 </DialogClose>
 
                                 <Button

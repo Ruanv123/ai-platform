@@ -1,9 +1,10 @@
 <?php
 
 use App\Http\Controllers\Settings\BusinessHoursController;
+use App\Http\Controllers\Settings\CompanyController;
 use App\Http\Controllers\Settings\ProfileController;
 use App\Http\Controllers\Settings\SecurityController;
-use App\Http\Controllers\Teams\TeamController;
+use App\Http\Controllers\Settings\TeamController;
 use App\Http\Controllers\Teams\TeamInvitationController;
 use App\Http\Controllers\Teams\TeamMemberController;
 use App\Http\Middleware\EnsureUserHasTeam;
@@ -30,17 +31,16 @@ Route::middleware(['auth', EnsureUserHasTeam::class])->group(function () {
 
     Route::inertia('settings/appearance', 'settings/appearance')->name('appearance.edit');
 
-    Route::get('settings/teams', [TeamController::class, 'edit'])->name('teams.edit');
-    Route::patch('settings/teams', [TeamController::class, 'update'])->name('teams.update');
-    Route::get('settings/company', [TeamController::class, 'edit'])->name('company.edit');
-    Route::patch('settings/company', [TeamController::class, 'update'])->name('company.update');
+    Route::get('settings/team', [TeamController::class, 'edit'])->name('team.edit');
+    Route::get('settings/company', [CompanyController::class, 'edit'])->name('company.edit');
+    Route::patch('settings/company', [CompanyController::class, 'update'])->name('company.update');
     Route::get('settings/business-hours', [BusinessHoursController::class, 'edit'])->name('business-hours.edit');
     Route::patch('settings/business-hours', [BusinessHoursController::class, 'update'])->name('business-hours.update');
-    Route::patch('settings/teams/members/{user}', [TeamMemberController::class, 'update'])->name('teams.members.update');
-    Route::delete('settings/teams/members/{user}', [TeamMemberController::class, 'destroy'])->name('teams.members.destroy');
-    Route::delete('settings/teams/leave', [TeamMemberController::class, 'leave'])->name('teams.leave');
-    Route::post('settings/teams/invitations', [TeamInvitationController::class, 'store'])->name('teams.invitations.store');
-    Route::delete('settings/teams/invitations/{invitation}', [TeamInvitationController::class, 'destroy'])->name('teams.invitations.destroy');
+    Route::patch('settings/team/members/{user}', [TeamMemberController::class, 'update'])->name('team.members.update');
+    Route::delete('settings/team/members/{user}', [TeamMemberController::class, 'destroy'])->name('team.members.destroy');
+    Route::delete('settings/team/leave', [TeamMemberController::class, 'leave'])->name('team.leave');
+    Route::post('settings/team/invitations', [TeamInvitationController::class, 'store'])->name('team.invitations.store');
+    Route::delete('settings/team/invitations/{invitation}', [TeamInvitationController::class, 'destroy'])->name('team.invitations.destroy');
 });
 
 Route::get('.well-known/passkey-endpoints', function () {

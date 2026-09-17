@@ -36,7 +36,7 @@ class TeamMemberController extends Controller
 
         Inertia::flash('toast', ['type' => 'success', 'message' => 'Papel do membro atualizado.']);
 
-        return to_route('teams.edit');
+        return to_route('team.edit');
     }
 
     /**
@@ -65,7 +65,7 @@ class TeamMemberController extends Controller
 
         Inertia::flash('toast', ['type' => 'success', 'message' => 'Membro removido.']);
 
-        return to_route('teams.edit');
+        return to_route('team.edit');
     }
 
     /**

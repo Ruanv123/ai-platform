@@ -39,7 +39,7 @@ class TeamInvitationController extends Controller
 
         Inertia::flash('toast', ['type' => 'success', 'message' => 'Convite enviado.']);
 
-        return to_route('teams.edit');
+        return to_route('team.edit');
     }
 
     /**
@@ -77,7 +77,7 @@ class TeamInvitationController extends Controller
 
         Inertia::flash('toast', ['type' => 'success', 'message' => 'Convite cancelado.']);
 
-        return to_route('teams.edit');
+        return to_route('team.edit');
     }
 
     /**

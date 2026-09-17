@@ -10,7 +10,7 @@ import {
     DialogHeader,
     DialogTitle,
 } from '@/components/ui/dialog';
-import { destroy as destroyMember } from '@/routes/teams/members';
+import { destroy as destroyMember } from '@/routes/team/members';
 import type { TeamMember } from '@/types';
 
 type Props = {
