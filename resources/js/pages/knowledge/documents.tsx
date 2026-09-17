@@ -1,4 +1,4 @@
-import { Form, Head, Link, router, usePoll } from '@inertiajs/react';
+import { Form, Head, Link, router, useHttp } from '@inertiajs/react';
 import {
     AlertCircle,
     ArrowLeft,
@@ -14,9 +14,10 @@ import {
     RefreshCw,
     Trash2,
 } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import Heading from '@/components/heading';
 import InputError from '@/components/input-error';
+import { useConditionalPoll } from '@/hooks/use-conditional-poll';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
@@ -39,20 +40,21 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import {
     destroy,
-    index,
     move,
     reprocess,
+    show,
     store,
     update,
     download,
 } from '@/routes/documents';
+import { index as collectionIndex } from '@/routes/collections';
 import type { TeamPermissions } from '@/types';
 
 type KnowledgeDocument = {
     id: number;
     title: string;
-    content: string;
-    faqItems: FaqItem[] | null;
+    content?: string;
+    faqItems?: FaqItem[] | null;
     type: string;
     status: string;
     statusLabel: string;
@@ -118,14 +120,20 @@ type DocumentFormDialogProps = {
     collectionId: number;
     document: KnowledgeDocument | null;
     open: boolean;
+    loading: boolean;
+    loadError: string | null;
     onOpenChange: (open: boolean) => void;
+    onRetry: () => void;
 };
 
 function DocumentFormDialog({
     collectionId,
     document,
     open,
+    loading,
+    loadError,
     onOpenChange,
+    onRetry,
 }: DocumentFormDialogProps) {
     const isEditing = document !== null;
     const [documentType, setDocumentType] = useState<
@@ -144,23 +152,6 @@ function DocumentFormDialog({
             ? document.faqItems
             : [{ question: '', answer: '' }],
     );
-
-    useEffect(() => {
-        setDocumentType(
-            document?.type === 'faq'
-                ? 'faq'
-                : document?.type === 'file'
-                  ? 'file'
-                  : document?.type === 'url'
-                    ? 'url'
-                    : 'text',
-        );
-        setFaqItems(
-            document?.faqItems?.length
-                ? document.faqItems
-                : [{ question: '', answer: '' }],
-        );
-    }, [document?.id, open]);
 
     const updateFaqItem = (
         index: number,
@@ -227,289 +218,330 @@ function DocumentFormDialog({
                                 : 'Escreva um conteúdo que os Agentes poderão consultar na base de conhecimento.'}
                     </DialogDescription>
                 </DialogHeader>
-                <Form
-                    key={document?.id ?? 'new'}
-                    {...(isEditing
-                        ? update.form(document.id)
-                        : store.form(collectionId))}
-                    className="grid gap-5"
-                    onSuccess={() => onOpenChange(false)}
-                >
-                    {({ errors, processing }) => (
-                        <>
-                            <input
-                                type="hidden"
-                                name="type"
-                                value={documentType}
-                            />
-                            <div className="grid gap-2">
-                                <Label htmlFor="document-title">Título</Label>
-                                <Input
-                                    id="document-title"
-                                    name="title"
-                                    defaultValue={document?.title ?? ''}
-                                    placeholder="Ex.: Política de trocas"
-                                    autoFocus
-                                    required
-                                />
-                                <InputError message={errors.title} />
-                            </div>
-                            <div className="grid gap-2">
-                                <Label htmlFor="document-type">Tipo</Label>
-                                <select
-                                    id="document-type"
+                {loading ? (
+                    <div
+                        className="text-muted-foreground flex min-h-48 flex-col items-center justify-center gap-3 text-center"
+                        role="status"
+                    >
+                        <LoaderCircle className="text-primary size-6 animate-spin" />
+                        <p className="text-sm">
+                            Carregando conteúdo do documento...
+                        </p>
+                    </div>
+                ) : loadError !== null ? (
+                    <div
+                        className="flex min-h-48 flex-col items-center justify-center gap-4 text-center"
+                        role="alert"
+                    >
+                        <AlertCircle className="text-destructive size-6" />
+                        <p className="text-muted-foreground max-w-sm text-sm">
+                            {loadError}
+                        </p>
+                        <Button
+                            type="button"
+                            variant="outline"
+                            onClick={onRetry}
+                        >
+                            Tentar novamente
+                        </Button>
+                    </div>
+                ) : (
+                    <Form
+                        key={document?.id ?? 'new'}
+                        {...(isEditing
+                            ? update.form(document.id)
+                            : store.form(collectionId))}
+                        className="grid gap-5"
+                        onSuccess={() => onOpenChange(false)}
+                    >
+                        {({ errors, processing }) => (
+                            <>
+                                <input
+                                    type="hidden"
+                                    name="type"
                                     value={documentType}
-                                    onChange={(event) =>
-                                        setDocumentType(
-                                            event.target.value as
-                                                | 'text'
-                                                | 'faq'
-                                                | 'file'
-                                                | 'url',
-                                        )
-                                    }
-                                    disabled={isEditing}
-                                    className="border-input bg-background focus-visible:border-ring focus-visible:ring-ring/50 h-9 rounded-md border px-3 text-sm shadow-xs outline-none"
-                                >
-                                    <option value="text">Texto livre</option>
-                                    <option value="faq">FAQ</option>
-                                    <option value="file">Arquivo</option>
-                                    <option value="url">URL</option>
-                                </select>
-                                <InputError message={errors.type} />
-                            </div>
-                            {documentType === 'faq' ? (
-                                <div className="grid gap-3">
-                                    <div className="flex items-center justify-between gap-4">
-                                        <div className="grid gap-1">
-                                            <Label>Perguntas e respostas</Label>
-                                            <p className="text-muted-foreground text-xs">
-                                                Cada par será indexado como um
-                                                trecho separado.
-                                            </p>
-                                        </div>
-                                        <Button
-                                            type="button"
-                                            variant="outline"
-                                            size="sm"
-                                            onClick={addFaqItem}
-                                        >
-                                            <Plus />
-                                            Adicionar par
-                                        </Button>
-                                    </div>
-                                    <InputError message={errors.items} />
-                                    <InputError message={errors.content} />
+                                />
+                                <div className="grid gap-2">
+                                    <Label htmlFor="document-title">
+                                        Título
+                                    </Label>
+                                    <Input
+                                        id="document-title"
+                                        name="title"
+                                        defaultValue={document?.title ?? ''}
+                                        placeholder="Ex.: Política de trocas"
+                                        autoFocus
+                                        required
+                                    />
+                                    <InputError message={errors.title} />
+                                </div>
+                                <div className="grid gap-2">
+                                    <Label htmlFor="document-type">Tipo</Label>
+                                    <select
+                                        id="document-type"
+                                        value={documentType}
+                                        onChange={(event) =>
+                                            setDocumentType(
+                                                event.target.value as
+                                                    | 'text'
+                                                    | 'faq'
+                                                    | 'file'
+                                                    | 'url',
+                                            )
+                                        }
+                                        disabled={isEditing}
+                                        className="border-input bg-background focus-visible:border-ring focus-visible:ring-ring/50 h-9 rounded-md border px-3 text-sm shadow-xs outline-none"
+                                    >
+                                        <option value="text">
+                                            Texto livre
+                                        </option>
+                                        <option value="faq">FAQ</option>
+                                        <option value="file">Arquivo</option>
+                                        <option value="url">URL</option>
+                                    </select>
+                                    <InputError message={errors.type} />
+                                </div>
+                                {documentType === 'faq' ? (
                                     <div className="grid gap-3">
-                                        {faqItems.map((item, index) => (
-                                            <div
-                                                key={index}
-                                                className="bg-muted/30 grid gap-3 rounded-lg border p-4"
+                                        <div className="flex items-center justify-between gap-4">
+                                            <div className="grid gap-1">
+                                                <Label>
+                                                    Perguntas e respostas
+                                                </Label>
+                                                <p className="text-muted-foreground text-xs">
+                                                    Cada par será indexado como
+                                                    um trecho separado.
+                                                </p>
+                                            </div>
+                                            <Button
+                                                type="button"
+                                                variant="outline"
+                                                size="sm"
+                                                onClick={addFaqItem}
                                             >
-                                                <div className="flex items-center justify-between gap-2">
-                                                    <span className="text-sm font-medium">
-                                                        Par {index + 1}
-                                                    </span>
-                                                    <div className="flex items-center gap-1">
-                                                        <Button
-                                                            type="button"
-                                                            variant="ghost"
-                                                            size="icon"
-                                                            onClick={() =>
-                                                                moveFaqItem(
-                                                                    index,
-                                                                    -1,
-                                                                )
-                                                            }
-                                                            disabled={
-                                                                index === 0
-                                                            }
-                                                            aria-label={`Mover par ${index + 1} para cima`}
-                                                        >
-                                                            <ArrowUp />
-                                                        </Button>
-                                                        <Button
-                                                            type="button"
-                                                            variant="ghost"
-                                                            size="icon"
-                                                            onClick={() =>
-                                                                moveFaqItem(
-                                                                    index,
-                                                                    1,
-                                                                )
-                                                            }
-                                                            disabled={
-                                                                index ===
-                                                                faqItems.length -
+                                                <Plus />
+                                                Adicionar par
+                                            </Button>
+                                        </div>
+                                        <InputError message={errors.items} />
+                                        <InputError message={errors.content} />
+                                        <div className="grid gap-3">
+                                            {faqItems.map((item, index) => (
+                                                <div
+                                                    key={index}
+                                                    className="bg-muted/30 grid gap-3 rounded-lg border p-4"
+                                                >
+                                                    <div className="flex items-center justify-between gap-2">
+                                                        <span className="text-sm font-medium">
+                                                            Par {index + 1}
+                                                        </span>
+                                                        <div className="flex items-center gap-1">
+                                                            <Button
+                                                                type="button"
+                                                                variant="ghost"
+                                                                size="icon"
+                                                                onClick={() =>
+                                                                    moveFaqItem(
+                                                                        index,
+                                                                        -1,
+                                                                    )
+                                                                }
+                                                                disabled={
+                                                                    index === 0
+                                                                }
+                                                                aria-label={`Mover par ${index + 1} para cima`}
+                                                            >
+                                                                <ArrowUp />
+                                                            </Button>
+                                                            <Button
+                                                                type="button"
+                                                                variant="ghost"
+                                                                size="icon"
+                                                                onClick={() =>
+                                                                    moveFaqItem(
+                                                                        index,
+                                                                        1,
+                                                                    )
+                                                                }
+                                                                disabled={
+                                                                    index ===
+                                                                    faqItems.length -
+                                                                        1
+                                                                }
+                                                                aria-label={`Mover par ${index + 1} para baixo`}
+                                                            >
+                                                                <ArrowDown />
+                                                            </Button>
+                                                            <Button
+                                                                type="button"
+                                                                variant="ghost"
+                                                                size="icon"
+                                                                onClick={() =>
+                                                                    removeFaqItem(
+                                                                        index,
+                                                                    )
+                                                                }
+                                                                disabled={
+                                                                    faqItems.length ===
                                                                     1
-                                                            }
-                                                            aria-label={`Mover par ${index + 1} para baixo`}
+                                                                }
+                                                                aria-label={`Remover par ${index + 1}`}
+                                                            >
+                                                                <Trash2 />
+                                                            </Button>
+                                                        </div>
+                                                    </div>
+                                                    <div className="grid gap-2">
+                                                        <Label
+                                                            htmlFor={`faq-question-${index}`}
                                                         >
-                                                            <ArrowDown />
-                                                        </Button>
-                                                        <Button
-                                                            type="button"
-                                                            variant="ghost"
-                                                            size="icon"
-                                                            onClick={() =>
-                                                                removeFaqItem(
+                                                            Pergunta
+                                                        </Label>
+                                                        <Input
+                                                            id={`faq-question-${index}`}
+                                                            name={`items[${index}][question]`}
+                                                            value={
+                                                                item.question
+                                                            }
+                                                            onChange={(event) =>
+                                                                updateFaqItem(
                                                                     index,
+                                                                    'question',
+                                                                    event.target
+                                                                        .value,
                                                                 )
                                                             }
-                                                            disabled={
-                                                                faqItems.length ===
-                                                                1
+                                                            placeholder="Ex.: Qual é o prazo de entrega?"
+                                                            required
+                                                        />
+                                                        <InputError
+                                                            message={
+                                                                errors[
+                                                                    `items.${index}.question`
+                                                                ]
                                                             }
-                                                            aria-label={`Remover par ${index + 1}`}
+                                                        />
+                                                    </div>
+                                                    <div className="grid gap-2">
+                                                        <Label
+                                                            htmlFor={`faq-answer-${index}`}
                                                         >
-                                                            <Trash2 />
-                                                        </Button>
+                                                            Resposta
+                                                        </Label>
+                                                        <textarea
+                                                            id={`faq-answer-${index}`}
+                                                            name={`items[${index}][answer]`}
+                                                            value={item.answer}
+                                                            onChange={(event) =>
+                                                                updateFaqItem(
+                                                                    index,
+                                                                    'answer',
+                                                                    event.target
+                                                                        .value,
+                                                                )
+                                                            }
+                                                            placeholder="Escreva uma resposta objetiva."
+                                                            className="border-input bg-background placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-ring/50 min-h-24 rounded-md border px-3 py-2 text-sm shadow-xs outline-none focus-visible:ring-[3px]"
+                                                            required
+                                                        />
+                                                        <InputError
+                                                            message={
+                                                                errors[
+                                                                    `items.${index}.answer`
+                                                                ]
+                                                            }
+                                                        />
                                                     </div>
                                                 </div>
-                                                <div className="grid gap-2">
-                                                    <Label
-                                                        htmlFor={`faq-question-${index}`}
-                                                    >
-                                                        Pergunta
-                                                    </Label>
-                                                    <Input
-                                                        id={`faq-question-${index}`}
-                                                        name={`items[${index}][question]`}
-                                                        value={item.question}
-                                                        onChange={(event) =>
-                                                            updateFaqItem(
-                                                                index,
-                                                                'question',
-                                                                event.target
-                                                                    .value,
-                                                            )
-                                                        }
-                                                        placeholder="Ex.: Qual é o prazo de entrega?"
-                                                        required
-                                                    />
-                                                    <InputError
-                                                        message={
-                                                            errors[
-                                                                `items.${index}.question`
-                                                            ]
-                                                        }
-                                                    />
-                                                </div>
-                                                <div className="grid gap-2">
-                                                    <Label
-                                                        htmlFor={`faq-answer-${index}`}
-                                                    >
-                                                        Resposta
-                                                    </Label>
-                                                    <textarea
-                                                        id={`faq-answer-${index}`}
-                                                        name={`items[${index}][answer]`}
-                                                        value={item.answer}
-                                                        onChange={(event) =>
-                                                            updateFaqItem(
-                                                                index,
-                                                                'answer',
-                                                                event.target
-                                                                    .value,
-                                                            )
-                                                        }
-                                                        placeholder="Escreva uma resposta objetiva."
-                                                        className="border-input bg-background placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-ring/50 min-h-24 rounded-md border px-3 py-2 text-sm shadow-xs outline-none focus-visible:ring-[3px]"
-                                                        required
-                                                    />
-                                                    <InputError
-                                                        message={
-                                                            errors[
-                                                                `items.${index}.answer`
-                                                            ]
-                                                        }
-                                                    />
-                                                </div>
-                                            </div>
-                                        ))}
+                                            ))}
+                                        </div>
                                     </div>
-                                </div>
-                            ) : documentType === 'file' ? (
-                                <div className="grid gap-3">
-                                    <div className="grid gap-1">
-                                        <Label htmlFor="document-file">
-                                            Arquivo
-                                        </Label>
-                                        <p className="text-muted-foreground text-xs">
-                                            Formatos aceitos: PDF, DOCX ou TXT ·
-                                            máximo de 20 MB.
-                                        </p>
-                                    </div>
-                                    {isEditing &&
-                                        document?.originalFilename && (
-                                            <p className="text-muted-foreground text-sm">
-                                                Arquivo atual:{' '}
-                                                <strong className="text-foreground">
-                                                    {document.originalFilename}
-                                                </strong>
+                                ) : documentType === 'file' ? (
+                                    <div className="grid gap-3">
+                                        <div className="grid gap-1">
+                                            <Label htmlFor="document-file">
+                                                Arquivo
+                                            </Label>
+                                            <p className="text-muted-foreground text-xs">
+                                                Formatos aceitos: PDF, DOCX ou
+                                                TXT · máximo de 20 MB.
                                             </p>
-                                        )}
-                                    <Input
-                                        id="document-file"
-                                        name="file"
-                                        type="file"
-                                        accept=".pdf,.docx,.txt,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain"
-                                        required={!isEditing}
-                                    />
-                                    <InputError message={errors.file} />
-                                </div>
-                            ) : documentType === 'url' ? (
-                                <div className="grid gap-2">
-                                    <Label htmlFor="document-url">
-                                        URL da página
-                                    </Label>
-                                    <Input
-                                        id="document-url"
-                                        name="url"
-                                        type="url"
-                                        defaultValue={document?.url ?? ''}
-                                        placeholder="https://exemplo.com/manual"
-                                        required
-                                    />
-                                    <p className="text-muted-foreground text-xs">
-                                        O menu, rodapé e avisos da página serão
-                                        descartados automaticamente.
-                                    </p>
-                                    <InputError message={errors.url} />
-                                </div>
-                            ) : (
-                                <div className="grid gap-2">
-                                    <Label htmlFor="document-content">
-                                        Conteúdo
-                                    </Label>
-                                    <textarea
-                                        id="document-content"
-                                        name="content"
-                                        defaultValue={document?.content ?? ''}
-                                        placeholder="Use títulos e parágrafos para organizar o conteúdo."
-                                        className="border-input bg-background placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-ring/50 min-h-64 rounded-md border px-3 py-2 text-sm shadow-xs outline-none focus-visible:ring-[3px]"
-                                        required
-                                    />
-                                    <InputError message={errors.content} />
-                                </div>
-                            )}
-                            <DialogFooter>
-                                <DialogClose asChild>
-                                    <Button type="button" variant="outline">
-                                        Cancelar
+                                        </div>
+                                        {isEditing &&
+                                            document?.originalFilename && (
+                                                <p className="text-muted-foreground text-sm">
+                                                    Arquivo atual:{' '}
+                                                    <strong className="text-foreground">
+                                                        {
+                                                            document.originalFilename
+                                                        }
+                                                    </strong>
+                                                </p>
+                                            )}
+                                        <Input
+                                            id="document-file"
+                                            name="file"
+                                            type="file"
+                                            accept=".pdf,.docx,.txt,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain"
+                                            required={!isEditing}
+                                        />
+                                        <InputError message={errors.file} />
+                                    </div>
+                                ) : documentType === 'url' ? (
+                                    <div className="grid gap-2">
+                                        <Label htmlFor="document-url">
+                                            URL da página
+                                        </Label>
+                                        <Input
+                                            id="document-url"
+                                            name="url"
+                                            type="url"
+                                            defaultValue={document?.url ?? ''}
+                                            placeholder="https://exemplo.com/manual"
+                                            required
+                                        />
+                                        <p className="text-muted-foreground text-xs">
+                                            O menu, rodapé e avisos da página
+                                            serão descartados automaticamente.
+                                        </p>
+                                        <InputError message={errors.url} />
+                                    </div>
+                                ) : (
+                                    <div className="grid gap-2">
+                                        <Label htmlFor="document-content">
+                                            Conteúdo
+                                        </Label>
+                                        <textarea
+                                            id="document-content"
+                                            name="content"
+                                            defaultValue={
+                                                document?.content ?? ''
+                                            }
+                                            placeholder="Use títulos e parágrafos para organizar o conteúdo."
+                                            className="border-input bg-background placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-ring/50 min-h-64 rounded-md border px-3 py-2 text-sm shadow-xs outline-none focus-visible:ring-[3px]"
+                                            required
+                                        />
+                                        <InputError message={errors.content} />
+                                    </div>
+                                )}
+                                <DialogFooter>
+                                    <DialogClose asChild>
+                                        <Button type="button" variant="outline">
+                                            Cancelar
+                                        </Button>
+                                    </DialogClose>
+                                    <Button type="submit" disabled={processing}>
+                                        {processing
+                                            ? 'Salvando...'
+                                            : isEditing
+                                              ? 'Salvar e reprocessar'
+                                              : 'Criar documento'}
                                     </Button>
-                                </DialogClose>
-                                <Button type="submit" disabled={processing}>
-                                    {processing
-                                        ? 'Salvando...'
-                                        : isEditing
-                                          ? 'Salvar e reprocessar'
-                                          : 'Criar documento'}
-                                </Button>
-                            </DialogFooter>
-                        </>
-                    )}
-                </Form>
+                                </DialogFooter>
+                            </>
+                        )}
+                    </Form>
+                )}
             </DialogContent>
         </Dialog>
     );
@@ -526,30 +558,50 @@ export default function Documents({
     const [formOpen, setFormOpen] = useState(false);
     const [documentToEdit, setDocumentToEdit] =
         useState<KnowledgeDocument | null>(null);
-    const { start, stop } = usePoll(
-        5000,
-        { only: ['documents', 'polling', 'storage'] },
-        { autoStart: false },
+    const [documentLoadError, setDocumentLoadError] = useState<string | null>(
+        null,
     );
+    const {
+        get: getDocument,
+        processing: loadingDocument,
+        cancel: cancelDocumentRequest,
+    } = useHttp<{}, KnowledgeDocument>();
 
-    useEffect(() => {
-        if (polling) {
-            start();
-        } else {
-            stop();
-        }
-
-        return stop;
-    }, [polling, start, stop]);
+    useConditionalPoll(polling);
 
     const openCreateDialog = () => {
+        cancelDocumentRequest();
+        setDocumentLoadError(null);
         setDocumentToEdit(null);
         setFormOpen(true);
     };
 
+    const handleDocumentLoadError = () => {
+        setDocumentLoadError(
+            'Não foi possível carregar o conteúdo do documento.',
+        );
+    };
+
     const openEditDialog = (document: KnowledgeDocument) => {
+        cancelDocumentRequest();
+        setDocumentLoadError(null);
         setDocumentToEdit(document);
         setFormOpen(true);
+        void getDocument(show.url(document.id), {
+            onHttpException: handleDocumentLoadError,
+            onNetworkError: handleDocumentLoadError,
+            onSuccess: (completeDocument) => {
+                setDocumentToEdit(completeDocument);
+            },
+        }).catch(() => {});
+    };
+
+    const handleFormOpenChange = (open: boolean) => {
+        if (!open) {
+            cancelDocumentRequest();
+        }
+
+        setFormOpen(open);
     };
 
     return (
@@ -559,7 +611,7 @@ export default function Documents({
                 <div className="flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between">
                     <div className="grid gap-3">
                         <Link
-                            href={index.url(collection.id)}
+                            href={collectionIndex.url()}
                             className="text-muted-foreground inline-flex items-center gap-2 text-sm hover:underline"
                         >
                             <ArrowLeft className="size-4" />
@@ -821,10 +873,18 @@ export default function Documents({
                 )}
             </div>
             <DocumentFormDialog
+                key={`${documentToEdit?.id ?? 'new'}-${formOpen ? 'open' : 'closed'}-${loadingDocument ? 'loading' : 'ready'}`}
                 collectionId={collection.id}
                 document={documentToEdit}
                 open={formOpen}
-                onOpenChange={setFormOpen}
+                loading={loadingDocument}
+                loadError={documentLoadError}
+                onOpenChange={handleFormOpenChange}
+                onRetry={() => {
+                    if (documentToEdit !== null) {
+                        openEditDialog(documentToEdit);
+                    }
+                }}
             />
         </>
     );

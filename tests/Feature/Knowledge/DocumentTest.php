@@ -100,6 +100,65 @@ it('shows documents, storage usage and polling while ingestion is pending', func
     );
 });
 
+it('does not include document content in the collection listing', function () {
+    $user = User::factory()->withTeam()->create();
+    $collection = Collection::factory()->for($user->company())->create();
+    $document = Document::factory()->for($collection)->create([
+        'content' => 'Conteúdo extraído que deve ser carregado sob demanda.',
+        'faq_items' => [
+            ['question' => 'Pergunta', 'answer' => 'Resposta'],
+        ],
+    ]);
+
+    $response = $this->actingAs($user)->get(route('documents.index', $collection));
+
+    $response->assertOk()->assertInertia(fn ($page) => $page
+        ->component('knowledge/documents')
+        ->where('documents.0.id', $document->id)
+        ->missing('documents.0.content')
+        ->missing('documents.0.faqItems'),
+    );
+});
+
+it('returns a complete document from its endpoint', function () {
+    $user = User::factory()->withTeam()->create();
+    $collection = Collection::factory()->for($user->company())->create();
+    $document = Document::factory()->for($collection)->create([
+        'content' => 'Conteúdo completo do documento.',
+        'faq_items' => [
+            ['question' => 'Pergunta', 'answer' => 'Resposta'],
+        ],
+    ]);
+
+    $response = $this->actingAs($user)->get(route('documents.show', $document));
+
+    $response->assertOk()->assertJson([
+        'id' => $document->id,
+        'title' => $document->title,
+        'content' => 'Conteúdo completo do documento.',
+        'faqItems' => [
+            ['question' => 'Pergunta', 'answer' => 'Resposta'],
+        ],
+    ]);
+});
+
+it('returns 404 when requesting another company document endpoint', function () {
+    $user = User::factory()->withTeam()->create();
+    $document = Document::factory()->create();
+
+    $response = $this->actingAs($user)->get(route('documents.show', $document));
+
+    $response->assertNotFound();
+});
+
+it('redirects guests to login when requesting a document endpoint', function () {
+    $document = Document::factory()->create();
+
+    $response = $this->get(route('documents.show', $document));
+
+    $response->assertRedirect(route('login'));
+});
+
 it('blocks a document that would exceed the company storage quota', function () {
     config(['knowledge.storage_quota_bytes' => 10]);
     Queue::fake();

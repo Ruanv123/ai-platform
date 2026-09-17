@@ -14,6 +14,7 @@ use App\Models\Chunk;
 use App\Models\Collection;
 use App\Models\Document;
 use App\Models\Team;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\UploadedFile;
@@ -45,7 +46,7 @@ class DocumentController extends Controller
         $documents = $collection->documents()
             ->latest('updated_at')
             ->get()
-            ->map(fn (Document $document): array => $this->documentData($document))
+            ->map(fn (Document $document): array => $this->documentSummaryData($document))
             ->values();
 
         return Inertia::render('knowledge/documents', [
@@ -72,6 +73,16 @@ class DocumentController extends Controller
             )),
             'permissions' => $user->toTeamPermissions($team),
         ]);
+    }
+
+    /**
+     * Display a complete document for the edit dialog.
+     */
+    public function show(Document $document): JsonResponse
+    {
+        Gate::authorize('view', $document);
+
+        return response()->json($this->documentData($document));
     }
 
     /**
@@ -304,10 +315,20 @@ class DocumentController extends Controller
     private function documentData(Document $document): array
     {
         return [
-            'id' => $document->id,
-            'title' => $document->title,
+            ...$this->documentSummaryData($document),
             'content' => $document->content,
             'faqItems' => $document->faq_items,
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function documentSummaryData(Document $document): array
+    {
+        return [
+            'id' => $document->id,
+            'title' => $document->title,
             'originalFilename' => $document->original_filename,
             'mimeType' => $document->mime_type,
             'url' => $document->url,

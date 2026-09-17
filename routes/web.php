@@ -72,6 +72,8 @@ Route::middleware(['auth', EnsureUserHasTeam::class])->group(function () {
         ->name('documents.index');
     Route::post('knowledge/collections/{collection}/documents', [DocumentController::class, 'store'])
         ->name('documents.store');
+    Route::get('knowledge/documents/{document}', [DocumentController::class, 'show'])
+        ->name('documents.show');
     Route::patch('knowledge/documents/{document}', [DocumentController::class, 'update'])
         ->name('documents.update');
     Route::get('knowledge/documents/{document}/file', [DocumentController::class, 'download'])
