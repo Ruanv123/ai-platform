@@ -63,9 +63,9 @@ test('dashboard shows an empty activation checklist and summary for a new compan
         ->where('checklist.2.completed', false)
         ->where('checklist.2.href', route('collections.index'))
         ->where('checklist.3.completed', false)
-        ->where('checklist.3.href', route('channels.index'))
+        ->where('checklist.3.href', route('channels.whatsapp.edit'))
         ->where('checklist.4.completed', false)
-        ->where('checklist.4.href', route('channels.index'))
+        ->where('checklist.4.href', route('channels.whatsapp.edit'))
         ->where('summary.agents.active', 0)
         ->where('summary.agents.total', 0)
         ->where('summary.documents.ready', 0)
@@ -105,6 +105,22 @@ test('dashboard reflects a partially configured company', function () {
         ->where('summary.documents.failed', 0)
         ->where('summary.storage.usedBytes', 120)
         ->where('summary.whatsapp.status', null),
+    );
+});
+
+test('dashboard reflects the status of the configured WhatsApp channel', function () {
+    $user = User::factory()->withTeam()->create();
+    Channel::factory()->for($user->company())->create([
+        'status' => ChannelStatus::NotConfigured,
+    ]);
+
+    $response = $this
+        ->actingAs($user)
+        ->get(route('dashboard'));
+
+    $response->assertOk()->assertInertia(fn (Assert $page) => $page
+        ->where('summary.whatsapp.status', 'not_configured')
+        ->where('summary.whatsapp.statusLabel', 'Não conectado'),
     );
 });
 

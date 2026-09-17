@@ -70,14 +70,14 @@ class DashboardController extends Controller
                     'label' => 'WhatsApp conectado',
                     'description' => 'Configure o canal que receberá seus atendimentos.',
                     'completed' => $hasConnectedWhatsApp,
-                    'href' => route('channels.index'),
+                    'href' => route('channels.whatsapp.edit'),
                 ],
                 [
                     'key' => 'agent_linked',
                     'label' => 'Agente vinculado ao WhatsApp',
                     'description' => 'Escolha qual Agente responderá no WhatsApp.',
                     'completed' => $hasLinkedAgent,
-                    'href' => route('channels.index'),
+                    'href' => route('channels.whatsapp.edit'),
                 ],
             ],
             'summary' => [
