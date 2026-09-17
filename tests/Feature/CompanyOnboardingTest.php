@@ -146,6 +146,7 @@ test('owners and admins can edit all company details', function () {
 
     $details = companyDetails();
     $details['name'] = 'Acme Atualizada';
+    unset($details['business_hours'], $details['timezone']);
 
     $response = $this->actingAs($admin)->patch(route('company.update'), $details);
 
@@ -158,12 +159,10 @@ test('owners and admins can edit all company details', function () {
         'business_description' => $details['business_description'],
         'products_services' => $details['products_services'],
         'target_audience' => $details['target_audience'],
-        'timezone' => $details['timezone'],
         'phone' => $details['phone'],
         'public_email' => $details['public_email'],
         'address' => $details['address'],
     ]);
-    expect($team->fresh()->business_hours['sunday']['enabled'])->toBe('0');
 });
 
 test('owners can edit company details', function () {
@@ -171,6 +170,7 @@ test('owners can edit company details', function () {
     $team = $owner->company();
     $details = companyDetails();
     $details['name'] = 'Acme do Owner';
+    unset($details['business_hours'], $details['timezone']);
 
     $response = $this->actingAs($owner)->patch(route('company.update'), $details);
 
@@ -183,12 +183,10 @@ test('owners can edit company details', function () {
         'business_description' => $details['business_description'],
         'products_services' => $details['products_services'],
         'target_audience' => $details['target_audience'],
-        'timezone' => $details['timezone'],
         'phone' => $details['phone'],
         'public_email' => $details['public_email'],
         'address' => $details['address'],
     ]);
-    expect($team->fresh()->business_hours['monday']['close'])->toBe('18:00');
 });
 
 test('members can view but cannot edit company details', function () {

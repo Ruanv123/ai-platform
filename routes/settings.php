@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Settings\BusinessHoursController;
 use App\Http\Controllers\Settings\ProfileController;
 use App\Http\Controllers\Settings\SecurityController;
 use App\Http\Controllers\Teams\TeamController;
@@ -33,6 +34,8 @@ Route::middleware(['auth', EnsureUserHasTeam::class])->group(function () {
     Route::patch('settings/teams', [TeamController::class, 'update'])->name('teams.update');
     Route::get('settings/company', [TeamController::class, 'edit'])->name('company.edit');
     Route::patch('settings/company', [TeamController::class, 'update'])->name('company.update');
+    Route::get('settings/business-hours', [BusinessHoursController::class, 'edit'])->name('business-hours.edit');
+    Route::patch('settings/business-hours', [BusinessHoursController::class, 'update'])->name('business-hours.update');
     Route::patch('settings/teams/members/{user}', [TeamMemberController::class, 'update'])->name('teams.members.update');
     Route::delete('settings/teams/members/{user}', [TeamMemberController::class, 'destroy'])->name('teams.members.destroy');
     Route::delete('settings/teams/leave', [TeamMemberController::class, 'leave'])->name('teams.leave');

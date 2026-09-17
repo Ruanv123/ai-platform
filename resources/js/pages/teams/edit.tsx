@@ -43,8 +43,6 @@ type Props = {
     permissions: TeamPermissions;
     availableRoles: RoleOption[];
     segments: CompanyOption[];
-    timezones: string[];
-    weekdays: CompanyOption[];
     canLeave: boolean;
 };
 
@@ -55,8 +53,6 @@ export default function TeamEdit({
     permissions,
     availableRoles,
     segments,
-    timezones,
-    weekdays,
     canLeave,
 }: Props) {
     const getInitials = useInitials();
@@ -242,109 +238,6 @@ export default function TeamEdit({
                                             />
                                         </div>
 
-                                        <div className="grid gap-4">
-                                            <div>
-                                                <Label>
-                                                    Horário de atendimento
-                                                </Label>
-                                                <p className="text-muted-foreground text-sm">
-                                                    Defina os dias e horários em
-                                                    que sua empresa atende.
-                                                </p>
-                                            </div>
-                                            <div className="space-y-3">
-                                                {weekdays.map((weekday) => {
-                                                    const hours =
-                                                        team.businessHours?.[
-                                                            weekday.value
-                                                        ];
-                                                    const isEnabled =
-                                                        hours?.enabled ===
-                                                            undefined ||
-                                                        hours.enabled ===
-                                                            true ||
-                                                        hours.enabled === '1';
-
-                                                    return (
-                                                        <div
-                                                            key={weekday.value}
-                                                            className="grid gap-3 rounded-md border p-3 sm:grid-cols-[1fr_auto_auto_auto] sm:items-center"
-                                                        >
-                                                            <label className="flex items-center gap-2 text-sm">
-                                                                <input
-                                                                    type="hidden"
-                                                                    name={`business_hours[${weekday.value}][enabled]`}
-                                                                    value="0"
-                                                                />
-                                                                <input
-                                                                    type="checkbox"
-                                                                    name={`business_hours[${weekday.value}][enabled]`}
-                                                                    value="1"
-                                                                    defaultChecked={
-                                                                        isEnabled
-                                                                    }
-                                                                    className="accent-primary"
-                                                                />
-                                                                {weekday.label}
-                                                            </label>
-                                                            <Input
-                                                                type="time"
-                                                                name={`business_hours[${weekday.value}][open]`}
-                                                                defaultValue={
-                                                                    hours?.open ??
-                                                                    '09:00'
-                                                                }
-                                                                aria-label={`Abertura ${weekday.label}`}
-                                                            />
-                                                            <span className="text-muted-foreground text-sm">
-                                                                até
-                                                            </span>
-                                                            <Input
-                                                                type="time"
-                                                                name={`business_hours[${weekday.value}][close]`}
-                                                                defaultValue={
-                                                                    hours?.close ??
-                                                                    '18:00'
-                                                                }
-                                                                aria-label={`Fechamento ${weekday.label}`}
-                                                            />
-                                                        </div>
-                                                    );
-                                                })}
-                                            </div>
-                                            <InputError
-                                                message={errors.business_hours}
-                                            />
-                                        </div>
-
-                                        <div className="grid gap-2">
-                                            <Label htmlFor="timezone">
-                                                Fuso horário
-                                            </Label>
-                                            <select
-                                                id="timezone"
-                                                name="timezone"
-                                                defaultValue={
-                                                    team.timezone ??
-                                                    'America/Sao_Paulo'
-                                                }
-                                                className="border-input bg-background h-9 rounded-md border px-3 text-sm"
-                                                required
-                                            >
-                                                {timezones.map((timezone) => (
-                                                    <option
-                                                        key={timezone}
-                                                        value={timezone}
-                                                    >
-                                                        {timezone}
-                                                    </option>
-                                                ))}
-                                            </select>
-                                            <InputError
-                                                message={errors.timezone}
-                                            />
-                                        </div>
-
                                         <div className="grid gap-4 sm:grid-cols-2">
                                             <div className="grid gap-2">
                                                 <Label htmlFor="phone">
@@ -467,14 +360,6 @@ export default function TeamEdit({
                                     </p>
                                     <p className="whitespace-pre-wrap">
                                         {team.targetAudience}
-                                    </p>
-                                </div>
-                                <div>
-                                    <p className="text-muted-foreground">
-                                        Fuso horário
-                                    </p>
-                                    <p className="font-medium">
-                                        {team.timezone}
                                     </p>
                                 </div>
                                 <div>

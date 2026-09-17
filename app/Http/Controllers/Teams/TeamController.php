@@ -4,9 +4,8 @@ namespace App\Http\Controllers\Teams;
 
 use App\Enums\TeamRole;
 use App\Enums\TeamSegment;
-use App\Enums\Weekday;
 use App\Http\Controllers\Controller;
-use App\Http\Requests\Teams\SaveCompanyRequest;
+use App\Http\Requests\Teams\UpdateCompanyRequest;
 use App\Models\Membership;
 use App\Models\User;
 use Illuminate\Http\RedirectResponse;
@@ -37,8 +36,6 @@ class TeamController extends Controller
                 'businessDescription' => $team->business_description,
                 'productsServices' => $team->products_services,
                 'targetAudience' => $team->target_audience,
-                'businessHours' => $team->business_hours,
-                'timezone' => $team->timezone,
                 'phone' => $team->phone,
                 'publicEmail' => $team->public_email,
                 'address' => $team->address,
@@ -71,15 +68,13 @@ class TeamController extends Controller
             'canLeave' => Gate::forUser($user)->allows('leave', $team),
             'availableRoles' => TeamRole::assignable(),
             'segments' => TeamSegment::options(),
-            'timezones' => timezone_identifiers_list(),
-            'weekdays' => Weekday::options(),
         ]);
     }
 
     /**
      * Update the specified team.
      */
-    public function update(SaveCompanyRequest $request): RedirectResponse
+    public function update(UpdateCompanyRequest $request): RedirectResponse
     {
         $team = $request->user()->company();
 
