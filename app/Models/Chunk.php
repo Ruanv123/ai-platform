@@ -15,7 +15,7 @@ use Illuminate\Support\Carbon;
  * @property int $id
  * @property int $document_id
  * @property int $team_id
- * @property int $collection_id
+ * @property string $collection_id
  * @property int $position
  * @property string $content
  * @property array<float> $embedding

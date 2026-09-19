@@ -14,7 +14,7 @@ return new class extends Migration
         Schema::create('whats_app_numbers', function (Blueprint $table) {
             $table->id();
             $table->foreignId('team_id')->constrained('teams')->cascadeOnDelete();
-            $table->foreignId('agent_id')->nullable()->constrained('agents')->nullOnDelete();
+            $table->foreignUuid('agent_id')->nullable()->constrained('agents')->nullOnDelete();
             $table->string('method')->default('manual');
             $table->string('waba_id');
             $table->string('phone_number_id');

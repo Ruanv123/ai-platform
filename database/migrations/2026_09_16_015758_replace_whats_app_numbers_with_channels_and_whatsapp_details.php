@@ -16,7 +16,7 @@ return new class extends Migration
         Schema::create('channels', function (Blueprint $table): void {
             $table->id();
             $table->foreignId('team_id')->constrained('teams')->cascadeOnDelete();
-            $table->foreignId('agent_id')->nullable()->constrained('agents')->nullOnDelete();
+            $table->foreignUuid('agent_id')->nullable()->constrained('agents')->nullOnDelete();
             $table->string('type', 32);
             $table->string('status', 32)->default('not_configured');
             $table->text('last_error')->nullable();

@@ -41,7 +41,7 @@ class SaveWhatsAppChannelRequest extends FormRequest
             'app_secret' => [$this->route('channel') instanceof Channel ? 'nullable' : 'required', 'string', 'max:5000'],
             'agent_id' => [
                 'nullable',
-                'integer',
+                'uuid',
                 Rule::exists('agents', 'id')->where('team_id', $this->user()?->company()?->getKey()),
             ],
             'channel_id' => ['prohibited'],

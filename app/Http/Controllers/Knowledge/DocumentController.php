@@ -277,7 +277,7 @@ class DocumentController extends Controller
      */
     public function move(MoveDocumentRequest $request, Document $document): RedirectResponse
     {
-        $collection = Collection::query()->findOrFail((int) $request->integer('collection_id'));
+        $collection = Collection::query()->findOrFail($request->validated('collection_id'));
 
         DB::transaction(function () use ($document, $collection): void {
             $document->update(['collection_id' => $collection->getKey()]);
@@ -429,7 +429,7 @@ class DocumentController extends Controller
         ];
     }
 
-    private function redirectToDocuments(Request $request, Collection|int $collection): RedirectResponse
+    private function redirectToDocuments(Request $request, Collection|string $collection): RedirectResponse
     {
         return to_route('documents.index', [
             'collection' => $collection,

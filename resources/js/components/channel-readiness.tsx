@@ -14,7 +14,7 @@ export type ChannelReadiness = {
     credentialsSavedAt: string | null;
     webhookVerifiedAt: string | null;
     lastTestedAt: string | null;
-    agent: { id: number; name: string } | null;
+    agent: { id: string; name: string } | null;
 };
 
 type MilestoneState = 'done' | 'failed' | 'current' | 'pending';

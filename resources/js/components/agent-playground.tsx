@@ -27,12 +27,12 @@ export type AgentDraft = {
     welcomeMessage: string;
     instructions: string[];
     rules: string[];
-    collectionIds: number[];
+    collectionIds: string[];
 };
 
 type Source = {
     document: { id: number; title: string };
-    collection: { id: number; name: string };
+    collection: { id: string; name: string };
     content: string;
     similarity: number;
 };
@@ -107,7 +107,7 @@ function parseSources(result: unknown): Source[] {
             isRecord(source.collection) &&
             typeof source.document.id === 'number' &&
             typeof source.document.title === 'string' &&
-            typeof source.collection.id === 'number' &&
+            typeof source.collection.id === 'string' &&
             typeof source.collection.name === 'string' &&
             typeof source.content === 'string' &&
             typeof source.similarity === 'number'

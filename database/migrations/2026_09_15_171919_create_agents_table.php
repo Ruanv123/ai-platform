@@ -12,9 +12,10 @@ return new class extends Migration
     public function up(): void
     {
         Schema::create('agents', function (Blueprint $table): void {
-            $table->id();
+            $table->uuid('id')->primary();
             $table->foreignId('team_id')->constrained()->cascadeOnDelete();
             $table->string('name');
+            $table->text('description')->nullable();
             $table->string('objective', 32);
             $table->string('tone', 32);
             $table->boolean('uses_emojis')->default(false);
@@ -30,7 +31,7 @@ return new class extends Migration
         });
 
         Schema::create('agent_collection', function (Blueprint $table): void {
-            $table->foreignId('agent_id')->constrained()->cascadeOnDelete();
+            $table->foreignUuid('agent_id')->constrained()->cascadeOnDelete();
             $table->foreignId('collection_id')->constrained()->cascadeOnDelete();
             $table->primary(['agent_id', 'collection_id']);
         });

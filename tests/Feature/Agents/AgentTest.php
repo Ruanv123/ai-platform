@@ -10,6 +10,7 @@ use App\Models\Agent;
 use App\Models\Channel;
 use App\Models\Collection;
 use App\Models\User;
+use Illuminate\Support\Str;
 use Inertia\Testing\AssertableInertia as Assert;
 
 function agentDetails(array $overrides = []): array
@@ -31,21 +32,6 @@ it('redirects guests to login when they visit agents', function () {
     $response = $this->get(route('agents.index'));
 
     $response->assertRedirect(route('login'));
-});
-
-it('renders the create editor for an owner', function () {
-    $user = User::factory()->withTeam()->create();
-
-    $response = $this->actingAs($user)->get(route('agents.create'));
-
-    $response->assertOk()->assertInertia(fn (Assert $page) => $page
-        ->component('agents/edit')
-        ->where('agent', null)
-        ->has('collections')
-        ->has('objectives')
-        ->has('tones')
-        ->has('responseLengths'),
-    );
 });
 
 it('renders the edit editor with the current company agent', function () {
@@ -108,15 +94,15 @@ it('renders only the current company agents and collections', function () {
     );
 });
 
-it('allows an owner to create an agent with ordered lists and selected collections', function () {
+it('allows an owner to quick-create an agent with a name and description', function () {
     $user = User::factory()->withTeam()->create();
     $team = $user->company();
-    $collection = Collection::factory()->for($team)->create(['name' => 'Vendas']);
 
-    $response = $this->actingAs($user)->post(route('agents.store'), agentDetails([
-        'collection_ids' => [$collection->id],
+    $response = $this->actingAs($user)->post(route('agents.store'), [
+        'name' => 'Lia',
+        'description' => 'Consultora de vendas para o site.',
         'team_id' => 999999,
-    ]));
+    ]);
 
     $agent = Agent::query()->where('name', 'Lia')->firstOrFail();
 
@@ -126,18 +112,23 @@ it('allows an owner to create an agent with ordered lists and selected collectio
         'message' => 'Agente criado com sucesso.',
     ]);
 
-    expect($agent->team_id)->toBe($team->id)
-        ->and($agent->instructions)->toBe(['Seja objetiva.', 'Confirme o contexto antes de responder.'])
-        ->and($agent->rules)->toBe(['Não invente informações.']);
-    expect($agent->collections()->pluck('collections.id')->all())->toBe([$collection->id]);
+    expect(Str::isUuid($agent->id))->toBeTrue()
+        ->and($agent->team_id)->toBe($team->id)
+        ->and($agent->description)->toBe('Consultora de vendas para o site.')
+        ->and($agent->objective)->toBe(AgentObjective::Support)
+        ->and($agent->tone)->toBe(AgentTone::Friendly)
+        ->and($agent->response_length)->toBe(AgentResponseLength::Short)
+        ->and($agent->welcome_message)->not->toBe('')
+        ->and($agent->is_active)->toBeTrue();
 });
 
 it('ignores removed transfer triggers and never returns them', function () {
     $user = User::factory()->withTeam()->create();
 
-    $response = $this->actingAs($user)->post(route('agents.store'), agentDetails([
+    $response = $this->actingAs($user)->post(route('agents.store'), [
+        'name' => 'Lia',
         'transfer_triggers' => ['O cliente pedir um humano.'],
-    ]));
+    ]);
 
     $agent = Agent::query()->where('name', 'Lia')->firstOrFail();
 
@@ -152,18 +143,19 @@ it('ignores removed transfer triggers and never returns them', function () {
     );
 });
 
-it('rejects an agent that references a collection from another company', function () {
+it('rejects an agent update that references a collection from another company', function () {
     $user = User::factory()->withTeam()->create();
+    $agent = Agent::factory()->for($user->company())->create();
     $otherCollection = Collection::factory()->create(['name' => 'Privada']);
 
-    $response = $this->actingAs($user)->post(route('agents.store'), agentDetails([
+    $response = $this->actingAs($user)->patch(route('agents.update', $agent), agentDetails([
         'collection_ids' => [$otherCollection->id],
     ]));
 
     $response->assertSessionHasErrors([
         'collection_ids.0' => 'Selecione apenas Coleções da sua Empresa.',
     ]);
-    $this->assertDatabaseCount('agents', 0);
+    expect($agent->collections()->pluck('collections.id')->all())->toBe([]);
 });
 
 it('returns clear validation messages for invalid agent data', function () {
@@ -172,13 +164,24 @@ it('returns clear validation messages for invalid agent data', function () {
     $response = $this->actingAs($user)->post(route('agents.store'), []);
 
     $response->assertSessionHasErrors([
+        'name' => 'Informe o nome do Agente.',
+    ]);
+    $this->assertDatabaseCount('agents', 0);
+});
+
+it('returns clear validation messages when updating an agent with invalid data', function () {
+    $user = User::factory()->withTeam()->create();
+    $agent = Agent::factory()->for($user->company())->create();
+
+    $response = $this->actingAs($user)->patch(route('agents.update', $agent), []);
+
+    $response->assertSessionHasErrors([
         'name' => 'Informe o nome da persona.',
         'objective' => 'Selecione o objetivo do Agente.',
         'tone' => 'Selecione o tom de voz.',
         'response_length' => 'Selecione o tamanho das respostas.',
         'welcome_message' => 'Informe a mensagem de boas-vindas.',
     ]);
-    $this->assertDatabaseCount('agents', 0);
 });
 
 it('allows an admin to update every agent field and its collections', function () {
@@ -280,18 +283,6 @@ it('allows a member to view agents but forbids agent mutations', function () {
     $toggleResponse->assertForbidden();
     $deleteResponse->assertForbidden();
     $this->assertModelExists($agent);
-});
-
-it('forbids a member from opening the create editor', function () {
-    $owner = User::factory()->withTeam()->create();
-    $team = $owner->company();
-    $member = User::factory()->create();
-    $team->members()->attach($member, ['role' => TeamRole::Member->value]);
-    $member->switchTeam($team);
-
-    $createResponse = $this->actingAs($member)->get(route('agents.create'));
-
-    $createResponse->assertForbidden();
 });
 
 it('allows a member to open the editor and use the Playground read-only', function () {

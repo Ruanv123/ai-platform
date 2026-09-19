@@ -91,7 +91,7 @@ class PlaygroundController extends Controller
     /**
      * Load only the validated Collections belonging to the current Empresa.
      *
-     * @param  list<int>  $collectionIds
+     * @param  list<string>  $collectionIds
      * @return \Illuminate\Database\Eloquent\Collection<int, Collection>
      */
     private function draftCollections(Team $team, array $collectionIds): \Illuminate\Database\Eloquent\Collection

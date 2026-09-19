@@ -5,6 +5,7 @@ namespace App\Models;
 use App\Concerns\BelongsToTeam;
 use Database\Factories\CollectionFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
+use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
@@ -12,7 +13,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Carbon;
 
 /**
- * @property int $id
+ * @property string $id
  * @property int $team_id
  * @property string $name
  * @property string|null $description
@@ -25,7 +26,7 @@ use Illuminate\Support\Carbon;
 class Collection extends Model
 {
     /** @use HasFactory<CollectionFactory> */
-    use BelongsToTeam, HasFactory;
+    use BelongsToTeam, HasFactory, HasUuids;
 
     /**
      * Get the attributes that should be cast.

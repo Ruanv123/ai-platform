@@ -30,7 +30,7 @@ class MoveDocumentRequest extends FormRequest
         return [
             'collection_id' => [
                 'required',
-                'integer',
+                'uuid',
                 Rule::exists('collections', 'id')->where('team_id', $this->user()?->company()?->getKey()),
             ],
         ];

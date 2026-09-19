@@ -8,6 +8,7 @@ use App\Enums\AgentResponseLength;
 use App\Enums\AgentTone;
 use Database\Factories\AgentFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
+use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -16,9 +17,10 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Carbon;
 
 /**
- * @property int $id
+ * @property string $id
  * @property int $team_id
  * @property string $name
+ * @property string|null $description
  * @property AgentObjective $objective
  * @property AgentTone $tone
  * @property bool $uses_emojis
@@ -36,6 +38,7 @@ use Illuminate\Support\Carbon;
 #[Fillable([
     'team_id',
     'name',
+    'description',
     'objective',
     'tone',
     'uses_emojis',
@@ -49,7 +52,7 @@ use Illuminate\Support\Carbon;
 class Agent extends Model
 {
     /** @use HasFactory<AgentFactory> */
-    use BelongsToTeam, HasFactory;
+    use BelongsToTeam, HasFactory, HasUuids;
 
     /**
      * Get the Empresa that owns the Agent.

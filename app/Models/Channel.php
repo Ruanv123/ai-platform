@@ -18,7 +18,7 @@ use Illuminate\Support\Carbon;
 /**
  * @property int $id
  * @property int $team_id
- * @property int|null $agent_id
+ * @property string|null $agent_id
  * @property ChannelType $type
  * @property ChannelStatus $status
  * @property string|null $last_error

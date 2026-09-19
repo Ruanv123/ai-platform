@@ -14,7 +14,7 @@ class SearchKnowledgeBase implements Tool
     /**
      * Create a scoped knowledge-base search tool.
      *
-     * @param  array<int, int>  $collectionIds
+     * @param  array<int, string>  $collectionIds
      */
     public function __construct(
         private Team $team,

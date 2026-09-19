@@ -6,6 +6,7 @@ use App\Enums\AgentObjective;
 use App\Enums\AgentResponseLength;
 use App\Enums\AgentTone;
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Agents\CreateAgentRequest;
 use App\Http\Requests\Agents\SaveAgentRequest;
 use App\Models\Agent;
 use App\Models\Channel;
@@ -19,20 +20,6 @@ use Inertia\Response;
 
 class AgentController extends Controller
 {
-    /**
-     * Show the editor for a new Agent.
-     */
-    public function create(Request $request): Response
-    {
-        $user = $request->user();
-        $team = $user?->company();
-
-        abort_if($team === null, 404);
-        Gate::authorize('create', Agent::class);
-
-        return Inertia::render('agents/edit', $this->editorProps($team, canManageAgents: true));
-    }
-
     /**
      * Display the current Empresa's Agents.
      */
@@ -110,19 +97,23 @@ class AgentController extends Controller
     }
 
     /**
-     * Store a new Agent.
+     * Quickly create a new Agent from a name and description.
+     *
+     * The remaining configuration is filled in afterwards on the editor.
      */
-    public function store(SaveAgentRequest $request): RedirectResponse
+    public function store(CreateAgentRequest $request): RedirectResponse
     {
         $team = $request->user()->company();
         abort_if($team === null, 404);
 
-        $validated = $request->validated();
-        $collectionIds = $validated['collection_ids'] ?? [];
-        unset($validated['collection_ids']);
-
-        $agent = $team->agents()->create($validated);
-        $agent->collections()->sync($collectionIds);
+        $agent = $team->agents()->create([
+            ...$request->validated(),
+            'objective' => AgentObjective::Support,
+            'tone' => AgentTone::Friendly,
+            'uses_emojis' => false,
+            'response_length' => AgentResponseLength::Short,
+            'welcome_message' => 'Olá! Como posso ajudar você hoje?',
+        ]);
 
         Inertia::flash('toast', [
             'type' => 'success',
@@ -189,19 +180,20 @@ class AgentController extends Controller
     }
 
     /**
-     * Get the props shared by the create and edit screens.
+     * Get the props shared by the editor screen.
      *
      * @return array<string, mixed>
      */
     private function editorProps(
         Team $team,
-        ?Agent $agent = null,
+        Agent $agent,
         bool $canManageAgents = false,
     ): array {
         return [
-            'agent' => $agent === null ? null : [
+            'agent' => [
                 'id' => $agent->id,
                 'name' => $agent->name,
+                'description' => $agent->description,
                 'objective' => $agent->objective->value,
                 'tone' => $agent->tone->value,
                 'usesEmojis' => $agent->uses_emojis,

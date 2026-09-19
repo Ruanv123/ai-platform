@@ -14,22 +14,21 @@ class KnowledgeBaseSearch
     /**
      * Search ready knowledge chunks available to a set of collections.
      *
-     * @param  iterable<int, Collection|int>  $allowedCollections
+     * @param  iterable<int, Collection|string>  $allowedCollections
      * @return SupportCollection<int, array{
      *     content: string,
      *     document: array{id: int, title: string},
-     *     collection: array{id: int, name: string},
+     *     collection: array{id: string, name: string},
      *     similarity: float,
      * }>
      */
     public function search(Team $team, iterable $allowedCollections, string $question): SupportCollection
     {
         $collectionIds = collect($allowedCollections)
-            ->map(fn (Collection|int $collection): int => $collection instanceof Collection
+            ->map(fn (Collection|string $collection): string => $collection instanceof Collection
                 ? $collection->getKey()
                 : $collection)
             ->filter()
-            ->map(fn (int|string $id): int => (int) $id)
             ->unique()
             ->values();
 
@@ -77,7 +76,7 @@ class KnowledgeBaseSearch
                     'title' => (string) $chunk->document_title,
                 ],
                 'collection' => [
-                    'id' => (int) $chunk->collection_id,
+                    'id' => (string) $chunk->collection_id,
                     'name' => (string) $chunk->collection_name,
                 ],
                 'similarity' => (float) max(0.0, 1 - (float) $chunk->distance),

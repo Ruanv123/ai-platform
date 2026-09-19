@@ -107,7 +107,7 @@ type FaqItem = {
 };
 
 type KnowledgeCollection = {
-    id: number;
+    id: string;
     name: string;
 };
 
@@ -183,7 +183,7 @@ function statusVariant(
 }
 
 type DocumentFormDialogProps = {
-    collectionId: number;
+    collectionId: string;
     document: KnowledgeDocument | null;
     open: boolean;
     loading: boolean;
@@ -781,7 +781,7 @@ function DocumentActionMenu({
 }
 
 type DocumentMoveDialogProps = {
-    collectionId: number;
+    collectionId: string;
     collections: KnowledgeCollection[];
     document: KnowledgeDocument | null;
     open: boolean;

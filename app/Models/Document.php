@@ -16,7 +16,7 @@ use Illuminate\Support\Carbon;
 /**
  * @property int $id
  * @property int $team_id
- * @property int $collection_id
+ * @property string $collection_id
  * @property DocumentType $type
  * @property DocumentStatus $status
  * @property string $title

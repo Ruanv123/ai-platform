@@ -39,7 +39,7 @@ import {
 import type { TeamPermissions } from "@/types";
 
 type AgentOption = {
-    id: number;
+    id: string;
     name: string;
 };
 

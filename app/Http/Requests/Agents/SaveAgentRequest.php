@@ -5,7 +5,6 @@ namespace App\Http\Requests\Agents;
 use App\Enums\AgentObjective;
 use App\Enums\AgentResponseLength;
 use App\Enums\AgentTone;
-use App\Models\Agent;
 use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
@@ -17,14 +16,7 @@ class SaveAgentRequest extends FormRequest
      */
     public function authorize(): bool
     {
-        $user = $this->user();
-        $agent = $this->route('agent');
-
-        if ($agent instanceof Agent) {
-            return $user?->can('update', $agent) ?? false;
-        }
-
-        return $user?->can('create', Agent::class) ?? false;
+        return $this->user()?->can('update', $this->route('agent')) ?? false;
     }
 
     /**
@@ -36,6 +28,7 @@ class SaveAgentRequest extends FormRequest
     {
         return [
             'name' => ['required', 'string', 'max:255'],
+            'description' => ['nullable', 'string', 'max:1000'],
             'objective' => ['required', Rule::enum(AgentObjective::class)],
             'tone' => ['required', Rule::enum(AgentTone::class)],
             'uses_emojis' => ['required', 'boolean'],
@@ -47,7 +40,7 @@ class SaveAgentRequest extends FormRequest
             'rules.*' => ['required', 'string', 'max:1000'],
             'collection_ids' => ['nullable', 'array', 'max:100'],
             'collection_ids.*' => [
-                'integer',
+                'uuid',
                 'distinct',
                 Rule::exists('collections', 'id')->where('team_id', $this->user()?->company()?->getKey()),
             ],
@@ -64,6 +57,7 @@ class SaveAgentRequest extends FormRequest
         return [
             'name.required' => 'Informe o nome da persona.',
             'name.max' => 'O nome da persona deve ter no máximo 255 caracteres.',
+            'description.max' => 'A descrição deve ter no máximo 1.000 caracteres.',
             'objective.required' => 'Selecione o objetivo do Agente.',
             'objective.enum' => 'Selecione um objetivo válido.',
             'tone.required' => 'Selecione o tom de voz.',
@@ -84,7 +78,7 @@ class SaveAgentRequest extends FormRequest
             'rules.*.max' => 'Cada regra deve ter no máximo 1.000 caracteres.',
             'collection_ids.array' => 'As Coleções selecionadas são inválidas.',
             'collection_ids.max' => 'Selecione no máximo 100 Coleções.',
-            'collection_ids.*.integer' => 'A Coleção selecionada é inválida.',
+            'collection_ids.*.uuid' => 'A Coleção selecionada é inválida.',
             'collection_ids.*.distinct' => 'Não selecione a mesma Coleção mais de uma vez.',
             'collection_ids.*.exists' => 'Selecione apenas Coleções da sua Empresa.',
         ];

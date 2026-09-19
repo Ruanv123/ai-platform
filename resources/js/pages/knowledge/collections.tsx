@@ -28,7 +28,7 @@ import { index as documentsIndex } from '@/routes/documents';
 import type { TeamPermissions } from '@/types';
 
 type KnowledgeCollection = {
-    id: number;
+    id: string;
     name: string;
     description: string | null;
     isDefault: boolean;

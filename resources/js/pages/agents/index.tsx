@@ -1,7 +1,8 @@
-import { Head, Link, router } from '@inertiajs/react';
+import { Form, Head, Link, router } from '@inertiajs/react';
 import { Bot, MoreHorizontal, Pencil, Plus, Power, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 import Heading from '@/components/heading';
+import InputError from '@/components/input-error';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -21,6 +22,8 @@ import {
     DropdownMenuSeparator,
     DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import {
     Table,
     TableBody,
@@ -29,7 +32,7 @@ import {
     TableHeader,
     TableRow,
 } from '@/components/ui/table';
-import { create as createAgent, destroy, edit, toggle } from '@/routes/agents';
+import { destroy, edit, store, toggle } from '@/routes/agents';
 import type { TeamPermissions } from '@/types';
 
 type AgentChannel = {
@@ -41,7 +44,7 @@ type AgentChannel = {
 };
 
 type Agent = {
-    id: number;
+    id: string;
     name: string;
     objectiveLabel: string;
     toneLabel: string;
@@ -160,9 +163,76 @@ function ToggleAgentDialog({
     );
 }
 
+function CreateAgentDialog({
+    open,
+    onOpenChange,
+}: {
+    open: boolean;
+    onOpenChange: (open: boolean) => void;
+}) {
+    return (
+        <Dialog open={open} onOpenChange={onOpenChange}>
+            <DialogContent>
+                <Form {...store.form()} className="grid gap-5">
+                    {({ errors, processing }) => (
+                        <>
+                            <DialogHeader>
+                                <DialogTitle>Novo Agente</DialogTitle>
+                                <DialogDescription>
+                                    Dê um nome e uma descrição para o Agente.
+                                    Você configura o restante na tela de
+                                    edição.
+                                </DialogDescription>
+                            </DialogHeader>
+
+                            <div className="grid gap-2">
+                                <Label htmlFor="new-agent-name">Nome</Label>
+                                <Input
+                                    id="new-agent-name"
+                                    name="name"
+                                    placeholder="Ex.: Lia, sua consultora de vendas"
+                                    autoFocus
+                                    required
+                                />
+                                <InputError message={errors.name} />
+                            </div>
+
+                            <div className="grid gap-2">
+                                <Label htmlFor="new-agent-description">
+                                    Descrição
+                                </Label>
+                                <Input
+                                    id="new-agent-description"
+                                    name="description"
+                                    placeholder="Ex.: Consultora de vendas para o site."
+                                />
+                                <InputError message={errors.description} />
+                            </div>
+
+                            <DialogFooter>
+                                <DialogClose asChild>
+                                    <Button type="button" variant="outline">
+                                        Cancelar
+                                    </Button>
+                                </DialogClose>
+                                <Button type="submit" disabled={processing}>
+                                    {processing
+                                        ? 'Criando...'
+                                        : 'Criar Agente'}
+                                </Button>
+                            </DialogFooter>
+                        </>
+                    )}
+                </Form>
+            </DialogContent>
+        </Dialog>
+    );
+}
+
 export default function Agents({ agents, permissions }: Props) {
     const [agentToToggle, setAgentToToggle] = useState<Agent | null>(null);
     const [agentToDelete, setAgentToDelete] = useState<Agent | null>(null);
+    const [isCreatingAgent, setIsCreatingAgent] = useState(false);
 
     return (
         <>
@@ -175,11 +245,9 @@ export default function Agents({ agents, permissions }: Props) {
                         description="Configure as personas que atenderão seus clientes com o conhecimento da Empresa."
                     />
                     {permissions.canManageAgents && (
-                        <Button asChild>
-                            <Link href={createAgent.url()}>
-                                <Plus />
-                                Novo Agente
-                            </Link>
+                        <Button onClick={() => setIsCreatingAgent(true)}>
+                            <Plus />
+                            Novo Agente
                         </Button>
                     )}
                 </div>
@@ -200,11 +268,12 @@ export default function Agents({ agents, permissions }: Props) {
                                 </p>
                             </div>
                             {permissions.canManageAgents && (
-                                <Button variant="outline" asChild>
-                                    <Link href={createAgent.url()}>
-                                        <Plus />
-                                        Criar primeiro Agente
-                                    </Link>
+                                <Button
+                                    variant="outline"
+                                    onClick={() => setIsCreatingAgent(true)}
+                                >
+                                    <Plus />
+                                    Criar primeiro Agente
                                 </Button>
                             )}
                         </CardContent>
@@ -401,6 +470,10 @@ export default function Agents({ agents, permissions }: Props) {
                         setAgentToDelete(null);
                     }
                 }}
+            />
+            <CreateAgentDialog
+                open={isCreatingAgent}
+                onOpenChange={setIsCreatingAgent}
             />
         </>
     );

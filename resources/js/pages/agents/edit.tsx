@@ -23,7 +23,7 @@ import {
     SelectTrigger,
     SelectValue,
 } from '@/components/ui/select';
-import { index, store, update } from '@/routes/agents';
+import { index, update } from '@/routes/agents';
 
 type Option = {
     value: string;
@@ -31,16 +31,17 @@ type Option = {
 };
 
 type CollectionOption = {
-    id: number;
+    id: string;
     name: string;
 };
 
 type Agent = AgentDraft & {
-    id: number;
+    id: string;
+    description: string | null;
 };
 
 type Props = {
-    agent: Agent | null;
+    agent: Agent;
     collections: CollectionOption[];
     objectives: Option[];
     tones: Option[];
@@ -239,24 +240,22 @@ function AgentForm({
     responseLengths,
     permissions,
 }: Props) {
-    const isEditing = agent !== null;
-    const [name, setName] = useState(agent?.name ?? '');
+    const [name, setName] = useState(agent.name);
+    const [description, setDescription] = useState(agent.description ?? '');
     const [objective, setObjective] = useState(
-        agent?.objective ?? objectives[0]?.value ?? '',
+        agent.objective || objectives[0]?.value || '',
     );
-    const [tone, setTone] = useState(agent?.tone ?? tones[0]?.value ?? '');
+    const [tone, setTone] = useState(agent.tone || tones[0]?.value || '');
     const [responseLength, setResponseLength] = useState(
-        agent?.responseLength ?? responseLengths[0]?.value ?? '',
+        agent.responseLength || responseLengths[0]?.value || '',
     );
-    const [usesEmojis, setUsesEmojis] = useState(agent?.usesEmojis ?? false);
-    const [instructions, setInstructions] = useState(agent?.instructions ?? []);
-    const [rules, setRules] = useState(agent?.rules ?? []);
+    const [usesEmojis, setUsesEmojis] = useState(agent.usesEmojis);
+    const [instructions, setInstructions] = useState(agent.instructions);
+    const [rules, setRules] = useState(agent.rules);
     const [selectedCollectionIds, setSelectedCollectionIds] = useState(
-        agent?.collectionIds ?? [],
+        agent.collectionIds,
     );
-    const [welcomeMessage, setWelcomeMessage] = useState(
-        agent?.welcomeMessage ?? '',
-    );
+    const [welcomeMessage, setWelcomeMessage] = useState(agent.welcomeMessage);
     const [activePanel, setActivePanel] = useState<'config' | 'playground'>(
         'config',
     );
@@ -272,7 +271,7 @@ function AgentForm({
         collectionIds: selectedCollectionIds,
     };
 
-    const toggleCollection = (collectionId: number) => {
+    const toggleCollection = (collectionId: string) => {
         setSelectedCollectionIds((current) =>
             current.includes(collectionId)
                 ? current.filter((id) => id !== collectionId)
@@ -282,7 +281,7 @@ function AgentForm({
 
     return (
         <Form
-            {...(isEditing ? update.form(agent.id) : store.form())}
+            {...update.form(agent.id)}
             className="grid gap-5"
         >
             {({ errors, processing }) => (
@@ -374,6 +373,26 @@ function AgentForm({
                                                 required
                                             />
                                             <InputError message={errors.name} />
+                                        </div>
+
+                                        <div className="grid gap-2 sm:col-span-2">
+                                            <Label htmlFor="agent-description">
+                                                Descrição
+                                            </Label>
+                                            <Input
+                                                id="agent-description"
+                                                name="description"
+                                                value={description}
+                                                onChange={(event) =>
+                                                    setDescription(
+                                                        event.target.value,
+                                                    )
+                                                }
+                                                placeholder="Ex.: Consultora de vendas para o site."
+                                            />
+                                            <InputError
+                                                message={errors.description}
+                                            />
                                         </div>
 
                                         <SelectField
@@ -542,9 +561,7 @@ function AgentForm({
                                             >
                                                 {processing
                                                     ? 'Salvando...'
-                                                    : isEditing
-                                                      ? 'Salvar alterações'
-                                                      : 'Criar Agente'}
+                                                    : 'Salvar alterações'}
                                             </Button>
                                         </div>
                                     )}
@@ -564,11 +581,9 @@ function AgentForm({
 }
 
 export default function AgentEditor(props: Props) {
-    const isEditing = props.agent !== null;
-
     return (
         <>
-            <Head title={isEditing ? 'Editar Agente' : 'Novo Agente'} />
+            <Head title="Editar Agente" />
 
             <div className="flex flex-1 flex-col gap-6 p-4 md:p-8">
                 <div className="flex flex-col gap-4">
@@ -583,7 +598,7 @@ export default function AgentEditor(props: Props) {
                             <Bot className="text-muted-foreground size-5" />
                         </div>
                         <Heading
-                            title={isEditing ? 'Editar Agente' : 'Novo Agente'}
+                            title="Editar Agente"
                             description={
                                 props.permissions.canManageAgents
                                     ? 'Configure a persona, o estilo e o conhecimento que o Agente poderá consultar.'
@@ -593,7 +608,7 @@ export default function AgentEditor(props: Props) {
                     </div>
                 </div>
 
-                <AgentForm key={props.agent?.id ?? 'new'} {...props} />
+                <AgentForm key={props.agent.id} {...props} />
             </div>
         </>
     );

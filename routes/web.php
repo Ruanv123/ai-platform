@@ -49,7 +49,7 @@ Route::get('dashboard', DashboardController::class)
 
 Route::middleware(['auth', EnsureUserHasTeam::class])->group(function () {
     Route::resource('agents', AgentController::class)
-        ->only(['index', 'create', 'store', 'edit', 'update', 'destroy'])
+        ->only(['index', 'store', 'edit', 'update', 'destroy'])
         ->names('agents');
     Route::patch('agents/{agent}/toggle', [AgentController::class, 'toggle'])
         ->name('agents.toggle');

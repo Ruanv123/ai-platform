@@ -24,6 +24,7 @@ class AgentFactory extends Factory
         return [
             'team_id' => Team::factory(),
             'name' => fake()->firstName(),
+            'description' => fake()->sentence(),
             'objective' => AgentObjective::Support,
             'tone' => AgentTone::Friendly,
             'uses_emojis' => false,
