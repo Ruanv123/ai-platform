@@ -27,7 +27,8 @@ class ChannelController extends Controller
         $configuredChannels = $team->channels()
             ->with([
                 'agent:id,name',
-                'whatsappPhoneNumber:id,channel_id,display_phone_number',
+                'whatsappPhoneNumber:id,channel_id,display_phone_number,verified_name,quality_rating',
+                'whatsappPhoneNumber.whatsappAccount:id,whatsapp_phone_number_id,webhook_verified_at,last_tested_at,created_at',
             ])
             ->get()
             ->keyBy(fn (Channel $channel): string => $channel->type->value);
@@ -37,6 +38,8 @@ class ChannelController extends Controller
             /** @var Channel|null $channel */
             $channel = $configuredChannels->get($channelType['value']);
             $status = $channel?->status;
+            $phoneNumber = $channel?->whatsappPhoneNumber;
+            $account = $phoneNumber?->whatsappAccount;
 
             return [
                 'value' => $channelType['value'],
@@ -54,7 +57,12 @@ class ChannelController extends Controller
                     ? ChannelStatus::NotConfigured->label()
                     : null),
                 'lastError' => $channel?->last_error,
-                'displayPhoneNumber' => $channel?->whatsappPhoneNumber?->display_phone_number,
+                'displayPhoneNumber' => $phoneNumber?->display_phone_number,
+                'verifiedName' => $phoneNumber?->verified_name,
+                'qualityRating' => $phoneNumber?->quality_rating,
+                'credentialsSavedAt' => $account?->created_at?->toIso8601String(),
+                'webhookVerifiedAt' => $account?->webhook_verified_at?->toIso8601String(),
+                'lastTestedAt' => $account?->last_tested_at?->toIso8601String(),
                 'agent' => $channel?->agent === null ? null : [
                     'id' => $channel->agent->id,
                     'name' => $channel->agent->name,

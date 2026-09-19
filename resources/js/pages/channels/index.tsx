@@ -1,35 +1,28 @@
-import { Head, Link } from '@inertiajs/react';
+import { Head, Link } from "@inertiajs/react";
+import { ArrowRight, Globe2, Instagram, MessageCircle } from "lucide-react";
 import {
-    AlertTriangle,
-    ArrowRight,
-    Bot,
-    Globe2,
-    Instagram,
-    MessageCircle,
-    Settings2,
-} from 'lucide-react';
-import Heading from '@/components/heading';
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import type { TeamPermissions } from '@/types';
+    ChannelReadinessRail,
+    ChannelSignalLamp,
+    channelMilestones,
+    channelNextStep,
+    channelSignal,
+    type ChannelReadiness,
+} from "@/components/channel-readiness";
+import Heading from "@/components/heading";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import type { TeamPermissions } from "@/types";
 
-type Agent = {
-    id: number;
-    name: string;
-};
-
-type Channel = {
+type Channel = ChannelReadiness & {
     value: string;
     label: string;
     description: string;
-    icon: 'message-circle' | 'globe-2' | 'instagram';
+    icon: "message-circle" | "globe-2" | "instagram";
     available: boolean;
     destination: string | null;
-    status: 'not_configured' | 'connected' | 'error' | null;
-    statusLabel: string | null;
-    lastError: string | null;
     displayPhoneNumber: string | null;
-    agent: Agent | null;
+    verifiedName: string | null;
+    qualityRating: string | null;
     agentMissing: boolean;
 };
 
@@ -39,22 +32,20 @@ type Props = {
 };
 
 const channelIcons = {
-    'message-circle': MessageCircle,
-    'globe-2': Globe2,
+    "message-circle": MessageCircle,
+    "globe-2": Globe2,
     instagram: Instagram,
 } as const;
 
-function channelStatusVariant(
-    status: Channel['status'],
-): 'default' | 'secondary' | 'destructive' {
-    return status === 'connected'
-        ? 'default'
-        : status === 'error'
-          ? 'destructive'
-          : 'secondary';
+function GroupLabel({ children }: { children: string }) {
+    return (
+        <p className="text-muted-foreground px-1 text-xs font-medium tracking-wide uppercase">
+            {children}
+        </p>
+    );
 }
 
-function ChannelRow({
+function OperatingChannelCard({
     channel,
     canManage,
 }: {
@@ -62,145 +53,126 @@ function ChannelRow({
     canManage: boolean;
 }) {
     const Icon = channelIcons[channel.icon];
-    const description =
-        channel.status === 'error' && channel.lastError
-            ? channel.lastError
-            : channel.description;
-    const isWhatsApp = channel.value === 'whatsapp';
+    const signal = channelSignal(channel);
+    const milestones = channelMilestones(channel);
+    const nextStep = channelNextStep(milestones);
+
+    const identity = [channel.displayPhoneNumber, channel.verifiedName]
+        .filter((part): part is string => part !== null)
+        .join(" · ");
 
     return (
-        <div
-            className={`group grid gap-4 border-b py-5 last:border-b-0 md:grid-cols-[minmax(220px,1.1fr)_minmax(260px,1.5fr)_auto] md:items-center md:gap-8 ${
-                channel.agentMissing ? 'bg-amber-500/5' : ''
-            }`}
-        >
-            <div className="flex min-w-0 items-start gap-3">
-                <span className="bg-primary/10 text-primary flex size-10 shrink-0 items-center justify-center rounded-lg">
-                    <Icon className="size-5" />
-                </span>
-                <div className="grid min-w-0 gap-1">
-                    <div className="flex flex-wrap items-center gap-2">
-                        <h2 className="font-semibold">{channel.label}</h2>
-                        {!channel.available && (
-                            <Badge variant="secondary">Em breve</Badge>
-                        )}
+        <article className="bg-card flex flex-col gap-4 rounded-xl border p-5 shadow-xs">
+            <header className="flex items-start justify-between gap-4">
+                <div className="flex min-w-0 items-start gap-3">
+                    <span className="bg-muted flex size-9 shrink-0 items-center justify-center rounded-md">
+                        <Icon className="size-4" />
+                    </span>
+                    <div className="min-w-0">
+                        <h2 className="font-semibold tracking-tight">
+                            {channel.label}
+                        </h2>
+                        <p className="text-muted-foreground truncate text-sm tabular-nums">
+                            {identity === "" ? channel.description : identity}
+                        </p>
                     </div>
-                    <p
-                        className={`text-muted-foreground truncate text-sm ${
-                            channel.status === 'error'
-                                ? 'text-destructive dark:text-destructive'
-                                : ''
-                        }`}
-                        title={description}
-                    >
-                        {description}
-                    </p>
                 </div>
-            </div>
+                <ChannelSignalLamp signal={signal} />
+            </header>
 
-            {isWhatsApp ? (
-                <div className="grid gap-3 sm:grid-cols-2">
-                    <div className="grid min-w-0 gap-1">
-                        <p className="text-muted-foreground text-xs font-medium tracking-wide uppercase">
-                            Status
-                        </p>
-                        <div className="flex flex-wrap items-center gap-2">
-                            <Badge
-                                variant={channelStatusVariant(channel.status)}
-                            >
-                                {channel.statusLabel}
-                            </Badge>
-                            {channel.agentMissing && (
-                                <Badge
-                                    variant="outline"
-                                    className="border-amber-500/50 text-amber-700 dark:text-amber-400"
-                                >
-                                    <AlertTriangle />
-                                    Sem Agente
-                                </Badge>
-                            )}
-                        </div>
-                    </div>
-                    <div className="grid min-w-0 gap-1">
-                        <p className="text-muted-foreground text-xs font-medium tracking-wide uppercase">
-                            Número
-                        </p>
-                        <p className="truncate text-sm font-medium">
-                            {channel.displayPhoneNumber ?? 'Ainda não testado'}
-                        </p>
-                        <p className="text-muted-foreground flex items-center gap-1 truncate text-xs">
-                            <Bot className="size-3.5 shrink-0" />
-                            {channel.agent?.name ?? 'Nenhum Agente vinculado'}
-                        </p>
-                    </div>
-                </div>
-            ) : (
+            <ChannelReadinessRail milestones={milestones} />
+
+            <footer className="flex flex-wrap items-center justify-between gap-3 border-t pt-4">
                 <p className="text-muted-foreground text-sm">
-                    Este meio de atendimento estará disponível em breve.
+                    {channel.qualityRating === null
+                        ? "A Meta informa a qualidade do número após o primeiro teste."
+                        : `Qualidade ${channel.qualityRating.toLowerCase()}`}
                 </p>
-            )}
-
-            <div className="flex justify-start md:justify-end">
-                {channel.available && canManage && channel.destination ? (
-                    <Button variant="outline" asChild>
-                        <Link href={channel.destination}>
-                            {channel.status === 'not_configured' ? (
-                                <>
-                                    Conectar
-                                    <ArrowRight />
-                                </>
-                            ) : (
-                                <>
-                                    <Settings2 />
-                                    Configurar
-                                </>
-                            )}
+                {canManage && channel.destination !== null ? (
+                    <Button
+                        variant={nextStep.primary ? "default" : "outline"}
+                        asChild
+                    >
+                        <Link href={channel.destination} prefetch>
+                            {nextStep.label}
+                            {nextStep.primary && <ArrowRight />}
                         </Link>
                     </Button>
                 ) : (
-                    <span className="text-muted-foreground text-sm">
-                        {!channel.available
-                            ? 'Indisponível'
-                            : 'Somente visualização'}
-                    </span>
+                    <p className="text-muted-foreground text-sm">
+                        Somente Owner e Admin alteram este Canal.
+                    </p>
                 )}
-            </div>
-        </div>
+            </footer>
+        </article>
+    );
+}
+
+function UpcomingChannelCard({ channel }: { channel: Channel }) {
+    const Icon = channelIcons[channel.icon];
+
+    return (
+        <article className="flex flex-col gap-3 rounded-xl border border-dashed p-5">
+            <header className="flex items-start justify-between gap-3">
+                <div className="flex min-w-0 items-start gap-3">
+                    <span className="text-muted-foreground flex size-6 shrink-0 items-center justify-center">
+                        <Icon className="size-4" />
+                    </span>
+                    <h2 className="min-w-0 font-medium">{channel.label}</h2>
+                </div>
+                <Badge variant="secondary" className="shrink-0">
+                    Em breve
+                </Badge>
+            </header>
+            <p className="text-muted-foreground text-sm">
+                {channel.description}
+            </p>
+        </article>
     );
 }
 
 export default function Channels({ channels, permissions }: Props) {
+    const operating = channels.filter((channel) => channel.available);
+    const upcoming = channels.filter((channel) => !channel.available);
+
     return (
         <>
             <Head title="Canais" />
 
-            <div className="flex h-full flex-1 flex-col gap-6 rounded-xl p-4 md:p-6">
+            <div className="flex h-full flex-1 flex-col gap-8 p-4 md:p-6">
                 <Heading
                     title="Canais"
                     description="Veja por onde sua Empresa atende e qual Agente responde em cada meio."
                 />
 
-                <section className="bg-card rounded-xl border px-4 shadow-xs md:px-6">
-                    <div className="flex items-center justify-between gap-4 border-b py-4">
-                        <div className="grid gap-1">
-                            <h2 className="font-semibold">
-                                Meios de atendimento
-                            </h2>
-                            <p className="text-muted-foreground text-sm">
-                                O estado de cada Canal aparece aqui, sem
-                                precisar abrir sua configuração.
-                            </p>
+                <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,2fr)_minmax(260px,1fr)]">
+                    <section className="grid gap-3">
+                        <GroupLabel>Em operação</GroupLabel>
+                        <div className="grid gap-4">
+                            {operating.map((channel) => (
+                                <OperatingChannelCard
+                                    key={channel.value}
+                                    channel={channel}
+                                    canManage={permissions.canManageChannels}
+                                />
+                            ))}
                         </div>
-                    </div>
+                    </section>
 
-                    {channels.map((channel) => (
-                        <ChannelRow
-                            key={channel.value}
-                            channel={channel}
-                            canManage={permissions.canManageChannels}
-                        />
-                    ))}
-                </section>
+                    {upcoming.length > 0 && (
+                        <section className="grid gap-3">
+                            <GroupLabel>Em breve</GroupLabel>
+                            <div className="grid gap-4">
+                                {upcoming.map((channel) => (
+                                    <UpcomingChannelCard
+                                        key={channel.value}
+                                        channel={channel}
+                                    />
+                                ))}
+                            </div>
+                        </section>
+                    )}
+                </div>
             </div>
         </>
     );

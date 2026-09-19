@@ -18,6 +18,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Str;
@@ -27,6 +28,8 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class DocumentController extends Controller
 {
+    private const DOCUMENTS_PER_PAGE = 20;
+
     public function __construct(
         private readonly DocumentStorageQuota $quota,
         private readonly DocumentFileStorage $fileStorage,
@@ -43,11 +46,37 @@ class DocumentController extends Controller
 
         abort_if($team === null, 404);
 
+        $filters = $this->documentFilters($request);
         $documents = $collection->documents()
-            ->latest('updated_at')
-            ->get()
-            ->map(fn (Document $document): array => $this->documentSummaryData($document))
-            ->values();
+            ->select([
+                'id',
+                'team_id',
+                'collection_id',
+                'type',
+                'status',
+                'title',
+                'error_message',
+                'size_bytes',
+                'file_path',
+                'original_filename',
+                'mime_type',
+                'url',
+                'updated_at',
+            ])
+            ->when($filters['search'] !== '', function ($query) use ($filters): void {
+                $query->whereRaw(
+                    'LOWER(documents.title) LIKE ?',
+                    ['%'.mb_strtolower($filters['search']).'%'],
+                );
+            })
+            ->when($filters['type'] !== '', fn ($query) => $query->where('type', $filters['type']))
+            ->when($filters['status'] !== '', fn ($query) => $query->where('status', $filters['status']))
+            ->orderBy($filters['sortColumn'], $filters['direction'])
+            ->orderByDesc('id')
+            ->paginate(self::DOCUMENTS_PER_PAGE)
+            ->withQueryString();
+
+        $documents->through(fn (Document $document): array => $this->documentSummaryData($document));
 
         return Inertia::render('knowledge/documents', [
             'collection' => [
@@ -56,6 +85,13 @@ class DocumentController extends Controller
                 'description' => $collection->description,
             ],
             'documents' => $documents,
+            'filters' => [
+                'search' => $filters['search'],
+                'type' => $filters['type'],
+                'status' => $filters['status'],
+                'sort' => $filters['sort'],
+                'direction' => $filters['direction'],
+            ],
             'collections' => $team->collections()
                 ->orderByDesc('is_default')
                 ->orderBy('name')
@@ -66,7 +102,7 @@ class DocumentController extends Controller
                 ])
                 ->values(),
             'storage' => $this->storageData($team),
-            'polling' => $documents->contains(fn (array $document): bool => in_array(
+            'polling' => $documents->getCollection()->contains(fn (array $document): bool => in_array(
                 $document['status'],
                 [DocumentStatus::Pending->value, DocumentStatus::Processing->value],
                 true,
@@ -153,7 +189,7 @@ class DocumentController extends Controller
             'message' => 'Documento criado com sucesso.',
         ]);
 
-        return to_route('documents.index', $document->collection_id);
+        return $this->redirectToDocuments($request, $document->collection_id);
     }
 
     /**
@@ -233,7 +269,7 @@ class DocumentController extends Controller
             'message' => 'Documento atualizado e enviado para processamento.',
         ]);
 
-        return to_route('documents.index', $document->collection_id);
+        return $this->redirectToDocuments($request, $document->collection_id);
     }
 
     /**
@@ -255,13 +291,13 @@ class DocumentController extends Controller
             'message' => 'Documento movido com sucesso.',
         ]);
 
-        return to_route('documents.index', $collection);
+        return $this->redirectToDocuments($request, $collection);
     }
 
     /**
      * Delete a document and its chunks.
      */
-    public function destroy(Document $document): RedirectResponse
+    public function destroy(Request $request, Document $document): RedirectResponse
     {
         Gate::authorize('delete', $document);
         $collectionId = $document->collection_id;
@@ -273,13 +309,13 @@ class DocumentController extends Controller
             'message' => 'Documento excluído com sucesso.',
         ]);
 
-        return to_route('documents.index', $collectionId);
+        return $this->redirectToDocuments($request, $collectionId);
     }
 
     /**
      * Put a failed document back into the ingestion queue.
      */
-    public function reprocess(Document $document): RedirectResponse
+    public function reprocess(Request $request, Document $document): RedirectResponse
     {
         Gate::authorize('update', $document);
         $token = (string) Str::uuid();
@@ -296,7 +332,7 @@ class DocumentController extends Controller
             'message' => 'Documento enviado para reprocessamento.',
         ]);
 
-        return to_route('documents.index', $document->collection_id);
+        return $this->redirectToDocuments($request, $document->collection_id);
     }
 
     /**
@@ -355,6 +391,50 @@ class DocumentController extends Controller
             'limitBytes' => $limitBytes,
             'usedPercentage' => round(min(100, ($usedBytes / max(1, $limitBytes)) * 100), 1),
         ];
+    }
+
+    /**
+     * @return array{
+     *     search: string,
+     *     type: string,
+     *     status: string,
+     *     sort: string,
+     *     sortColumn: string,
+     *     direction: string
+     * }
+     */
+    private function documentFilters(Request $request): array
+    {
+        $type = DocumentType::tryFrom($request->string('type')->toString())?->value ?? '';
+        $status = DocumentStatus::tryFrom($request->string('status')->toString())?->value ?? '';
+        $sortOptions = [
+            'title' => 'title',
+            'size' => 'size_bytes',
+            'updated_at' => 'updated_at',
+        ];
+        $sort = $request->string('sort')->toString();
+        $sort = array_key_exists($sort, $sortOptions) ? $sort : 'updated_at';
+        $direction = $request->string('direction')->toString();
+        $direction = in_array($direction, ['asc', 'desc'], true)
+            ? $direction
+            : ($sort === 'updated_at' ? 'desc' : 'asc');
+
+        return [
+            'search' => trim($request->string('search')->toString()),
+            'type' => $type,
+            'status' => $status,
+            'sort' => $sort,
+            'sortColumn' => $sortOptions[$sort],
+            'direction' => $direction,
+        ];
+    }
+
+    private function redirectToDocuments(Request $request, Collection|int $collection): RedirectResponse
+    {
+        return to_route('documents.index', [
+            'collection' => $collection,
+            ...Arr::only($request->query(), ['search', 'type', 'status', 'sort', 'direction', 'page']),
+        ]);
     }
 
     private function dispatchIngestionAfterCommit(Document $document, string $token): void

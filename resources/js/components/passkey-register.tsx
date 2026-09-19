@@ -90,7 +90,8 @@ export default function PasskeyRegistration({ onSuccess }: Props) {
                     autoFocus
                 />
                 <p className="text-muted-foreground text-xs">
-                    Um nome ajuda você a identificar esta chave de acesso depois.
+                    Um nome ajuda você a identificar esta chave de acesso
+                    depois.
                 </p>
             </div>
 

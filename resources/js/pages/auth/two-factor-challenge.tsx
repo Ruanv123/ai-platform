@@ -32,9 +32,9 @@ export default function TwoFactorChallenge() {
 
         return {
             title: 'Código de autenticação',
-                description:
-                    'Informe o código de autenticação exibido pelo seu aplicativo autenticador.',
-                toggleText: 'entrar usando um código de recuperação',
+            description:
+                'Informe o código de autenticação exibido pelo seu aplicativo autenticador.',
+            toggleText: 'entrar usando um código de recuperação',
         };
     }, [showRecoveryInput]);
 

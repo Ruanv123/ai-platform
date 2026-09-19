@@ -3,10 +3,7 @@
         "laravel-boost": {
             "type": "stdio",
             "command": "php",
-            "args": [
-                "artisan",
-                "boost:mcp"
-            ]
+            "args": ["artisan", "boost:mcp"]
         }
     }
 }

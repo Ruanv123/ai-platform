@@ -20,7 +20,8 @@ it('allows a Member to view the integrations catalog', function () {
 
     $response->assertOk()->assertInertia(fn (Assert $page) => $page
         ->component('integrations/index')
-        ->has('integrations', 6),
+        ->has('integrations', 6)
+        ->has('ecommerceIntegrations', 6),
     );
 });
 
@@ -32,6 +33,7 @@ it('renders the complete CRM catalog for a company member', function () {
     $response->assertOk()->assertInertia(fn (Assert $page) => $page
         ->component('integrations/index')
         ->has('integrations', 6)
+        ->has('ecommerceIntegrations', 6)
         ->where('integrations.0.value', 'rd_station')
         ->where('integrations.0.name', 'RD Station CRM')
         ->where('integrations.0.logo', 'RD')
@@ -47,6 +49,15 @@ it('renders the complete CRM catalog for a company member', function () {
         ->where('integrations.5.value', 'ploomes')
         ->where('integrations.5.name', 'Ploomes')
         ->has('integrations.0.description')
-        ->has('integrations.0.capabilities', 3),
+        ->has('integrations.0.capabilities', 3)
+        ->where('ecommerceIntegrations.0.value', 'shopify')
+        ->where('ecommerceIntegrations.0.name', 'Shopify')
+        ->where('ecommerceIntegrations.1.value', 'nuvemshop')
+        ->where('ecommerceIntegrations.2.value', 'woocommerce')
+        ->where('ecommerceIntegrations.3.value', 'vtex')
+        ->where('ecommerceIntegrations.4.value', 'loja_integrada')
+        ->where('ecommerceIntegrations.5.value', 'mercado_livre')
+        ->has('ecommerceIntegrations.0.description')
+        ->has('ecommerceIntegrations.0.capabilities', 3),
     );
 });

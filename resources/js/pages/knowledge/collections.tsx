@@ -277,7 +277,11 @@ export default function Collections({ collections, permissions }: Props) {
                                         </span>
                                     </div>
                                     <Button variant="ghost" size="sm" asChild>
-                                        <Link href={documentsIndex.url(collection.id)}>
+                                        <Link
+                                            href={documentsIndex.url(
+                                                collection.id,
+                                            )}
+                                        >
                                             Abrir documentos
                                         </Link>
                                     </Button>

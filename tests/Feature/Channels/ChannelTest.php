@@ -5,6 +5,7 @@ use App\Enums\TeamRole;
 use App\Models\Agent;
 use App\Models\Channel;
 use App\Models\User;
+use App\Models\WhatsAppAccount;
 use App\Models\WhatsAppPhoneNumber;
 use Inertia\Testing\AssertableInertia as Assert;
 
@@ -118,6 +119,51 @@ it('lets a Member view the catalog without management destinations', function ()
         ->where('channels.0.destination', null)
         ->where('channels.1.destination', null)
         ->where('channels.2.destination', null),
+    );
+});
+
+it('exposes the readiness milestones of a configured WhatsApp channel', function () {
+    $user = User::factory()->withTeam()->create();
+    $channel = Channel::factory()
+        ->for($user->company())
+        ->connected()
+        ->withoutAgent()
+        ->create(['type' => ChannelType::WhatsApp]);
+    $phoneNumber = WhatsAppPhoneNumber::factory()
+        ->for($channel)
+        ->create([
+            'display_phone_number' => '+55 11 99999-8888',
+            'verified_name' => 'Ótica Vega',
+            'quality_rating' => 'GREEN',
+        ]);
+    WhatsAppAccount::factory()->create([
+        'whatsapp_phone_number_id' => $phoneNumber->id,
+        'webhook_verified_at' => now()->subDay(),
+        'last_tested_at' => now()->subHour(),
+    ]);
+
+    $response = $this->actingAs($user)->get(route('channels.index'));
+
+    $response->assertOk()->assertInertia(fn (Assert $page) => $page
+        ->where('channels.0.verifiedName', 'Ótica Vega')
+        ->where('channels.0.qualityRating', 'GREEN')
+        ->whereNot('channels.0.credentialsSavedAt', null)
+        ->whereNot('channels.0.webhookVerifiedAt', null)
+        ->whereNot('channels.0.lastTestedAt', null),
+    );
+});
+
+it('leaves the readiness milestones empty when no WhatsApp account exists', function () {
+    $user = User::factory()->withTeam()->create();
+
+    $response = $this->actingAs($user)->get(route('channels.index'));
+
+    $response->assertOk()->assertInertia(fn (Assert $page) => $page
+        ->where('channels.0.status', 'not_configured')
+        ->where('channels.0.credentialsSavedAt', null)
+        ->where('channels.0.webhookVerifiedAt', null)
+        ->where('channels.0.lastTestedAt', null)
+        ->where('channels.0.qualityRating', null),
     );
 });
 

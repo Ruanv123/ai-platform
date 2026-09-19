@@ -18,6 +18,14 @@ _Avoid_: Membros, Usuários, Time
 O nível de acesso de uma pessoa dentro da Empresa: Owner, Admin ou Member.
 _Avoid_: Permissão, Role, Cargo
 
+**Convite**:
+O pedido pendente para uma pessoa entrar na Equipe com um Papel definido. Expira em três dias e some da lista ao expirar; reconvidar é a forma de renovar.
+_Avoid_: Invite, Convocação
+
+**Horário de atendimento**:
+Os dias e faixas de horário em que a Empresa atende, com o fuso horário em que são lidos.
+_Avoid_: Expediente, Horário comercial, Business hours
+
 ### Agente
 
 **Agente**:
@@ -71,6 +79,24 @@ _Avoid_: WABA, Conta Meta, Business Account
 O número que recebe e responde mensagens, com sua identidade e qualidade. É a ele que o Canal se prende.
 _Avoid_: Telefone, WhatsApp, Linha
 
+**WhatsApp de testes**:
+O Tipo de canal que conecta um número de WhatsApp por um serviço não oficial, usado apenas em desenvolvimento. Não é oferecido aos clientes.
+_Avoid_: Evolution, WhatsApp não oficial, WhatsApp alternativo
+
 **Integração**:
 Uma conexão com um CRM externo, para onde as oportunidades do atendimento são enviadas. É outra coisa que um Canal: Canal traz a conversa, Integração leva o resultado.
 _Avoid_: Conector, Canal, App
+
+### Atendimento
+
+**Contato**:
+A pessoa que fala com a Empresa pelos Canais, identificada pelo telefone dentro da Empresa. A mesma pessoa falando em dois Canais continua sendo um único Contato.
+_Avoid_: Cliente, Lead, Usuário, Destinatário
+
+**Mensagem**:
+Cada mensagem trocada entre um Contato e o Agente, em qualquer direção, sempre presa ao Canal por onde passou.
+_Avoid_: Interação, Evento, Ticket
+
+**Histórico**:
+A janela recente de Mensagens de um Contato num Canal: o que o Agente lê para responder. É uma leitura das Mensagens, não uma entidade própria.
+_Avoid_: Conversa, Thread, Sessão, Atendimento

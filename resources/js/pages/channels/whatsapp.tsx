@@ -1,47 +1,49 @@
-import { Form, Head, Link, router } from '@inertiajs/react';
+import { Form, Head, Link, router } from "@inertiajs/react";
+import { Check, Clipboard, RefreshCw, Trash2 } from "lucide-react";
+import { useState } from "react";
 import {
-    Check,
-    Clipboard,
-    MessageCircle,
-    RefreshCw,
-    Trash2,
-} from 'lucide-react';
-import { useState } from 'react';
-import Heading from '@/components/heading';
-import InputError from '@/components/input-error';
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
+    ChannelReadinessRail,
+    ChannelSignalLamp,
+    channelMilestones,
+    channelNextStep,
+    channelSignal,
+    formatChannelMoment,
+    type ChannelReadiness,
+} from "@/components/channel-readiness";
+import Heading from "@/components/heading";
+import InputError from "@/components/input-error";
+import { Button } from "@/components/ui/button";
 import {
     Card,
     CardContent,
     CardDescription,
     CardHeader,
     CardTitle,
-} from '@/components/ui/card';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
+} from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import {
     Select,
     SelectContent,
     SelectItem,
     SelectTrigger,
     SelectValue,
-} from '@/components/ui/select';
+} from "@/components/ui/select";
+import { index as channelsIndex } from "@/routes/channels";
 import {
     destroy,
+    store,
     test as testConnection,
     update,
-    store,
-} from '@/routes/channels/whatsapp';
-import { index as channelsIndex } from '@/routes/channels';
-import type { TeamPermissions } from '@/types';
+} from "@/routes/channels/whatsapp";
+import type { TeamPermissions } from "@/types";
 
 type AgentOption = {
     id: number;
     name: string;
 };
 
-type WhatsAppChannel = {
+type WhatsAppChannel = ChannelReadiness & {
     id: number;
     wabaId: string;
     phoneNumberId: string;
@@ -51,15 +53,9 @@ type WhatsAppChannel = {
     appSecretMasked: string | null;
     verifyToken: string | null;
     method: string;
-    status: 'not_configured' | 'connected' | 'error';
-    statusLabel: string;
-    lastError: string | null;
     displayPhoneNumber: string | null;
     verifiedName: string | null;
     qualityRating: string | null;
-    lastTestedAt: string | null;
-    webhookVerifiedAt: string | null;
-    agent: AgentOption | null;
 };
 
 type Props = {
@@ -69,26 +65,16 @@ type Props = {
     webhookUrl: string;
 };
 
-function formatDate(value: string | null): string {
-    if (value === null) {
-        return 'Ainda não realizado';
-    }
-
-    return new Intl.DateTimeFormat('pt-BR', {
-        dateStyle: 'short',
-        timeStyle: 'short',
-    }).format(new Date(value));
-}
-
-function statusVariant(
-    status: WhatsAppChannel['status'],
-): 'default' | 'secondary' | 'destructive' | 'outline' {
-    return status === 'connected'
-        ? 'default'
-        : status === 'error'
-          ? 'destructive'
-          : 'secondary';
-}
+/** The readiness of a Canal that has no saved credentials yet. */
+const emptyReadiness: ChannelReadiness = {
+    status: "not_configured",
+    statusLabel: "Não conectado",
+    lastError: null,
+    credentialsSavedAt: null,
+    webhookVerifiedAt: null,
+    lastTestedAt: null,
+    agent: null,
+};
 
 function CopyButton({ value, label }: { value: string; label: string }) {
     const [copied, setCopied] = useState(false);
@@ -102,7 +88,7 @@ function CopyButton({ value, label }: { value: string; label: string }) {
     return (
         <Button type="button" variant="outline" size="sm" onClick={copy}>
             {copied ? <Check /> : <Clipboard />}
-            {copied ? 'Copiado' : label}
+            {copied ? "Copiado" : label}
         </Button>
     );
 }
@@ -117,14 +103,14 @@ function WhatsAppForm({
     canManage: boolean;
 }) {
     const [agentId, setAgentId] = useState(
-        whatsapp?.agent?.id.toString() ?? 'none',
+        whatsapp?.agent?.id.toString() ?? "none",
     );
     const isEditing = whatsapp !== null;
 
     if (!canManage) {
         return (
             <p className="text-muted-foreground text-sm">
-                Apenas Owner e Admin podem alterar a configuração deste canal.
+                Somente Owner e Admin alteram este Canal.
             </p>
         );
     }
@@ -142,7 +128,7 @@ function WhatsAppForm({
                             <Input
                                 id="waba_id"
                                 name="waba_id"
-                                defaultValue={whatsapp?.wabaId ?? ''}
+                                defaultValue={whatsapp?.wabaId ?? ""}
                                 placeholder="Ex.: 102030405060708"
                             />
                             <InputError message={errors.waba_id} />
@@ -154,7 +140,7 @@ function WhatsAppForm({
                             <Input
                                 id="phone_number_id"
                                 name="phone_number_id"
-                                defaultValue={whatsapp?.phoneNumberId ?? ''}
+                                defaultValue={whatsapp?.phoneNumberId ?? ""}
                                 placeholder="ID exibido no WhatsApp Manager"
                             />
                             <InputError message={errors.phone_number_id} />
@@ -173,7 +159,7 @@ function WhatsAppForm({
                                 autoComplete="new-password"
                                 placeholder={
                                     whatsapp?.accessTokenMasked ??
-                                    'Cole o token permanente'
+                                    "Cole o token permanente"
                                 }
                             />
                             {whatsapp?.accessTokenSet && (
@@ -192,7 +178,7 @@ function WhatsAppForm({
                                 autoComplete="new-password"
                                 placeholder={
                                     whatsapp?.appSecretMasked ??
-                                    'Cole o App Secret'
+                                    "Cole o App Secret"
                                 }
                             />
                             {whatsapp?.appSecretSet && (
@@ -227,7 +213,7 @@ function WhatsAppForm({
                         <input
                             type="hidden"
                             name="agent_id"
-                            value={agentId === 'none' ? '' : agentId}
+                            value={agentId === "none" ? "" : agentId}
                         />
                         <InputError message={errors.agent_id} />
                     </div>
@@ -235,10 +221,10 @@ function WhatsAppForm({
                     <div className="flex justify-end">
                         <Button type="submit" disabled={processing}>
                             {processing
-                                ? 'Salvando...'
+                                ? "Salvando..."
                                 : isEditing
-                                  ? 'Salvar alterações'
-                                  : 'Salvar configuração'}
+                                  ? "Salvar alterações"
+                                  : "Salvar credenciais"}
                         </Button>
                     </div>
                 </>
@@ -247,42 +233,29 @@ function WhatsAppForm({
     );
 }
 
-function WhatsAppStatus({ whatsapp }: { whatsapp: WhatsAppChannel }) {
+function NumberFacts({ whatsapp }: { whatsapp: WhatsAppChannel }) {
+    const facts = [
+        { label: "Número", value: whatsapp.displayPhoneNumber },
+        { label: "Nome verificado", value: whatsapp.verifiedName },
+        { label: "Qualidade", value: whatsapp.qualityRating },
+    ];
+
     return (
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            <div>
-                <p className="text-muted-foreground text-xs">Status</p>
-                <Badge variant={statusVariant(whatsapp.status)}>
-                    {whatsapp.statusLabel}
-                </Badge>
-            </div>
-            <div>
-                <p className="text-muted-foreground text-xs">Número</p>
-                <p className="font-medium">
-                    {whatsapp.displayPhoneNumber ?? 'Ainda não testado'}
-                </p>
-            </div>
-            <div>
-                <p className="text-muted-foreground text-xs">Nome verificado</p>
-                <p className="font-medium">
-                    {whatsapp.verifiedName ?? 'Ainda não testado'}
-                </p>
-            </div>
-            <div>
-                <p className="text-muted-foreground text-xs">Quality rating</p>
-                <p className="font-medium">
-                    {whatsapp.qualityRating ?? 'Ainda não testado'}
-                </p>
-            </div>
-            <div>
-                <p className="text-muted-foreground text-xs">
-                    Agente vinculado
-                </p>
-                <p className="font-medium">
-                    {whatsapp.agent?.name ?? 'Nenhum'}
-                </p>
-            </div>
-        </div>
+        <dl className="grid gap-3">
+            {facts.map((fact) => (
+                <div
+                    key={fact.label}
+                    className="flex items-baseline justify-between gap-3"
+                >
+                    <dt className="text-muted-foreground text-sm">
+                        {fact.label}
+                    </dt>
+                    <dd className="text-sm font-medium tabular-nums">
+                        {fact.value ?? "—"}
+                    </dd>
+                </div>
+            ))}
+        </dl>
     );
 }
 
@@ -293,6 +266,10 @@ export default function WhatsApp({
     webhookUrl,
 }: Props) {
     const canManage = permissions.canManageChannels;
+    const readiness = whatsapp ?? emptyReadiness;
+    const signal = channelSignal(readiness);
+    const milestones = channelMilestones(readiness);
+    const nextStep = channelNextStep(milestones);
 
     const test = () => {
         if (whatsapp !== null) {
@@ -303,7 +280,7 @@ export default function WhatsApp({
     const remove = () => {
         if (
             whatsapp !== null &&
-            window.confirm('Remover a configuração deste número do WhatsApp?')
+            window.confirm("Remover a configuração deste número do WhatsApp?")
         ) {
             router.delete(destroy(whatsapp.id).url);
         }
@@ -313,7 +290,7 @@ export default function WhatsApp({
         <>
             <Head title="Configuração do WhatsApp" />
 
-            <div className="flex h-full flex-1 flex-col gap-6 rounded-xl p-4 md:p-6">
+            <div className="flex h-full flex-1 flex-col gap-8 p-4 md:p-6">
                 <Link
                     href={channelsIndex()}
                     className="text-muted-foreground hover:text-foreground w-fit text-sm font-medium transition-colors"
@@ -321,86 +298,84 @@ export default function WhatsApp({
                     ← Voltar para Canais
                 </Link>
                 <Heading
-                    title="Configuração do WhatsApp"
+                    title="WhatsApp"
                     description="Conecte o número oficial da sua Empresa à Meta."
                 />
 
-                <div className="grid gap-6 xl:grid-cols-[minmax(0,2fr)_minmax(280px,1fr)]">
-                    <Card>
-                        <CardHeader>
-                            <div className="flex items-start justify-between gap-4">
-                                <div className="flex items-start gap-3">
-                                    <div className="bg-primary/10 text-primary flex size-10 items-center justify-center rounded-lg">
-                                        <MessageCircle />
-                                    </div>
-                                    <div>
-                                        <CardTitle>
-                                            WhatsApp Cloud API
+                <div className="grid items-start gap-6 xl:grid-cols-[minmax(0,2fr)_minmax(280px,1fr)]">
+                    <div className="grid gap-6">
+                        <Card>
+                            <CardHeader>
+                                <div className="flex flex-wrap items-start justify-between gap-3">
+                                    <div className="grid gap-1">
+                                        <CardTitle className="text-base">
+                                            Prontidão do Canal
                                         </CardTitle>
                                         <CardDescription>
-                                            Conecte o número oficial da sua
-                                            Empresa à Meta.
+                                            {nextStep.primary
+                                                ? "Falta um passo para este Canal atender."
+                                                : "Este Canal está atendendo."}
                                         </CardDescription>
                                     </div>
+                                    <ChannelSignalLamp signal={signal} />
                                 </div>
+                            </CardHeader>
+                            <CardContent className="grid gap-5">
+                                <ChannelReadinessRail milestones={milestones} />
+
                                 {whatsapp !== null && (
-                                    <Badge
-                                        variant={statusVariant(whatsapp.status)}
-                                    >
-                                        {whatsapp.statusLabel}
-                                    </Badge>
-                                )}
-                            </div>
-                        </CardHeader>
-                        <CardContent className="grid gap-6">
-                            {whatsapp !== null && (
-                                <>
-                                    <WhatsAppStatus whatsapp={whatsapp} />
-                                    {whatsapp.lastError && (
-                                        <p className="bg-destructive/10 text-destructive rounded-md p-3 text-sm">
-                                            {whatsapp.lastError}
+                                    <div className="flex flex-wrap items-center justify-between gap-3 border-t pt-4">
+                                        <p className="text-muted-foreground text-sm">
+                                            Último teste:{" "}
+                                            {formatChannelMoment(
+                                                whatsapp.lastTestedAt,
+                                            ) ?? "ainda não realizado"}
                                         </p>
-                                    )}
-                                </>
-                            )}
-
-                            <WhatsAppForm
-                                whatsapp={whatsapp}
-                                agents={agents}
-                                canManage={canManage}
-                            />
-
-                            {whatsapp !== null && (
-                                <div className="flex flex-wrap items-center justify-between gap-3 border-t pt-4">
-                                    <div className="text-muted-foreground text-sm">
-                                        Último teste:{' '}
-                                        {formatDate(whatsapp.lastTestedAt)}
+                                        {canManage && (
+                                            <div className="flex flex-wrap gap-2">
+                                                <Button
+                                                    type="button"
+                                                    variant="outline"
+                                                    onClick={test}
+                                                >
+                                                    <RefreshCw />
+                                                    Testar conexão
+                                                </Button>
+                                                <Button
+                                                    type="button"
+                                                    variant="ghost"
+                                                    className="text-destructive hover:text-destructive"
+                                                    onClick={remove}
+                                                >
+                                                    <Trash2 />
+                                                    Remover número
+                                                </Button>
+                                            </div>
+                                        )}
                                     </div>
-                                    {canManage && (
-                                        <div className="flex flex-wrap gap-2">
-                                            <Button
-                                                type="button"
-                                                variant="outline"
-                                                onClick={test}
-                                            >
-                                                <RefreshCw />
-                                                Testar conexão
-                                            </Button>
-                                            <Button
-                                                type="button"
-                                                variant="ghost"
-                                                className="text-destructive hover:text-destructive"
-                                                onClick={remove}
-                                            >
-                                                <Trash2 />
-                                                Remover número
-                                            </Button>
-                                        </div>
-                                    )}
-                                </div>
-                            )}
-                        </CardContent>
-                    </Card>
+                                )}
+                            </CardContent>
+                        </Card>
+
+                        <Card>
+                            <CardHeader>
+                                <CardTitle className="text-base">
+                                    Credenciais da Meta
+                                </CardTitle>
+                                <CardDescription>
+                                    Copie estes valores do painel do aplicativo
+                                    Meta e do WhatsApp Manager.
+                                </CardDescription>
+                            </CardHeader>
+                            <CardContent>
+                                <WhatsAppForm
+                                    whatsapp={whatsapp}
+                                    agents={agents}
+                                    canManage={canManage}
+                                />
+                            </CardContent>
+                        </Card>
+                    </div>
 
                     <div className="grid content-start gap-6">
                         <Card>
@@ -409,8 +384,8 @@ export default function WhatsApp({
                                     Webhook da Meta
                                 </CardTitle>
                                 <CardDescription>
-                                    Use estes dados no painel do aplicativo
-                                    Meta.
+                                    Cole estes dados no painel do aplicativo
+                                    Meta. A verificação chega sozinha.
                                 </CardDescription>
                             </CardHeader>
                             <CardContent className="grid gap-4">
@@ -422,9 +397,12 @@ export default function WhatsApp({
                                 ) : (
                                     <>
                                         <div className="grid gap-2">
-                                            <Label>URL do webhook</Label>
+                                            <Label htmlFor="webhook_url">
+                                                URL do webhook
+                                            </Label>
                                             <div className="flex gap-2">
                                                 <Input
+                                                    id="webhook_url"
                                                     value={webhookUrl}
                                                     readOnly
                                                 />
@@ -437,9 +415,12 @@ export default function WhatsApp({
                                         {canManage &&
                                             whatsapp.verifyToken !== null && (
                                                 <div className="grid gap-2">
-                                                    <Label>Verify token</Label>
+                                                    <Label htmlFor="verify_token">
+                                                        Verify token
+                                                    </Label>
                                                     <div className="flex gap-2">
                                                         <Input
+                                                            id="verify_token"
                                                             value={
                                                                 whatsapp.verifyToken
                                                             }
@@ -454,16 +435,26 @@ export default function WhatsApp({
                                                     </div>
                                                 </div>
                                             )}
-                                        <p className="text-muted-foreground text-sm">
-                                            Webhook verificado:{' '}
-                                            {formatDate(
-                                                whatsapp.webhookVerifiedAt,
-                                            )}
-                                        </p>
                                     </>
                                 )}
                             </CardContent>
                         </Card>
+
+                        {whatsapp !== null && (
+                            <Card>
+                                <CardHeader>
+                                    <CardTitle className="text-base">
+                                        Número do WhatsApp
+                                    </CardTitle>
+                                    <CardDescription>
+                                        O que a Meta informa sobre este número.
+                                    </CardDescription>
+                                </CardHeader>
+                                <CardContent>
+                                    <NumberFacts whatsapp={whatsapp} />
+                                </CardContent>
+                            </Card>
+                        )}
                     </div>
                 </div>
             </div>

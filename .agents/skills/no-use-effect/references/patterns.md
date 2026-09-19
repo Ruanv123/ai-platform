@@ -28,17 +28,21 @@ Extended examples for each rule when the SKILL.md summary isn't enough.
 ```tsx
 // BAD: effect chain for tax/total
 function Cart({ subtotal }) {
-  const [tax, setTax] = useState(0);
-  const [total, setTotal] = useState(0);
+    const [tax, setTax] = useState(0);
+    const [total, setTotal] = useState(0);
 
-  useEffect(() => { setTax(subtotal * 0.1); }, [subtotal]);
-  useEffect(() => { setTotal(subtotal + tax); }, [subtotal, tax]);
+    useEffect(() => {
+        setTax(subtotal * 0.1);
+    }, [subtotal]);
+    useEffect(() => {
+        setTotal(subtotal + tax);
+    }, [subtotal, tax]);
 }
 
 // GOOD: inline computation
 function Cart({ subtotal }) {
-  const tax = subtotal * 0.1;
-  const total = subtotal + tax;
+    const tax = subtotal * 0.1;
+    const total = subtotal + tax;
 }
 ```
 
@@ -48,7 +52,7 @@ function Cart({ subtotal }) {
 // BAD
 const [fullName, setFullName] = useState('');
 useEffect(() => {
-  setFullName(firstName + ' ' + lastName);
+    setFullName(firstName + ' ' + lastName);
 }, [firstName, lastName]);
 
 // GOOD
@@ -63,13 +67,13 @@ const fullName = firstName + ' ' + lastName;
 // BAD
 const [visibleTodos, setVisibleTodos] = useState([]);
 useEffect(() => {
-  setVisibleTodos(getFilteredTodos(todos, filter));
+    setVisibleTodos(getFilteredTodos(todos, filter));
 }, [todos, filter]);
 
 // GOOD
 const visibleTodos = useMemo(
-  () => getFilteredTodos(todos, filter),
-  [todos, filter]
+    () => getFilteredTodos(todos, filter),
+    [todos, filter],
 );
 ```
 
@@ -91,15 +95,19 @@ Encapsulate in a custom hook — never use `useEffect` directly in a component. 
 
 ```tsx
 function useData(url) {
-  const [data, setData] = useState(null);
-  useEffect(() => {
-    let ignore = false;
-    fetch(url)
-      .then(r => r.json())
-      .then(json => { if (!ignore) setData(json); });
-    return () => { ignore = true; };
-  }, [url]);
-  return data;
+    const [data, setData] = useState(null);
+    useEffect(() => {
+        let ignore = false;
+        fetch(url)
+            .then((r) => r.json())
+            .then((json) => {
+                if (!ignore) setData(json);
+            });
+        return () => {
+            ignore = true;
+        };
+    }, [url]);
+    return data;
 }
 ```
 
@@ -118,19 +126,24 @@ React Query, SWR, TanStack Query, or framework-provided fetching. These handle c
 ```tsx
 // BAD: effect watches product.isInCart
 useEffect(() => {
-  if (product.isInCart) {
-    showNotification(`Added ${product.name}!`);
-  }
+    if (product.isInCart) {
+        showNotification(`Added ${product.name}!`);
+    }
 }, [product]);
 
 // GOOD: shared function called from handlers
 function buyProduct() {
-  addToCart(product);
-  showNotification(`Added ${product.name}!`);
+    addToCart(product);
+    showNotification(`Added ${product.name}!`);
 }
 
-function handleBuyClick() { buyProduct(); }
-function handleCheckoutClick() { buyProduct(); navigateTo('/checkout'); }
+function handleBuyClick() {
+    buyProduct();
+}
+function handleCheckoutClick() {
+    buyProduct();
+    navigateTo('/checkout');
+}
 ```
 
 ### Form submission
@@ -139,13 +152,13 @@ function handleCheckoutClick() { buyProduct(); navigateTo('/checkout'); }
 // BAD: effect watches jsonToSubmit
 const [jsonToSubmit, setJsonToSubmit] = useState(null);
 useEffect(() => {
-  if (jsonToSubmit !== null) post('/api/register', jsonToSubmit);
+    if (jsonToSubmit !== null) post('/api/register', jsonToSubmit);
 }, [jsonToSubmit]);
 
 // GOOD: submit in the handler
 function handleSubmit(e) {
-  e.preventDefault();
-  post('/api/register', { firstName, lastName });
+    e.preventDefault();
+    post('/api/register', { firstName, lastName });
 }
 ```
 
@@ -162,19 +175,19 @@ Instead of guarding inside an effect, control mounting in the parent:
 ```tsx
 // BAD
 function VideoPlayer({ isLoading }) {
-  useEffect(() => {
-    if (!isLoading) playVideo();
-  }, [isLoading]);
+    useEffect(() => {
+        if (!isLoading) playVideo();
+    }, [isLoading]);
 }
 
 // GOOD: parent controls when to mount
 function VideoPlayerWrapper({ isLoading }) {
-  if (isLoading) return <LoadingScreen />;
-  return <VideoPlayer />;
+    if (isLoading) return <LoadingScreen />;
+    return <VideoPlayer />;
 }
 
 function VideoPlayer() {
-  useMountEffect(() => playVideo());
+    useMountEffect(() => playVideo());
 }
 ```
 
@@ -184,16 +197,16 @@ When you need a persistent container but conditional behavior:
 
 ```tsx
 function VideoPlayerContainer({ isLoading }) {
-  return (
-    <>
-      <VideoPlayerShell isLoading={isLoading} />
-      {!isLoading && <VideoPlayerInstance />}
-    </>
-  );
+    return (
+        <>
+            <VideoPlayerShell isLoading={isLoading} />
+            {!isLoading && <VideoPlayerInstance />}
+        </>
+    );
 }
 
 function VideoPlayerInstance() {
-  useMountEffect(() => playVideo());
+    useMountEffect(() => playVideo());
 }
 ```
 
@@ -206,18 +219,20 @@ function VideoPlayerInstance() {
 ```tsx
 // BAD
 function ProfilePage({ userId }) {
-  const [comment, setComment] = useState('');
-  useEffect(() => { setComment(''); }, [userId]);
+    const [comment, setComment] = useState('');
+    useEffect(() => {
+        setComment('');
+    }, [userId]);
 }
 
 // GOOD: key forces full reset
 function ProfilePage({ userId }) {
-  return <Profile userId={userId} key={userId} />;
+    return <Profile userId={userId} key={userId} />;
 }
 
 function Profile({ userId }) {
-  const [comment, setComment] = useState('');
-  // Fresh state on each userId change
+    const [comment, setComment] = useState('');
+    // Fresh state on each userId change
 }
 ```
 
@@ -226,13 +241,13 @@ function Profile({ userId }) {
 ```tsx
 // BAD: effect clears form fields
 useEffect(() => {
-  setName('');
-  setEmail('');
-  setNotes('');
+    setName('');
+    setEmail('');
+    setNotes('');
 }, [contactId]);
 
 // GOOD
-<EditForm key={contactId} contact={contact} />
+<EditForm key={contactId} contact={contact} />;
 ```
 
 ---
@@ -245,9 +260,9 @@ When you only need to adjust some state (not reset everything):
 
 ```tsx
 function List({ items }) {
-  const [selectedId, setSelectedId] = useState(null);
-  // If selected item no longer exists, selection clears automatically
-  const selection = items.find(item => item.id === selectedId) ?? null;
+    const [selectedId, setSelectedId] = useState(null);
+    // If selected item no longer exists, selection clears automatically
+    const selection = items.find((item) => item.id === selectedId) ?? null;
 }
 ```
 
@@ -255,14 +270,14 @@ function List({ items }) {
 
 ```tsx
 function List({ items }) {
-  const [isReverse, setIsReverse] = useState(false);
-  const [selection, setSelection] = useState(null);
-  const [prevItems, setPrevItems] = useState(items);
+    const [isReverse, setIsReverse] = useState(false);
+    const [selection, setSelection] = useState(null);
+    const [prevItems, setPrevItems] = useState(items);
 
-  if (items !== prevItems) {
-    setPrevItems(items);
-    setSelection(null);
-  }
+    if (items !== prevItems) {
+        setPrevItems(items);
+        setSelection(null);
+    }
 }
 ```
 
@@ -274,26 +289,37 @@ function List({ items }) {
 
 ```tsx
 // BAD: 4 effects chaining state updates = 4 extra renders
-useEffect(() => { if (card?.gold) setGoldCardCount(c => c + 1); }, [card]);
-useEffect(() => { if (goldCardCount > 3) { setRound(r => r + 1); setGoldCardCount(0); } }, [goldCardCount]);
-useEffect(() => { if (round > 5) setIsGameOver(true); }, [round]);
-useEffect(() => { if (isGameOver) alert('Good game!'); }, [isGameOver]);
+useEffect(() => {
+    if (card?.gold) setGoldCardCount((c) => c + 1);
+}, [card]);
+useEffect(() => {
+    if (goldCardCount > 3) {
+        setRound((r) => r + 1);
+        setGoldCardCount(0);
+    }
+}, [goldCardCount]);
+useEffect(() => {
+    if (round > 5) setIsGameOver(true);
+}, [round]);
+useEffect(() => {
+    if (isGameOver) alert('Good game!');
+}, [isGameOver]);
 
 // GOOD: all logic in the event handler, derived state inline
 const isGameOver = round > 5;
 
 function handlePlaceCard(nextCard) {
-  if (isGameOver) throw Error('Game already ended.');
-  setCard(nextCard);
-  if (nextCard.gold) {
-    if (goldCardCount < 3) {
-      setGoldCardCount(goldCardCount + 1);
-    } else {
-      setGoldCardCount(0);
-      setRound(round + 1);
-      if (round === 5) alert('Good game!');
+    if (isGameOver) throw Error('Game already ended.');
+    setCard(nextCard);
+    if (nextCard.gold) {
+        if (goldCardCount < 3) {
+            setGoldCardCount(goldCardCount + 1);
+        } else {
+            setGoldCardCount(0);
+            setRound(round + 1);
+            if (round === 5) alert('Good game!');
+        }
     }
-  }
 }
 ```
 
@@ -305,14 +331,14 @@ function handlePlaceCard(nextCard) {
 
 ```tsx
 function Toggle({ onChange }) {
-  const [isOn, setIsOn] = useState(false);
+    const [isOn, setIsOn] = useState(false);
 
-  function updateToggle(nextIsOn) {
-    setIsOn(nextIsOn);
-    onChange(nextIsOn);
-  }
+    function updateToggle(nextIsOn) {
+        setIsOn(nextIsOn);
+        onChange(nextIsOn);
+    }
 
-  return <button onClick={() => updateToggle(!isOn)}>Toggle</button>;
+    return <button onClick={() => updateToggle(!isOn)}>Toggle</button>;
 }
 ```
 
@@ -320,7 +346,7 @@ function Toggle({ onChange }) {
 
 ```tsx
 function Toggle({ isOn, onChange }) {
-  return <button onClick={() => onChange(!isOn)}>Toggle</button>;
+    return <button onClick={() => onChange(!isOn)}>Toggle</button>;
 }
 ```
 
@@ -328,12 +354,14 @@ function Toggle({ isOn, onChange }) {
 
 ```tsx
 // BAD: child fetches, then notifies parent via effect
-useEffect(() => { if (data) onFetched(data); }, [onFetched, data]);
+useEffect(() => {
+    if (data) onFetched(data);
+}, [onFetched, data]);
 
 // GOOD: parent owns the fetch, passes data down
 function Parent() {
-  const data = useSomeAPI();
-  return <Child data={data} />;
+    const data = useSomeAPI();
+    return <Child data={data} />;
 }
 ```
 
@@ -344,31 +372,31 @@ function Parent() {
 ```tsx
 // BAD: manual subscription
 useEffect(() => {
-  const handler = () => setIsOnline(navigator.onLine);
-  window.addEventListener('online', handler);
-  window.addEventListener('offline', handler);
-  return () => {
-    window.removeEventListener('online', handler);
-    window.removeEventListener('offline', handler);
-  };
+    const handler = () => setIsOnline(navigator.onLine);
+    window.addEventListener('online', handler);
+    window.addEventListener('offline', handler);
+    return () => {
+        window.removeEventListener('online', handler);
+        window.removeEventListener('offline', handler);
+    };
 }, []);
 
 // GOOD: useSyncExternalStore
 function subscribe(callback) {
-  window.addEventListener('online', callback);
-  window.addEventListener('offline', callback);
-  return () => {
-    window.removeEventListener('online', callback);
-    window.removeEventListener('offline', callback);
-  };
+    window.addEventListener('online', callback);
+    window.addEventListener('offline', callback);
+    return () => {
+        window.removeEventListener('online', callback);
+        window.removeEventListener('offline', callback);
+    };
 }
 
 function useOnlineStatus() {
-  return useSyncExternalStore(
-    subscribe,
-    () => navigator.onLine,
-    () => true // SSR fallback
-  );
+    return useSyncExternalStore(
+        subscribe,
+        () => navigator.onLine,
+        () => true, // SSR fallback
+    );
 }
 ```
 
@@ -379,26 +407,26 @@ function useOnlineStatus() {
 ```tsx
 // BAD: runs twice in dev, can invalidate tokens
 useEffect(() => {
-  loadDataFromLocalStorage();
-  checkAuthToken();
+    loadDataFromLocalStorage();
+    checkAuthToken();
 }, []);
 
 // GOOD option 1: module-level
 if (typeof window !== 'undefined') {
-  checkAuthToken();
-  loadDataFromLocalStorage();
+    checkAuthToken();
+    loadDataFromLocalStorage();
 }
 
 // GOOD option 2: guard variable with useMountEffect
 let didInit = false;
 function App() {
-  useMountEffect(() => {
-    if (!didInit) {
-      didInit = true;
-      loadDataFromLocalStorage();
-      checkAuthToken();
-    }
-  });
+    useMountEffect(() => {
+        if (!didInit) {
+            didInit = true;
+            loadDataFromLocalStorage();
+            checkAuthToken();
+        }
+    });
 }
 ```
 
@@ -414,19 +442,19 @@ When a `useEffect` causes problems (double-firing, stale closures, loops), devel
 // BAD: ref guard hides the real problem — Strict Mode double-fire exists
 // to surface missing cleanup, not to be silenced
 function UserGreeting({ userId }) {
-  const hasRun = useRef(false);
-  useEffect(() => {
-    if (hasRun.current) return;
-    hasRun.current = true;
-    showWelcomeToast(userId);
-  }, [userId]);
+    const hasRun = useRef(false);
+    useEffect(() => {
+        if (hasRun.current) return;
+        hasRun.current = true;
+        showWelcomeToast(userId);
+    }, [userId]);
 }
 
 // GOOD: if it's truly one-time mount setup
 function UserGreeting({ userId }) {
-  useMountEffect(() => {
-    showWelcomeToast(userId);
-  });
+    useMountEffect(() => {
+        showWelcomeToast(userId);
+    });
 }
 
 // BETTER: if the toast is a response to navigation, it belongs in the
@@ -438,32 +466,38 @@ function UserGreeting({ userId }) {
 ```tsx
 // BAD: isMounted ref masks a missing cancellation
 function Profile({ userId }) {
-  const [user, setUser] = useState(null);
-  const isMounted = useRef(true);
-  useEffect(() => {
-    fetchUser(userId).then(data => {
-      if (isMounted.current) setUser(data);
-    });
-    return () => { isMounted.current = false; };
-  }, [userId]);
+    const [user, setUser] = useState(null);
+    const isMounted = useRef(true);
+    useEffect(() => {
+        fetchUser(userId).then((data) => {
+            if (isMounted.current) setUser(data);
+        });
+        return () => {
+            isMounted.current = false;
+        };
+    }, [userId]);
 }
 
 // GOOD: data-fetching library handles cancellation
 function Profile({ userId }) {
-  const { data: user } = useQuery(['user', userId], () => fetchUser(userId));
+    const { data: user } = useQuery(['user', userId], () => fetchUser(userId));
 }
 
 // GOOD: if no library, use a cleanup boolean in a custom hook (not a ref)
 function useData(url) {
-  const [data, setData] = useState(null);
-  useEffect(() => {
-    let ignore = false;
-    fetch(url)
-      .then(r => r.json())
-      .then(json => { if (!ignore) setData(json); });
-    return () => { ignore = true; };
-  }, [url]);
-  return data;
+    const [data, setData] = useState(null);
+    useEffect(() => {
+        let ignore = false;
+        fetch(url)
+            .then((r) => r.json())
+            .then((json) => {
+                if (!ignore) setData(json);
+            });
+        return () => {
+            ignore = true;
+        };
+    }, [url]);
+    return data;
 }
 ```
 
@@ -474,14 +508,14 @@ function useData(url) {
 ```tsx
 // BAD: ref stores latest callback to avoid listing it as a dependency
 function ChatRoom({ roomId, onMessage }) {
-  const onMessageRef = useRef(onMessage);
-  onMessageRef.current = onMessage;
+    const onMessageRef = useRef(onMessage);
+    onMessageRef.current = onMessage;
 
-  useEffect(() => {
-    const conn = createConnection(roomId);
-    conn.on('message', (msg) => onMessageRef.current(msg));
-    return () => conn.disconnect();
-  }, [roomId]); // onMessage is missing — linter would complain without the ref trick
+    useEffect(() => {
+        const conn = createConnection(roomId);
+        conn.on('message', (msg) => onMessageRef.current(msg));
+        return () => conn.disconnect();
+    }, [roomId]); // onMessage is missing — linter would complain without the ref trick
 }
 
 // GOOD: useEffectEvent (see section below)
@@ -499,26 +533,26 @@ function ChatRoom({ roomId, onMessage }) {
 ```tsx
 // BAD: ref workaround for latest callback
 function ChatRoom({ roomId, onMessage }) {
-  const onMessageRef = useRef(onMessage);
-  onMessageRef.current = onMessage;
-  useEffect(() => {
-    const conn = createConnection(roomId);
-    conn.on('message', (msg) => onMessageRef.current(msg));
-    return () => conn.disconnect();
-  }, [roomId]);
+    const onMessageRef = useRef(onMessage);
+    onMessageRef.current = onMessage;
+    useEffect(() => {
+        const conn = createConnection(roomId);
+        conn.on('message', (msg) => onMessageRef.current(msg));
+        return () => conn.disconnect();
+    }, [roomId]);
 }
 
 // GOOD: useEffectEvent captures latest values automatically
 function ChatRoom({ roomId, onMessage }) {
-  const onMsg = useEffectEvent((msg) => {
-    onMessage(msg);
-  });
+    const onMsg = useEffectEvent((msg) => {
+        onMessage(msg);
+    });
 
-  useEffect(() => {
-    const conn = createConnection(roomId);
-    conn.on('message', onMsg);
-    return () => conn.disconnect();
-  }, [roomId]); // onMsg is stable, no need to list it
+    useEffect(() => {
+        const conn = createConnection(roomId);
+        conn.on('message', onMsg);
+        return () => conn.disconnect();
+    }, [roomId]); // onMsg is stable, no need to list it
 }
 ```
 
@@ -527,27 +561,27 @@ function ChatRoom({ roomId, onMessage }) {
 ```tsx
 // BAD: ref to read latest theme in effect
 function Page({ url }) {
-  const [theme, setTheme] = useState('light');
-  const themeRef = useRef(theme);
-  themeRef.current = theme;
-  useEffect(() => {
-    logVisit(url, themeRef.current);
-  }, [url]); // eslint-disable-next-line — lying to the linter
+    const [theme, setTheme] = useState('light');
+    const themeRef = useRef(theme);
+    themeRef.current = theme;
+    useEffect(() => {
+        logVisit(url, themeRef.current);
+    }, [url]); // eslint-disable-next-line — lying to the linter
 
-  // ...
+    // ...
 }
 
 // GOOD: useEffectEvent
 function Page({ url }) {
-  const [theme, setTheme] = useState('light');
-  const onVisit = useEffectEvent(() => {
-    logVisit(url, theme); // always reads latest theme
-  });
-  useEffect(() => {
-    onVisit();
-  }, [url]);
+    const [theme, setTheme] = useState('light');
+    const onVisit = useEffectEvent(() => {
+        logVisit(url, theme); // always reads latest theme
+    });
+    useEffect(() => {
+        onVisit();
+    }, [url]);
 
-  // ...
+    // ...
 }
 ```
 
@@ -564,23 +598,23 @@ When you need a side effect tied to a DOM node's presence, a callback ref is mor
 ```tsx
 // BAD: ref.current may be null on first render if the node is conditionally rendered
 function MeasuredBox() {
-  const ref = useRef<HTMLDivElement>(null);
-  const [height, setHeight] = useState(0);
-  useMountEffect(() => {
-    setHeight(ref.current!.getBoundingClientRect().height);
-  });
-  return <div ref={ref}>Content</div>;
+    const ref = useRef<HTMLDivElement>(null);
+    const [height, setHeight] = useState(0);
+    useMountEffect(() => {
+        setHeight(ref.current!.getBoundingClientRect().height);
+    });
+    return <div ref={ref}>Content</div>;
 }
 
 // GOOD: callback ref fires when node is attached
 function MeasuredBox() {
-  const [height, setHeight] = useState(0);
-  const measuredRef = useCallback((node: HTMLDivElement | null) => {
-    if (node !== null) {
-      setHeight(node.getBoundingClientRect().height);
-    }
-  }, []);
-  return <div ref={measuredRef}>Content</div>;
+    const [height, setHeight] = useState(0);
+    const measuredRef = useCallback((node: HTMLDivElement | null) => {
+        if (node !== null) {
+            setHeight(node.getBoundingClientRect().height);
+        }
+    }, []);
+    return <div ref={measuredRef}>Content</div>;
 }
 ```
 
@@ -589,11 +623,13 @@ function MeasuredBox() {
 ```tsx
 // BAD
 const inputRef = useRef<HTMLInputElement>(null);
-useMountEffect(() => { inputRef.current?.focus(); });
+useMountEffect(() => {
+    inputRef.current?.focus();
+});
 return <input ref={inputRef} />;
 
 // GOOD: callback ref
-<input ref={(node) => node?.focus()} />
+<input ref={(node) => node?.focus()} />;
 ```
 
 ### Third-party library initialization (React 19+)
@@ -602,17 +638,20 @@ return <input ref={inputRef} />;
 // BAD: ref + useMountEffect
 const containerRef = useRef<HTMLDivElement>(null);
 useMountEffect(() => {
-  const chart = new Chart(containerRef.current!, config);
-  return () => chart.destroy();
+    const chart = new Chart(containerRef.current!, config);
+    return () => chart.destroy();
 });
 return <div ref={containerRef} />;
 
 // GOOD: callback ref with cleanup (React 19+ supports return values)
-const chartRef = useCallback((node: HTMLDivElement | null) => {
-  if (node === null) return;
-  const chart = new Chart(node, config);
-  return () => chart.destroy(); // cleanup when node detaches
-}, [config]);
+const chartRef = useCallback(
+    (node: HTMLDivElement | null) => {
+        if (node === null) return;
+        const chart = new Chart(node, config);
+        return () => chart.destroy(); // cleanup when node detaches
+    },
+    [config],
+);
 return <div ref={chartRef} />;
 ```
 

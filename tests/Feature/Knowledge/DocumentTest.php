@@ -93,10 +93,212 @@ it('shows documents, storage usage and polling while ingestion is pending', func
     $response->assertOk()->assertInertia(fn ($page) => $page
         ->component('knowledge/documents')
         ->where('collection.id', $collection->id)
-        ->where('documents.0.id', $document->id)
-        ->where('documents.0.status', 'pending')
+        ->where('documents.data.0.id', $document->id)
+        ->where('documents.data.0.status', 'pending')
+        ->where('documents.per_page', 20)
         ->where('storage.usedBytes', 25)
         ->where('polling', true),
+    );
+});
+
+it('paginates documents with twenty results and metadata', function () {
+    $user = User::factory()->withTeam()->create();
+    $collection = Collection::factory()->for($user->company())->create();
+
+    foreach (range(1, 21) as $index) {
+        Document::factory()->for($collection)->create([
+            'title' => "Documento {$index}",
+            'status' => DocumentStatus::Ready,
+            'updated_at' => now()->subMinutes($index),
+        ]);
+    }
+
+    $response = $this->actingAs($user)->get(route('documents.index', $collection));
+
+    $response->assertOk()->assertInertia(fn ($page) => $page
+        ->where('documents.current_page', 1)
+        ->where('documents.per_page', 20)
+        ->where('documents.last_page', 2)
+        ->where('documents.total', 21)
+        ->has('documents.data', 20)
+        ->where('documents.data.0.title', 'Documento 1'),
+    );
+});
+
+it('preserves filters and returns the requested document page', function () {
+    $user = User::factory()->withTeam()->create();
+    $collection = Collection::factory()->for($user->company())->create();
+
+    foreach (range(1, 21) as $index) {
+        Document::factory()->for($collection)->create([
+            'title' => "Manual {$index}",
+            'status' => DocumentStatus::Ready,
+            'updated_at' => now()->subMinutes($index),
+        ]);
+    }
+
+    $response = $this->actingAs($user)->get(route('documents.index', [
+        'collection' => $collection,
+        'search' => 'Manual',
+        'type' => 'text',
+        'status' => 'ready',
+        'sort' => 'title',
+        'direction' => 'asc',
+        'page' => 2,
+    ]));
+
+    $response->assertOk()->assertInertia(fn ($page) => $page
+        ->where('filters.search', 'Manual')
+        ->where('filters.type', 'text')
+        ->where('filters.status', 'ready')
+        ->where('filters.sort', 'title')
+        ->where('filters.direction', 'asc')
+        ->where('documents.current_page', 2)
+        ->has('documents.data', 1)
+        ->where('documents.data.0.title', 'Manual 9'),
+    );
+});
+
+it('filters documents by title type and status', function () {
+    $user = User::factory()->withTeam()->create();
+    $collection = Collection::factory()->for($user->company())->create();
+    $matchingDocument = Document::factory()->for($collection)->create([
+        'title' => 'Manual de trocas',
+        'type' => DocumentType::File,
+        'status' => DocumentStatus::Failed,
+    ]);
+    Document::factory()->for($collection)->create([
+        'title' => 'Política de privacidade',
+        'type' => DocumentType::Text,
+        'status' => DocumentStatus::Ready,
+    ]);
+
+    $searchResponse = $this->actingAs($user)->get(route('documents.index', [
+        'collection' => $collection,
+        'search' => 'trocas',
+    ]));
+    $typeResponse = $this->actingAs($user)->get(route('documents.index', [
+        'collection' => $collection,
+        'type' => 'file',
+    ]));
+    $statusResponse = $this->actingAs($user)->get(route('documents.index', [
+        'collection' => $collection,
+        'status' => 'failed',
+    ]));
+
+    foreach ([$searchResponse, $typeResponse, $statusResponse] as $response) {
+        $response->assertOk()->assertInertia(fn ($page) => $page
+            ->has('documents.data', 1)
+            ->where('documents.data.0.id', $matchingDocument->id),
+        );
+    }
+});
+
+it('sorts documents by title size and updated date', function () {
+    $user = User::factory()->withTeam()->create();
+    $collection = Collection::factory()->for($user->company())->create();
+    $olderDocument = Document::factory()->for($collection)->create([
+        'title' => 'Zeta',
+        'size_bytes' => 100,
+        'updated_at' => now()->subDay(),
+        'status' => DocumentStatus::Ready,
+    ]);
+    $largerDocument = Document::factory()->for($collection)->create([
+        'title' => 'Beta',
+        'size_bytes' => 500,
+        'updated_at' => now()->subHours(2),
+        'status' => DocumentStatus::Ready,
+    ]);
+    $newerDocument = Document::factory()->for($collection)->create([
+        'title' => 'Alpha',
+        'size_bytes' => 250,
+        'updated_at' => now()->subHour(),
+        'status' => DocumentStatus::Ready,
+    ]);
+
+    $titleResponse = $this->actingAs($user)->get(route('documents.index', [
+        'collection' => $collection,
+        'sort' => 'title',
+        'direction' => 'asc',
+    ]));
+    $sizeResponse = $this->actingAs($user)->get(route('documents.index', [
+        'collection' => $collection,
+        'sort' => 'size',
+        'direction' => 'desc',
+    ]));
+    $updatedAtResponse = $this->actingAs($user)->get(route('documents.index', [
+        'collection' => $collection,
+        'sort' => 'updated_at',
+        'direction' => 'desc',
+    ]));
+
+    $titleResponse->assertOk()->assertInertia(fn ($page) => $page
+        ->where('documents.data.0.id', $newerDocument->id),
+    );
+    $sizeResponse->assertOk()->assertInertia(fn ($page) => $page
+        ->where('documents.data.0.id', $largerDocument->id),
+    );
+    $updatedAtResponse->assertOk()->assertInertia(fn ($page) => $page
+        ->where('documents.data.0.id', $newerDocument->id),
+    );
+});
+
+it('only enables polling when the current page has a pending document', function () {
+    $user = User::factory()->withTeam()->create();
+    $collection = Collection::factory()->for($user->company())->create();
+    $baseTime = now();
+
+    foreach (range(1, 20) as $index) {
+        Document::factory()->for($collection)->create([
+            'status' => DocumentStatus::Ready,
+            'updated_at' => $baseTime->copy()->addMinutes($index),
+        ]);
+    }
+
+    Document::factory()->for($collection)->pending()->create([
+        'updated_at' => $baseTime->copy()->subMinute(),
+    ]);
+
+    $firstPage = $this->actingAs($user)->get(route('documents.index', $collection));
+    $secondPage = $this->actingAs($user)->get(route('documents.index', [
+        'collection' => $collection,
+        'page' => 2,
+    ]));
+
+    $firstPage->assertOk()->assertInertia(fn ($page) => $page->where('polling', false));
+    $secondPage->assertOk()->assertInertia(fn ($page) => $page->where('polling', true));
+});
+
+it('only renders documents from the current company', function () {
+    $user = User::factory()->withTeam()->create();
+    $collection = Collection::factory()->for($user->company())->create();
+    Document::factory()->for($collection)->create(['title' => 'Documento visível']);
+    $otherDocument = Document::factory()->create(['title' => 'Documento isolado']);
+
+    $response = $this->actingAs($user)->get(route('documents.index', $collection));
+
+    $response->assertOk()->assertInertia(fn ($page) => $page
+        ->where('documents.total', 1)
+        ->where('documents.data.0.title', 'Documento visível')
+        ->missing('documents.data.1'),
+    );
+    expect($otherDocument->team_id)->not->toBe($user->company()->id);
+});
+
+it('renders the document table without management actions for a member', function () {
+    $owner = User::factory()->withTeam()->create();
+    $member = User::factory()->create();
+    $team = $owner->company();
+    $team->members()->attach($member, ['role' => 'member']);
+    $member->switchTeam($team);
+    $collection = Collection::factory()->for($team)->create();
+    $document = Document::factory()->for($collection)->create();
+
+    $response = $this->actingAs($member)->get(route('documents.index', $collection));
+
+    $response->assertOk()->assertInertia(fn ($page) => $page
+        ->where('permissions.canManageKnowledge', false)
+        ->where('documents.data.0.id', $document->id),
     );
 });
 
@@ -114,9 +316,9 @@ it('does not include document content in the collection listing', function () {
 
     $response->assertOk()->assertInertia(fn ($page) => $page
         ->component('knowledge/documents')
-        ->where('documents.0.id', $document->id)
-        ->missing('documents.0.content')
-        ->missing('documents.0.faqItems'),
+        ->where('documents.data.0.id', $document->id)
+        ->missing('documents.data.0.content')
+        ->missing('documents.data.0.faqItems'),
     );
 });
 

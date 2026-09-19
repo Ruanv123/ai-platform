@@ -70,8 +70,8 @@ export default function PasskeyItem({ passkey, onDelete }: Props) {
                 <DialogContent>
                     <DialogTitle>Remover chave de acesso</DialogTitle>
                     <DialogDescription>
-                        Tem certeza de que deseja remover a chave de acesso
-                        "{passkey.name}"? Você não poderá mais usá-la para
+                        Tem certeza de que deseja remover a chave de acesso "
+                        {passkey.name}"? Você não poderá mais usá-la para
                         entrar.
                     </DialogDescription>
                     <DialogFooter className="gap-2">
@@ -83,7 +83,9 @@ export default function PasskeyItem({ passkey, onDelete }: Props) {
                             onClick={handleDelete}
                             disabled={isDeleting}
                         >
-                            {isDeleting ? 'Removendo...' : 'Remover chave de acesso'}
+                            {isDeleting
+                                ? 'Removendo...'
+                                : 'Remover chave de acesso'}
                         </Button>
                     </DialogFooter>
                 </DialogContent>

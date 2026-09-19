@@ -1,23 +1,34 @@
 import { Form, Head, Link, router, useHttp } from '@inertiajs/react';
 import {
+    type ColumnDef,
+    rowPaginationFeature,
+    rowSortingFeature,
+    tableFeatures,
+    useTable,
+} from '@tanstack/react-table';
+import {
     AlertCircle,
     ArrowLeft,
     ArrowDown,
     ArrowUp,
+    ChevronLeft,
+    ChevronRight,
+    ChevronsUpDown,
     File,
     FileText,
     FileQuestion,
     Globe,
     LoaderCircle,
+    MoreHorizontal,
     Pencil,
     Plus,
     RefreshCw,
     Trash2,
 } from 'lucide-react';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import Heading from '@/components/heading';
 import InputError from '@/components/input-error';
-import { useConditionalPoll } from '@/hooks/use-conditional-poll';
+import { ConditionalPoll } from '@/hooks/use-conditional-poll';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
@@ -36,8 +47,30 @@ import {
     DialogHeader,
     DialogTitle,
 } from '@/components/ui/dialog';
+import {
+    DropdownMenu,
+    DropdownMenuContent,
+    DropdownMenuItem,
+    DropdownMenuSeparator,
+    DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import {
+    Select,
+    SelectContent,
+    SelectItem,
+    SelectTrigger,
+    SelectValue,
+} from '@/components/ui/select';
+import {
+    Table,
+    TableBody,
+    TableCell,
+    TableHead,
+    TableHeader,
+    TableRow,
+} from '@/components/ui/table';
 import {
     destroy,
     move,
@@ -46,6 +79,7 @@ import {
     store,
     update,
     download,
+    index as documentsIndex,
 } from '@/routes/documents';
 import { index as collectionIndex } from '@/routes/collections';
 import type { TeamPermissions } from '@/types';
@@ -77,9 +111,29 @@ type KnowledgeCollection = {
     name: string;
 };
 
+type DocumentSort = 'title' | 'size' | 'updated_at';
+type SortDirection = 'asc' | 'desc';
+
+type PaginationLink = {
+    url: string | null;
+    label: string;
+    active: boolean;
+};
+
+type PaginatedDocuments = {
+    data: KnowledgeDocument[];
+    current_page: number;
+    last_page: number;
+    per_page: number;
+    from: number | null;
+    to: number | null;
+    total: number;
+    links: PaginationLink[];
+};
+
 type Props = {
     collection: KnowledgeCollection & { description: string | null };
-    documents: KnowledgeDocument[];
+    documents: PaginatedDocuments;
     collections: KnowledgeCollection[];
     storage: {
         usedBytes: number;
@@ -88,7 +142,19 @@ type Props = {
     };
     polling: boolean;
     permissions: TeamPermissions;
+    filters: {
+        search: string;
+        type: string;
+        status: string;
+        sort: DocumentSort;
+        direction: SortDirection;
+    };
 };
+
+const documentTableFeatures = tableFeatures({
+    rowPaginationFeature,
+    rowSortingFeature,
+});
 
 function formatBytes(bytes: number): string {
     if (bytes < 1024) {
@@ -249,8 +315,8 @@ function DocumentFormDialog({
                     <Form
                         key={document?.id ?? 'new'}
                         {...(isEditing
-                            ? update.form(document.id)
-                            : store.form(collectionId))}
+                            ? update.form(document.id, { mergeQuery: {} })
+                            : store.form(collectionId, { mergeQuery: {} }))}
                         className="grid gap-5"
                         onSuccess={() => onOpenChange(false)}
                     >
@@ -547,6 +613,297 @@ function DocumentFormDialog({
     );
 }
 
+type SortHeaderProps = {
+    columnId: DocumentSort;
+    label: string;
+    sort: DocumentSort;
+    direction: SortDirection;
+    onSort: (columnId: DocumentSort) => void;
+};
+
+function SortHeader({
+    columnId,
+    label,
+    sort,
+    direction,
+    onSort,
+}: SortHeaderProps) {
+    const isActive = sort === columnId;
+    const SortIcon = !isActive
+        ? ChevronsUpDown
+        : direction === 'asc'
+          ? ArrowUp
+          : ArrowDown;
+
+    return (
+        <button
+            type="button"
+            className="text-muted-foreground hover:text-foreground inline-flex items-center gap-1.5 text-xs font-medium tracking-wide uppercase transition-colors"
+            onClick={() => onSort(columnId)}
+            aria-label={'Ordenar por ' + label}
+        >
+            {label}
+            <SortIcon className="size-3.5" />
+        </button>
+    );
+}
+
+function DocumentTypeIcon({ type }: { type: string }) {
+    const Icon =
+        type === 'faq'
+            ? FileQuestion
+            : type === 'file'
+              ? File
+              : type === 'url'
+                ? Globe
+                : FileText;
+
+    return (
+        <div className="bg-muted text-muted-foreground flex size-9 shrink-0 items-center justify-center rounded-lg">
+            <Icon className="size-4.5" />
+        </div>
+    );
+}
+
+function documentTypeLabel(type: string): string {
+    return type === 'faq'
+        ? 'FAQ'
+        : type === 'file'
+          ? 'Arquivo'
+          : type === 'url'
+            ? 'URL'
+            : 'Texto livre';
+}
+
+function DocumentTitleCell({ document }: { document: KnowledgeDocument }) {
+    return (
+        <div className="flex min-w-56 items-start gap-3">
+            <DocumentTypeIcon type={document.type} />
+            <div className="grid min-w-0 gap-1">
+                <span className="truncate font-medium">{document.title}</span>
+                {document.status === 'failed' && document.errorMessage && (
+                    <span className="text-destructive inline-flex items-start gap-1 text-xs">
+                        <AlertCircle className="mt-0.5 size-3.5 shrink-0" />
+                        <span className="line-clamp-2">
+                            {document.errorMessage}
+                        </span>
+                    </span>
+                )}
+            </div>
+        </div>
+    );
+}
+
+function DocumentStatusCell({ document }: { document: KnowledgeDocument }) {
+    return (
+        <Badge variant={statusVariant(document.status)}>
+            {(document.status === 'pending' ||
+                document.status === 'processing') && (
+                <LoaderCircle className="animate-spin" />
+            )}
+            {document.statusLabel}
+        </Badge>
+    );
+}
+
+type DocumentActionMenuProps = {
+    document: KnowledgeDocument;
+    onEdit: (document: KnowledgeDocument) => void;
+    onMove: (document: KnowledgeDocument) => void;
+    onDelete: (document: KnowledgeDocument) => void;
+};
+
+function DocumentActionMenu({
+    document,
+    onEdit,
+    onMove,
+    onDelete,
+}: DocumentActionMenuProps) {
+    const canReprocess =
+        (document.type === 'url' && document.status !== 'processing') ||
+        (document.type !== 'url' && document.status === 'failed');
+
+    return (
+        <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+                <Button
+                    variant="ghost"
+                    size="icon"
+                    aria-label={'Ações de ' + document.title}
+                >
+                    <MoreHorizontal />
+                </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+                <DropdownMenuItem onSelect={() => onEdit(document)}>
+                    <Pencil />
+                    Editar
+                </DropdownMenuItem>
+                {document.downloadUrl && (
+                    <DropdownMenuItem asChild>
+                        <a href={download.url(document.id)}>
+                            <File />
+                            Baixar
+                        </a>
+                    </DropdownMenuItem>
+                )}
+                <DropdownMenuItem onSelect={() => onMove(document)}>
+                    <ArrowDown />
+                    Mover
+                </DropdownMenuItem>
+                {canReprocess && (
+                    <DropdownMenuItem
+                        onSelect={() =>
+                            router.post(
+                                reprocess(document.id, {
+                                    mergeQuery: {},
+                                }).url,
+                            )
+                        }
+                    >
+                        <RefreshCw />
+                        {document.type === 'url'
+                            ? 'Sincronizar'
+                            : 'Reprocessar'}
+                    </DropdownMenuItem>
+                )}
+                <DropdownMenuSeparator />
+                <DropdownMenuItem
+                    variant="destructive"
+                    onSelect={() => onDelete(document)}
+                >
+                    <Trash2 />
+                    Excluir
+                </DropdownMenuItem>
+            </DropdownMenuContent>
+        </DropdownMenu>
+    );
+}
+
+type DocumentMoveDialogProps = {
+    collectionId: number;
+    collections: KnowledgeCollection[];
+    document: KnowledgeDocument | null;
+    open: boolean;
+    onOpenChange: (open: boolean) => void;
+};
+
+function DocumentMoveDialog({
+    collectionId,
+    collections,
+    document,
+    open,
+    onOpenChange,
+}: DocumentMoveDialogProps) {
+    if (document === null) {
+        return null;
+    }
+
+    return (
+        <Dialog open={open} onOpenChange={onOpenChange}>
+            <DialogContent className="sm:max-w-md">
+                <DialogHeader>
+                    <DialogTitle>Mover documento</DialogTitle>
+                    <DialogDescription>
+                        Escolha a Coleção que deve receber “{document.title}”.
+                    </DialogDescription>
+                </DialogHeader>
+                <Form
+                    key={document.id}
+                    {...move.form(document.id, { mergeQuery: {} })}
+                    className="grid gap-5"
+                    onSuccess={() => onOpenChange(false)}
+                >
+                    {({ processing }) => (
+                        <>
+                            <div className="grid gap-2">
+                                <Label htmlFor="move-document-collection">
+                                    Coleção de destino
+                                </Label>
+                                <select
+                                    id="move-document-collection"
+                                    name="collection_id"
+                                    defaultValue={collectionId}
+                                    className="border-input bg-background focus-visible:border-ring focus-visible:ring-ring/50 h-9 rounded-md border px-3 text-sm shadow-xs outline-none focus-visible:ring-[3px]"
+                                >
+                                    {collections.map((item) => (
+                                        <option key={item.id} value={item.id}>
+                                            {item.name}
+                                        </option>
+                                    ))}
+                                </select>
+                            </div>
+                            <DialogFooter>
+                                <DialogClose asChild>
+                                    <Button type="button" variant="outline">
+                                        Cancelar
+                                    </Button>
+                                </DialogClose>
+                                <Button type="submit" disabled={processing}>
+                                    {processing
+                                        ? 'Movendo...'
+                                        : 'Mover documento'}
+                                </Button>
+                            </DialogFooter>
+                        </>
+                    )}
+                </Form>
+            </DialogContent>
+        </Dialog>
+    );
+}
+
+function PaginationControls({
+    documents,
+    onPageChange,
+}: {
+    documents: PaginatedDocuments;
+    onPageChange: (page: number) => void;
+}) {
+    const hasPreviousPage = documents.current_page > 1;
+    const hasNextPage = documents.current_page < documents.last_page;
+
+    return (
+        <div className="flex flex-col gap-3 border-t px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+            <p className="text-muted-foreground text-sm">
+                Mostrando{' '}
+                <span className="text-foreground font-medium">
+                    {documents.from ?? 0}–{documents.to ?? 0}
+                </span>{' '}
+                de{' '}
+                <span className="text-foreground font-medium">
+                    {documents.total}
+                </span>
+            </p>
+            <div className="flex items-center gap-1">
+                <Button
+                    type="button"
+                    variant="outline"
+                    size="icon"
+                    onClick={() => onPageChange(documents.current_page - 1)}
+                    disabled={!hasPreviousPage}
+                    aria-label="Página anterior"
+                >
+                    <ChevronLeft />
+                </Button>
+                <span className="text-muted-foreground min-w-24 text-center text-sm tabular-nums">
+                    Página {documents.current_page} de {documents.last_page}
+                </span>
+                <Button
+                    type="button"
+                    variant="outline"
+                    size="icon"
+                    onClick={() => onPageChange(documents.current_page + 1)}
+                    disabled={!hasNextPage}
+                    aria-label="Próxima página"
+                >
+                    <ChevronRight />
+                </Button>
+            </div>
+        </div>
+    );
+}
+
 export default function Documents({
     collection,
     documents,
@@ -554,9 +911,12 @@ export default function Documents({
     storage,
     polling,
     permissions,
+    filters,
 }: Props) {
     const [formOpen, setFormOpen] = useState(false);
     const [documentToEdit, setDocumentToEdit] =
+        useState<KnowledgeDocument | null>(null);
+    const [documentToMove, setDocumentToMove] =
         useState<KnowledgeDocument | null>(null);
     const [documentLoadError, setDocumentLoadError] = useState<string | null>(
         null,
@@ -567,7 +927,53 @@ export default function Documents({
         cancel: cancelDocumentRequest,
     } = useHttp<{}, KnowledgeDocument>();
 
-    useConditionalPoll(polling);
+    const navigateWithFilters = (changes: {
+        search?: string | null;
+        type?: string | null;
+        status?: string | null;
+        sort?: DocumentSort;
+        direction?: SortDirection;
+        page?: number;
+    }) => {
+        const search = 'search' in changes ? changes.search : filters.search;
+        const type = 'type' in changes ? changes.type : filters.type;
+        const status = 'status' in changes ? changes.status : filters.status;
+        const sort = changes.sort ?? filters.sort;
+        const direction = changes.direction ?? filters.direction;
+        const page = changes.page ?? 1;
+        const query: Record<string, string | number> = {};
+
+        if (search) {
+            query.search = search;
+        }
+
+        if (type) {
+            query.type = type;
+        }
+
+        if (status) {
+            query.status = status;
+        }
+
+        if (sort !== 'updated_at' || direction !== 'desc') {
+            query.sort = sort;
+            query.direction = direction;
+        }
+
+        if (page > 1) {
+            query.page = page;
+        }
+
+        router.get(
+            documentsIndex.url(collection.id, { query }),
+            {},
+            {
+                preserveScroll: true,
+                preserveState: true,
+                replace: changes.page === undefined,
+            },
+        );
+    };
 
     const openCreateDialog = () => {
         cancelDocumentRequest();
@@ -604,9 +1010,155 @@ export default function Documents({
         setFormOpen(open);
     };
 
+    const handleSort = (columnId: DocumentSort) => {
+        const nextDirection =
+            filters.sort === columnId
+                ? filters.direction === 'asc'
+                    ? 'desc'
+                    : 'asc'
+                : columnId === 'updated_at'
+                  ? 'desc'
+                  : 'asc';
+
+        navigateWithFilters({
+            sort: columnId,
+            direction: nextDirection,
+        });
+    };
+
+    const handleDelete = (document: KnowledgeDocument) => {
+        if (window.confirm('Excluir o documento “' + document.title + '”?')) {
+            router.delete(destroy(document.id, { mergeQuery: {} }).url);
+        }
+    };
+
+    const columns = useMemo<
+        ColumnDef<typeof documentTableFeatures, KnowledgeDocument>[]
+    >(
+        () => [
+            {
+                accessorKey: 'title',
+                header: () => (
+                    <SortHeader
+                        columnId="title"
+                        label="Documento"
+                        sort={filters.sort}
+                        direction={filters.direction}
+                        onSort={handleSort}
+                    />
+                ),
+                cell: ({ row }) => (
+                    <DocumentTitleCell document={row.original} />
+                ),
+            },
+            {
+                accessorKey: 'type',
+                header: 'Tipo',
+                cell: ({ row }) => (
+                    <Badge variant="outline">
+                        {documentTypeLabel(row.original.type)}
+                    </Badge>
+                ),
+            },
+            {
+                accessorKey: 'status',
+                header: 'Status',
+                cell: ({ row }) => (
+                    <DocumentStatusCell document={row.original} />
+                ),
+            },
+            {
+                accessorKey: 'sizeBytes',
+                id: 'size',
+                header: () => (
+                    <SortHeader
+                        columnId="size"
+                        label="Tamanho"
+                        sort={filters.sort}
+                        direction={filters.direction}
+                        onSort={handleSort}
+                    />
+                ),
+                cell: ({ row }) => (
+                    <span className="text-muted-foreground tabular-nums">
+                        {formatBytes(row.original.sizeBytes)}
+                    </span>
+                ),
+            },
+            {
+                accessorKey: 'updatedAt',
+                id: 'updated_at',
+                header: () => (
+                    <SortHeader
+                        columnId="updated_at"
+                        label="Atualizado em"
+                        sort={filters.sort}
+                        direction={filters.direction}
+                        onSort={handleSort}
+                    />
+                ),
+                cell: ({ row }) => (
+                    <span className="text-muted-foreground whitespace-nowrap">
+                        {row.original.updatedAt
+                            ? new Date(
+                                  row.original.updatedAt,
+                              ).toLocaleDateString('pt-BR')
+                            : 'agora'}
+                    </span>
+                ),
+            },
+            ...(permissions.canManageKnowledge
+                ? [
+                      {
+                          id: 'actions',
+                          header: '',
+                          cell: ({ row }) => (
+                              <DocumentActionMenu
+                                  document={row.original}
+                                  onEdit={openEditDialog}
+                                  onMove={setDocumentToMove}
+                                  onDelete={handleDelete}
+                              />
+                          ),
+                      } satisfies ColumnDef<
+                          typeof documentTableFeatures,
+                          KnowledgeDocument
+                      >,
+                  ]
+                : []),
+        ],
+        [
+            filters.direction,
+            filters.sort,
+            handleDelete,
+            handleSort,
+            openEditDialog,
+            permissions.canManageKnowledge,
+        ],
+    );
+
+    const table = useTable({
+        features: documentTableFeatures,
+        columns,
+        data: documents.data,
+        manualPagination: true,
+        manualSorting: true,
+        pageCount: documents.last_page,
+        state: {
+            pagination: {
+                pageIndex: documents.current_page - 1,
+                pageSize: documents.per_page,
+            },
+        },
+    });
+
+    const hasFilters =
+        filters.search !== '' || filters.type !== '' || filters.status !== '';
+
     return (
         <>
-            <Head title={`${collection.name} · Documentos`} />
+            <ConditionalPoll enabled={polling} />
+            <Head title={collection.name + ' · Documentos'} />
             <div className="flex flex-1 flex-col gap-8 p-4 md:p-8">
                 <div className="flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between">
                     <div className="grid gap-3">
@@ -652,13 +1204,13 @@ export default function Documents({
                         <div className="bg-muted h-2 overflow-hidden rounded-full">
                             <div
                                 className="bg-primary h-full rounded-full transition-all"
-                                style={{ width: `${storage.usedPercentage}%` }}
+                                style={{ width: storage.usedPercentage + '%' }}
                             />
                         </div>
                     </CardHeader>
                 </Card>
 
-                {documents.length === 0 ? (
+                {documents.total === 0 ? (
                     <Card className="border-dashed shadow-none">
                         <CardContent className="flex flex-col items-center justify-center gap-4 py-16 text-center">
                             <div className="bg-muted flex size-12 items-center justify-center rounded-xl">
@@ -666,214 +1218,266 @@ export default function Documents({
                             </div>
                             <div className="grid gap-1">
                                 <h2 className="font-semibold">
-                                    Nenhum documento nesta coleção
+                                    {hasFilters
+                                        ? 'Nenhum documento encontrado'
+                                        : 'Nenhum documento nesta coleção'}
                                 </h2>
                                 <p className="text-muted-foreground max-w-sm text-sm">
-                                    Adicione um documento para começar a
-                                    alimentar sua base de conhecimento.
+                                    {hasFilters
+                                        ? 'Tente ajustar a busca ou remover algum filtro.'
+                                        : 'Adicione um documento para começar a alimentar sua base de conhecimento.'}
                                 </p>
                             </div>
-                            {permissions.canManageKnowledge && (
+                            {hasFilters ? (
                                 <Button
                                     variant="outline"
-                                    onClick={openCreateDialog}
+                                    onClick={() =>
+                                        navigateWithFilters({
+                                            search: null,
+                                            type: null,
+                                            status: null,
+                                            sort: 'updated_at',
+                                            direction: 'desc',
+                                        })
+                                    }
                                 >
-                                    <Plus />
-                                    Criar primeiro documento
+                                    Limpar filtros
                                 </Button>
+                            ) : (
+                                permissions.canManageKnowledge && (
+                                    <Button
+                                        variant="outline"
+                                        onClick={openCreateDialog}
+                                    >
+                                        <Plus />
+                                        Criar primeiro documento
+                                    </Button>
+                                )
                             )}
                         </CardContent>
                     </Card>
                 ) : (
-                    <div className="grid gap-4">
-                        {documents.map((document) => (
-                            <Card key={document.id} className="shadow-none">
-                                <CardContent className="flex flex-col gap-4 p-5 sm:flex-row sm:items-center sm:justify-between">
-                                    <div className="flex min-w-0 items-start gap-3">
-                                        <div className="bg-muted flex size-10 shrink-0 items-center justify-center rounded-lg">
-                                            {document.type === 'faq' ? (
-                                                <FileQuestion className="text-muted-foreground size-5" />
-                                            ) : document.type === 'file' ? (
-                                                <File className="text-muted-foreground size-5" />
-                                            ) : document.type === 'url' ? (
-                                                <Globe className="text-muted-foreground size-5" />
-                                            ) : (
-                                                <FileText className="text-muted-foreground size-5" />
-                                            )}
-                                        </div>
-                                        <div className="grid min-w-0 gap-1">
-                                            <div className="flex flex-wrap items-center gap-2">
-                                                <h2 className="truncate font-medium">
-                                                    {document.title}
-                                                </h2>
-                                                <Badge variant="outline">
-                                                    {document.type === 'faq'
-                                                        ? 'FAQ'
-                                                        : document.type ===
-                                                            'file'
-                                                          ? 'Arquivo'
-                                                          : document.type ===
-                                                              'url'
-                                                            ? 'URL'
-                                                            : 'Texto livre'}
-                                                </Badge>
-                                                <Badge
-                                                    variant={statusVariant(
-                                                        document.status,
-                                                    )}
-                                                >
-                                                    {document.status ===
-                                                        'processing' && (
-                                                        <LoaderCircle className="animate-spin" />
-                                                    )}
-                                                    {document.statusLabel}
-                                                </Badge>
-                                            </div>
-                                            <p className="text-muted-foreground text-sm">
-                                                {formatBytes(
-                                                    document.sizeBytes,
-                                                )}{' '}
-                                                · atualizado em{' '}
-                                                {document.updatedAt
-                                                    ? new Date(
-                                                          document.updatedAt,
-                                                      ).toLocaleDateString(
-                                                          'pt-BR',
-                                                      )
-                                                    : 'agora'}
-                                            </p>
-                                            {document.status === 'failed' &&
-                                                document.errorMessage && (
-                                                    <p className="text-destructive flex items-center gap-1 text-sm">
-                                                        <AlertCircle className="size-4" />
-                                                        {document.errorMessage}
-                                                    </p>
-                                                )}
-                                            {document.type === 'file' &&
-                                                document.downloadUrl && (
-                                                    <a
-                                                        href={download.url(
-                                                            document.id,
-                                                        )}
-                                                        className="text-primary inline-flex text-sm hover:underline"
-                                                    >
-                                                        Baixar arquivo
-                                                    </a>
-                                                )}
-                                            {document.type === 'url' &&
-                                                document.url && (
-                                                    <a
-                                                        href={document.url}
-                                                        target="_blank"
-                                                        rel="noreferrer"
-                                                        className="text-primary inline-flex max-w-full truncate text-sm hover:underline"
-                                                    >
-                                                        {document.url}
-                                                    </a>
-                                                )}
-                                        </div>
+                    <Card className="overflow-hidden shadow-none">
+                        <CardHeader className="gap-4">
+                            <div className="flex flex-col gap-1">
+                                <CardTitle className="text-base">
+                                    Documentos
+                                </CardTitle>
+                                <CardDescription>
+                                    {documents.total} documento
+                                    {documents.total === 1 ? '' : 's'} nesta
+                                    Coleção
+                                </CardDescription>
+                            </div>
+                            <div className="flex flex-col gap-3 lg:flex-row lg:items-end">
+                                <form
+                                    key={filters.search}
+                                    className="grid flex-1 gap-2"
+                                    onSubmit={(event) => {
+                                        event.preventDefault();
+                                        const formData = new FormData(
+                                            event.currentTarget,
+                                        );
+                                        navigateWithFilters({
+                                            search: String(
+                                                formData.get('search') ?? '',
+                                            ).trim(),
+                                        });
+                                    }}
+                                >
+                                    <Label
+                                        htmlFor="document-search"
+                                        className="text-muted-foreground text-xs"
+                                    >
+                                        Buscar por título
+                                    </Label>
+                                    <div className="flex gap-2">
+                                        <Input
+                                            id="document-search"
+                                            name="search"
+                                            defaultValue={filters.search}
+                                            placeholder="Ex.: Política de trocas"
+                                        />
+                                        <Button type="submit" variant="outline">
+                                            Buscar
+                                        </Button>
                                     </div>
-                                    {permissions.canManageKnowledge && (
-                                        <div className="flex shrink-0 items-center gap-1">
-                                            {((document.type === 'url' &&
-                                                document.status !==
-                                                    'processing') ||
-                                                (document.type !== 'url' &&
-                                                    document.status ===
-                                                        'failed')) && (
-                                                <Button
-                                                    variant="outline"
-                                                    size="sm"
-                                                    onClick={() =>
-                                                        router.post(
-                                                            reprocess(
-                                                                document.id,
-                                                            ).url,
-                                                        )
-                                                    }
-                                                >
-                                                    <RefreshCw />
-                                                    {document.type === 'url'
-                                                        ? 'Sincronizar'
-                                                        : 'Reprocessar'}
-                                                </Button>
-                                            )}
-                                            <Button
-                                                variant="ghost"
-                                                size="icon"
-                                                onClick={() =>
-                                                    openEditDialog(document)
-                                                }
-                                                aria-label="Editar documento"
-                                            >
-                                                <Pencil />
-                                            </Button>
-                                            <Button
-                                                variant="ghost"
-                                                size="icon"
-                                                onClick={() => {
-                                                    if (
-                                                        window.confirm(
-                                                            `Excluir o documento “${document.title}”?`,
-                                                        )
-                                                    ) {
-                                                        router.delete(
-                                                            destroy(document.id)
-                                                                .url,
-                                                        );
-                                                    }
-                                                }}
-                                                aria-label="Excluir documento"
-                                            >
-                                                <Trash2 />
-                                            </Button>
-                                        </div>
-                                    )}
-                                </CardContent>
-                                {permissions.canManageKnowledge && (
-                                    <CardContent className="border-t pt-4">
-                                        <Form
-                                            {...move.form(document.id)}
-                                            className="flex items-center gap-2"
+                                </form>
+                                <div className="grid gap-2 sm:grid-cols-2 lg:w-[25rem]">
+                                    <div className="grid gap-2">
+                                        <Label
+                                            htmlFor="document-type-filter"
+                                            className="text-muted-foreground text-xs"
                                         >
-                                            <Label
-                                                htmlFor={`move-${document.id}`}
-                                                className="text-muted-foreground text-xs"
-                                            >
-                                                Mover para
-                                            </Label>
-                                            <select
-                                                id={`move-${document.id}`}
-                                                name="collection_id"
-                                                defaultValue={collection.id}
-                                                className="border-input bg-background h-8 rounded-md border px-2 text-sm"
-                                            >
-                                                {collections.map((item) => (
-                                                    <option
-                                                        key={item.id}
-                                                        value={item.id}
-                                                    >
-                                                        {item.name}
-                                                    </option>
-                                                ))}
-                                            </select>
-                                            <Button
-                                                type="submit"
-                                                variant="outline"
-                                                size="sm"
-                                            >
-                                                Mover
-                                            </Button>
-                                        </Form>
-                                    </CardContent>
+                                            Tipo
+                                        </Label>
+                                        <Select
+                                            value={filters.type || 'all'}
+                                            onValueChange={(value) =>
+                                                navigateWithFilters({
+                                                    type:
+                                                        value === 'all'
+                                                            ? null
+                                                            : value,
+                                                })
+                                            }
+                                        >
+                                            <SelectTrigger id="document-type-filter">
+                                                <SelectValue placeholder="Todos os tipos" />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                                <SelectItem value="all">
+                                                    Todos os tipos
+                                                </SelectItem>
+                                                <SelectItem value="text">
+                                                    Texto livre
+                                                </SelectItem>
+                                                <SelectItem value="faq">
+                                                    FAQ
+                                                </SelectItem>
+                                                <SelectItem value="file">
+                                                    Arquivo
+                                                </SelectItem>
+                                                <SelectItem value="url">
+                                                    URL
+                                                </SelectItem>
+                                            </SelectContent>
+                                        </Select>
+                                    </div>
+                                    <div className="grid gap-2">
+                                        <Label
+                                            htmlFor="document-status-filter"
+                                            className="text-muted-foreground text-xs"
+                                        >
+                                            Status
+                                        </Label>
+                                        <Select
+                                            value={filters.status || 'all'}
+                                            onValueChange={(value) =>
+                                                navigateWithFilters({
+                                                    status:
+                                                        value === 'all'
+                                                            ? null
+                                                            : value,
+                                                })
+                                            }
+                                        >
+                                            <SelectTrigger id="document-status-filter">
+                                                <SelectValue placeholder="Todos os status" />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                                <SelectItem value="all">
+                                                    Todos os status
+                                                </SelectItem>
+                                                <SelectItem value="pending">
+                                                    Pendente
+                                                </SelectItem>
+                                                <SelectItem value="processing">
+                                                    Processando
+                                                </SelectItem>
+                                                <SelectItem value="ready">
+                                                    Pronto
+                                                </SelectItem>
+                                                <SelectItem value="failed">
+                                                    Erro
+                                                </SelectItem>
+                                            </SelectContent>
+                                        </Select>
+                                    </div>
+                                </div>
+                                {hasFilters && (
+                                    <Button
+                                        type="button"
+                                        variant="ghost"
+                                        onClick={() =>
+                                            navigateWithFilters({
+                                                search: null,
+                                                type: null,
+                                                status: null,
+                                            })
+                                        }
+                                    >
+                                        Limpar
+                                    </Button>
                                 )}
-                            </Card>
-                        ))}
-                    </div>
+                            </div>
+                        </CardHeader>
+                        <CardContent className="p-0">
+                            <div className="overflow-x-auto">
+                                <Table>
+                                    <TableHeader>
+                                        {table
+                                            .getHeaderGroups()
+                                            .map((headerGroup) => (
+                                                <TableRow key={headerGroup.id}>
+                                                    {headerGroup.headers.map(
+                                                        (header) => (
+                                                            <TableHead
+                                                                key={header.id}
+                                                                className={
+                                                                    header.id ===
+                                                                    'actions'
+                                                                        ? 'w-12 text-right'
+                                                                        : undefined
+                                                                }
+                                                            >
+                                                                {header.isPlaceholder
+                                                                    ? null
+                                                                    : table.FlexRender(
+                                                                          {
+                                                                              header,
+                                                                          },
+                                                                      )}
+                                                            </TableHead>
+                                                        ),
+                                                    )}
+                                                </TableRow>
+                                            ))}
+                                    </TableHeader>
+                                    <TableBody>
+                                        {table.getRowModel().rows.map((row) => (
+                                            <TableRow key={row.id}>
+                                                {row
+                                                    .getAllCells()
+                                                    .map((cell) => (
+                                                        <TableCell
+                                                            key={cell.id}
+                                                            className={
+                                                                cell.column
+                                                                    .id ===
+                                                                'actions'
+                                                                    ? 'text-right'
+                                                                    : undefined
+                                                            }
+                                                        >
+                                                            {table.FlexRender({
+                                                                cell,
+                                                            })}
+                                                        </TableCell>
+                                                    ))}
+                                            </TableRow>
+                                        ))}
+                                    </TableBody>
+                                </Table>
+                            </div>
+                        </CardContent>
+                        <PaginationControls
+                            documents={documents}
+                            onPageChange={(page) =>
+                                navigateWithFilters({ page })
+                            }
+                        />
+                    </Card>
                 )}
             </div>
             <DocumentFormDialog
-                key={`${documentToEdit?.id ?? 'new'}-${formOpen ? 'open' : 'closed'}-${loadingDocument ? 'loading' : 'ready'}`}
+                key={
+                    String(documentToEdit?.id ?? 'new') +
+                    '-' +
+                    (formOpen ? 'open' : 'closed') +
+                    '-' +
+                    (loadingDocument ? 'loading' : 'ready')
+                }
                 collectionId={collection.id}
                 document={documentToEdit}
                 open={formOpen}
@@ -883,6 +1487,17 @@ export default function Documents({
                 onRetry={() => {
                     if (documentToEdit !== null) {
                         openEditDialog(documentToEdit);
+                    }
+                }}
+            />
+            <DocumentMoveDialog
+                collectionId={collection.id}
+                collections={collections}
+                document={documentToMove}
+                open={documentToMove !== null}
+                onOpenChange={(open) => {
+                    if (!open) {
+                        setDocumentToMove(null);
                     }
                 }}
             />

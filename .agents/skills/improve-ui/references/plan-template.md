@@ -28,9 +28,9 @@ If a new primitive is required, state why the existing system cannot express the
 ## Changes
 
 1. `<exact path or surface>`
-   - Change: <implementation-ready behavior or structure>
-   - Preserve: <valid behavior or identity>
-   - Verify: <observable result>
+    - Change: <implementation-ready behavior or structure>
+    - Preserve: <valid behavior or identity>
+    - Verify: <observable result>
 
 ## Scope
 

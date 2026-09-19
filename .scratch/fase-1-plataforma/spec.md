@@ -181,22 +181,22 @@ Uma plataforma SaaS multi-tenant em que cada **Empresa** (o `Team` do sistema) t
 
 - **Empresa = `Team`**. O modelo `Team` existente é mantido e ganha os campos do onboarding: nome fantasia, segmento, site, descrição do negócio, produtos/serviços, público-alvo, horário de atendimento (estruturado por dia da semana), fuso horário e contatos públicos (telefone, e-mail, endereço).
 - **Um usuário pertence a exatamente uma Empresa.**
-  - O cadastro deixa de criar o team pessoal com o nome do usuário.
-  - A criação de team fica restrita ao onboarding.
-  - Somem a tela de criar team, o seletor de team e a troca de team.
-  - O conceito de `is_personal` deixa de ser usado.
+    - O cadastro deixa de criar o team pessoal com o nome do usuário.
+    - A criação de team fica restrita ao onboarding.
+    - Somem a tela de criar team, o seletor de team e a troca de team.
+    - O conceito de `is_personal` deixa de ser usado.
 - **Verificação de e-mail desligada**: sai a feature do Fortify e o middleware `verified` das rotas. Reset de senha, 2FA e passkeys continuam como estão.
 - **Onboarding bloqueante**: um middleware manda todo usuário autenticado sem Empresa para o onboarding. O onboarding cria a Empresa, vincula o usuário como `Owner` e cria a Coleção "Geral", tudo numa transação.
 - **Convites**:
-  - O fluxo de convite existente é adaptado: o link do e-mail leva a um cadastro vinculado ao convite, que cria o usuário já como membro da Empresa, com o papel do convite e sem onboarding.
-  - Um usuário logado sem Empresa também pode aceitar.
-  - Convidar um e-mail que já pertence a outra Empresa é bloqueado na validação.
+    - O fluxo de convite existente é adaptado: o link do e-mail leva a um cadastro vinculado ao convite, que cria o usuário já como membro da Empresa, com o papel do convite e sem onboarding.
+    - Um usuário logado sem Empresa também pode aceitar.
+    - Convidar um e-mail que já pertence a outra Empresa é bloqueado na validação.
 - **Rotas sem slug do team**: o prefixo `{current_team}` e o middleware de URL defaults saem. A Empresa corrente é sempre a do usuário logado.
 - **Isolamento**:
-  - Todo model de domínio tem `team_id` e usa um comportamento compartilhado de pertencer à Empresa: um global scope filtra pela Empresa do usuário autenticado e o `team_id` é preenchido na criação.
-  - Policies garantem as permissões.
-  - Recurso de outra Empresa responde **404**.
-  - O scope só se aplica em contexto HTTP autenticado; jobs de fila recebem o model explicitamente.
+    - Todo model de domínio tem `team_id` e usa um comportamento compartilhado de pertencer à Empresa: um global scope filtra pela Empresa do usuário autenticado e o `team_id` é preenchido na criação.
+    - Policies garantem as permissões.
+    - Recurso de outra Empresa responde **404**.
+    - O scope só se aplica em contexto HTTP autenticado; jobs de fila recebem o model explicitamente.
 - **Permissões**: o enum `TeamPermission` existente ganha `agent:manage`, `knowledge:manage` e `channel:manage`, concedidas a `Owner` e `Admin`. `Member` só tem leitura, e a leitura vem implícita de ser membro. O frontend recebe as permissões do usuário para esconder as ações.
 - Owner não pode sair da Empresa. A exclusão da Empresa fica desabilitada.
 - O usuário ganha a flag booleana `is_platform_admin` (padrão falso), sem uso na fase 1 além do acesso ao Horizon fora do ambiente local.
@@ -204,32 +204,33 @@ Uma plataforma SaaS multi-tenant em que cada **Empresa** (o `Team` do sistema) t
 ### Base de conhecimento
 
 - **Módulos de domínio**:
-  - **Coleção**: pertence à Empresa; tem nome, descrição e marcação de coleção padrão.
-  - **Documento**: pertence à Empresa e a uma Coleção.
-  - **Chunk**: trecho indexado, pertence ao Documento e carrega `team_id` e `collection_id` desnormalizados para filtrar a busca.
+    - **Coleção**: pertence à Empresa; tem nome, descrição e marcação de coleção padrão.
+    - **Documento**: pertence à Empresa e a uma Coleção.
+    - **Chunk**: trecho indexado, pertence ao Documento e carrega `team_id` e `collection_id` desnormalizados para filtrar a busca.
 - **Coleção "Geral"**: é criada no onboarding, marcada como padrão e não pode ser excluída. Excluir qualquer outra Coleção apaga em cascata documentos, chunks e arquivos armazenados.
 - **Tipos de Documento** (enum): `file` (PDF/DOCX/TXT), `text` (texto livre), `faq` (lista de pares pergunta/resposta guardada estruturada no próprio documento) e `url`.
 - **Status do Documento** (enum): `pending → processing → ready | failed`, com mensagem de erro legível em pt-BR quando `failed`. Toda criação, edição de conteúdo, substituição de arquivo, re-sync de URL ou reprocessamento volta o status para `pending` e despacha a ingestão.
 - **Pipeline de ingestão** (job na fila `ingestion`, idempotente):
-  1. Extrai o texto conforme o tipo:
-     - PDF via `pdftotext`; PDF sem texto vira falha "PDF sem texto extraível" (sem OCR).
-     - DOCX via XML (parágrafos, títulos e tabelas).
-     - TXT direto, com detecção e normalização de encoding para UTF-8.
-     - URL: baixa a página com timeout, isola o conteúdo principal com Readability e converte para Markdown.
-     - Texto livre usado como está.
-  2. Faz o chunking:
-     - Documentos não-FAQ são quebrados de forma orientada a Markdown (títulos e parágrafos), com alvo de ~800 tokens e overlap de ~100, estimando tokens por caracteres.
-     - No FAQ, cada par pergunta/resposta vira exatamente um chunk.
-  3. Gera os embeddings em lote com `text-embedding-3-small` (1536 dimensões) através do `laravel/ai`.
-  4. Substitui atomicamente os chunks antigos pelos novos e marca `ready`.
+    1. Extrai o texto conforme o tipo:
+        - PDF via `pdftotext`; PDF sem texto vira falha "PDF sem texto extraível" (sem OCR).
+        - DOCX via XML (parágrafos, títulos e tabelas).
+        - TXT direto, com detecção e normalização de encoding para UTF-8.
+        - URL: baixa a página com timeout, isola o conteúdo principal com Readability e converte para Markdown.
+        - Texto livre usado como está.
+    2. Faz o chunking:
+        - Documentos não-FAQ são quebrados de forma orientada a Markdown (títulos e parágrafos), com alvo de ~800 tokens e overlap de ~100, estimando tokens por caracteres.
+        - No FAQ, cada par pergunta/resposta vira exatamente um chunk.
+    3. Gera os embeddings em lote com `text-embedding-3-small` (1536 dimensões) através do `laravel/ai`.
+    4. Substitui atomicamente os chunks antigos pelos novos e marca `ready`.
 
-  Falha após as tentativas marca `failed` com a mensagem e preserva os chunks anteriores. Enquanto não está `ready`, o documento não aparece na busca.
+    Falha após as tentativas marca `failed` com a mensagem e preserva os chunks anteriores. Enquanto não está `ready`, o documento não aparece na busca.
+
 - **Índice vetorial**: coluna `vector(1536)` com índice HNSW por distância de cosseno.
 - **Cota**:
-  - Limite de 500 MB por Empresa e 20 MB por arquivo.
-  - O uso soma o tamanho dos arquivos originais mais o tamanho em bytes do conteúdo textual das fontes sem arquivo (texto livre, FAQ e o texto extraído de URL).
-  - O tamanho fica gravado no Documento.
-  - A validação bloqueia qualquer criação ou atualização que ultrapasse a cota. Excluir libera o espaço.
+    - Limite de 500 MB por Empresa e 20 MB por arquivo.
+    - O uso soma o tamanho dos arquivos originais mais o tamanho em bytes do conteúdo textual das fontes sem arquivo (texto livre, FAQ e o texto extraído de URL).
+    - O tamanho fica gravado no Documento.
+    - A validação bloqueia qualquer criação ou atualização que ultrapasse a cota. Excluir libera o espaço.
 - A lista de documentos atualiza o status via polling do Inertia enquanto houver documento `pending` ou `processing`. Não há broadcasting nesta fase.
 
 ### Busca na base de conhecimento (seam novo)
@@ -243,28 +244,29 @@ Uma plataforma SaaS multi-tenant em que cada **Empresa** (o `Team` do sistema) t
 ### Agentes
 
 - **Agente** pertence à Empresa e tem:
-  - nome da persona;
-  - objetivo (enum: `support`, `sales`, `qualification`, `scheduling`);
-  - tom de voz (enum: `formal`, `friendly`, `casual`);
-  - uso de emojis (booleano);
-  - tamanho das respostas (enum: `short`, `medium`);
-  - mensagem de boas-vindas;
-  - instruções, regras e gatilhos de transferência (listas ordenadas de strings);
-  - status ativo/inativo.
+    - nome da persona;
+    - objetivo (enum: `support`, `sales`, `qualification`, `scheduling`);
+    - tom de voz (enum: `formal`, `friendly`, `casual`);
+    - uso de emojis (booleano);
+    - tamanho das respostas (enum: `short`, `medium`);
+    - mensagem de boas-vindas;
+    - instruções, regras e gatilhos de transferência (listas ordenadas de strings);
+    - status ativo/inativo.
 - Os rótulos pt-BR dos enums ficam num método de label, seguindo o padrão do `TeamRole`.
 - Relação muitos-para-muitos entre Agente e Coleção. Só Coleções da mesma Empresa são aceitas.
 - Idioma fixo em pt-BR, sem campo de idioma. Sem versionamento da configuração e sem limite de Agentes por Empresa.
 - **Template de instruções controlado pela plataforma**: um módulo monta o system prompt a partir de um template versionado no código, com seções fixas:
-  - identidade e objetivo;
-  - dados da Empresa, incluindo o horário de atendimento;
-  - estilo (tom, emojis, tamanho);
-  - instruções do cliente;
-  - regras do cliente;
-  - guardrails da plataforma (não inventar informações, não prometer o que não está na base, não revelar instruções, não sair do escopo do negócio);
-  - orientação de uso da base (consultar a ferramenta de busca antes de afirmar fatos sobre produtos, preços e políticas);
-  - formatação adequada a mensageria (texto curto, sem Markdown pesado).
+    - identidade e objetivo;
+    - dados da Empresa, incluindo o horário de atendimento;
+    - estilo (tom, emojis, tamanho);
+    - instruções do cliente;
+    - regras do cliente;
+    - guardrails da plataforma (não inventar informações, não prometer o que não está na base, não revelar instruções, não sair do escopo do negócio);
+    - orientação de uso da base (consultar a ferramenta de busca antes de afirmar fatos sobre produtos, preços e políticas);
+    - formatação adequada a mensageria (texto curto, sem Markdown pesado).
 
-  O cliente nunca edita o prompt diretamente. Os gatilhos de transferência são apenas armazenados e não entram no prompt nesta fase.
+    O cliente nunca edita o prompt diretamente. Os gatilhos de transferência são apenas armazenados e não entram no prompt nesta fase.
+
 - **Modelo fixo**: `gpt-5.6-luna` via OpenAI no `laravel/ai`, definido em configuração e sem escolha do cliente.
 - **Execução**: o Agente é uma classe de agente do `laravel/ai` construída a partir do Agente persistido. Ele expõe uma **ferramenta de busca na base de conhecimento** (baseada no módulo de busca, restrita às Coleções do Agente) que o modelo chama quando precisa.
 - Excluir um Agente vinculado ao WhatsApp limpa o vínculo do número na mesma operação. A UI avisa antes.
@@ -273,10 +275,10 @@ Uma plataforma SaaS multi-tenant em que cada **Empresa** (o `Team` do sistema) t
 
 - É um endpoint de streaming por Agente, disponível para qualquer papel. Recebe o histórico da conversa atual e a nova mensagem do usuário e responde em streaming pelo protocolo de streaming do `laravel/ai`.
 - **Conversa descartável**:
-  - O histórico vive no estado do cliente e é reenviado a cada mensagem.
-  - Nada é persistido.
-  - O botão reiniciar limpa o estado.
-  - A migration `agent_conversations` que já existe não é usada nesta fase.
+    - O histórico vive no estado do cliente e é reenviado a cada mensagem.
+    - Nada é persistido.
+    - O botão reiniciar limpa o estado.
+    - A migration `agent_conversations` que já existe não é usada nesta fase.
 - Usa sempre a configuração salva do Agente. A página compara o formulário com o salvo e avisa quando há alterações pendentes.
 - **Fontes consultadas**: o stream carrega os eventos de chamada e resultado da ferramenta de busca. A UI mostra, por resposta, os trechos retornados (documento, coleção, trecho, similaridade) ou a indicação de que a base não foi consultada.
 - **Rate limit por usuário**: 30 mensagens por hora, respondido com mensagem em pt-BR. Erros e timeouts do provedor viram mensagem amigável no chat.
@@ -284,19 +286,19 @@ Uma plataforma SaaS multi-tenant em que cada **Empresa** (o `Team` do sistema) t
 ### Canais: WhatsApp
 
 - **Número de WhatsApp**: pertence à Empresa (relação um-para-muitos no banco, mas a validação limita a 1 por Empresa nesta fase). Campos:
-  - WABA ID e Phone Number ID;
-  - access token e App Secret, com cast criptografado;
-  - verify token gerado pela plataforma, único globalmente;
-  - Agente vinculado (opcional, anulado ao excluir o Agente);
-  - status de conexão (enum: `unverified`, `connected`, `error`) e mensagem do último erro;
-  - dados retornados pela Meta (número exibido, nome verificado, quality rating);
-  - data do último teste e data de verificação do webhook.
+    - WABA ID e Phone Number ID;
+    - access token e App Secret, com cast criptografado;
+    - verify token gerado pela plataforma, único globalmente;
+    - Agente vinculado (opcional, anulado ao excluir o Agente);
+    - status de conexão (enum: `unverified`, `connected`, `error`) e mensagem do último erro;
+    - dados retornados pela Meta (número exibido, nome verificado, quality rating);
+    - data do último teste e data de verificação do webhook.
 - A modelagem já considera um campo de método de conexão (`manual` agora, `embedded_signup` no futuro).
 - **Testar conexão**: consulta a Graph API com o token para o Phone Number ID e grava status e dados retornados. Os erros da Meta são traduzidos para mensagens pt-BR. A versão da Graph API fica em configuração.
 - **Segredos**: nunca voltam para o frontend, só a indicação de que estão preenchidos e uma versão mascarada. Na edição, campo de segredo vazio mantém o valor atual.
 - **Webhook**: rota pública única, fora da autenticação e sem CSRF.
-  - **GET** (handshake): responde com o `hub.challenge` quando `hub.mode` é `subscribe` e o `hub.verify_token` confere com algum número cadastrado. Nesse caso grava a data de verificação. Qualquer outro caso recebe 403.
-  - **POST**: valida a assinatura `X-Hub-Signature-256` (HMAC-SHA256 do corpo cru com o App Secret do número identificado pelo Phone Number ID do payload). Assinatura inválida ou número desconhecido recebe 403. Assinatura válida recebe 200 e o evento é descartado sem processamento nesta fase.
+    - **GET** (handshake): responde com o `hub.challenge` quando `hub.mode` é `subscribe` e o `hub.verify_token` confere com algum número cadastrado. Nesse caso grava a data de verificação. Qualquer outro caso recebe 403.
+    - **POST**: valida a assinatura `X-Hub-Signature-256` (HMAC-SHA256 do corpo cru com o App Secret do número identificado pelo Phone Number ID do payload). Assinatura inválida ou número desconhecido recebe 403. Assinatura válida recebe 200 e o evento é descartado sem processamento nesta fase.
 - A página **Canais** mostra o card WhatsApp (configurável) e o card "Chat no site" (em breve).
 
 ### Integrações
@@ -308,44 +310,44 @@ Uma plataforma SaaS multi-tenant em que cada **Empresa** (o `Team` do sistema) t
 
 - **Sidebar**: Dashboard, Agentes, Base de conhecimento, Canais, Integrações, Equipe e Configurações (Empresa, Perfil, Segurança, Aparência).
 - **Dashboard**:
-  - O **checklist de ativação** é calculado do estado real: dados da Empresa completos, ao menos um Agente, ao menos um documento `ready`, WhatsApp `connected` e Agente vinculado ao WhatsApp. Cada item leva à tela correspondente.
-  - O **resumo** mostra Agentes ativos/total, documentos `ready` e `failed`, uso da cota e status do WhatsApp.
-  - Os cards de métricas de atendimento aparecem como "em breve", sem dados.
+    - O **checklist de ativação** é calculado do estado real: dados da Empresa completos, ao menos um Agente, ao menos um documento `ready`, WhatsApp `connected` e Agente vinculado ao WhatsApp. Cada item leva à tela correspondente.
+    - O **resumo** mostra Agentes ativos/total, documentos `ready` e `failed`, uso da cota e status do WhatsApp.
+    - Os cards de métricas de atendimento aparecem como "em breve", sem dados.
 - Os convites pendentes mostrados hoje no dashboard deixam de fazer sentido, porque o usuário tem uma única Empresa e o convite passa a ser aceito no cadastro. Essa exibição é removida.
 
 ## Testing Decisions
 
 - **O que é um bom teste aqui**: exercita comportamento externo pelo seam mais alto possível (requisição HTTP → resposta, props Inertia, estado do banco, e-mails, jobs). Não testa detalhes internos como nomes de classes, métodos privados, a ordem das seções do prompt ou o formato interno dos chunks. Um teste deve continuar passando depois de uma refatoração que não muda o comportamento.
 - **Seam principal: HTTP (feature tests Pest)**. Tudo que o usuário faz é testado pelas rotas, com `actingAs`, `assertInertia`, redirects, códigos de status e asserções no banco:
-  - cadastro sem verificação de e-mail, redirecionamento ao onboarding e onboarding criando Empresa, Owner e Coleção "Geral";
-  - bloqueio de segunda Empresa;
-  - convite gerando cadastro vinculado; bloqueio de e-mail de outra Empresa; Owner impedido de sair;
-  - isolamento entre Empresas, com 404 em recursos alheios, para cada tipo de recurso;
-  - permissões por papel, com `Member` recebendo 403 em escrita e conseguindo ler e usar o Playground;
-  - CRUD de Coleções: "Geral" indelével e cascata na exclusão;
-  - criação e edição de Documentos de cada tipo; validação de formato, 20 MB e cota de 500 MB; exclusão liberando cota; re-sync e reprocessamento;
-  - Agentes: validação dos campos, Coleções só da mesma Empresa, exclusão desvinculando o WhatsApp;
-  - Playground: streaming responde, rate limit a partir da 31ª mensagem, erro do provedor tratado;
-  - WhatsApp: cadastro, limite de 1 número, segredos nunca presentes nas props, edição mantendo segredos, teste de conexão com sucesso e erro, vínculo de Agente;
-  - webhook: handshake válido e inválido, assinatura válida e inválida;
-  - catálogo de Integrações nas props;
-  - checklist e resumo do Dashboard refletindo o estado.
+    - cadastro sem verificação de e-mail, redirecionamento ao onboarding e onboarding criando Empresa, Owner e Coleção "Geral";
+    - bloqueio de segunda Empresa;
+    - convite gerando cadastro vinculado; bloqueio de e-mail de outra Empresa; Owner impedido de sair;
+    - isolamento entre Empresas, com 404 em recursos alheios, para cada tipo de recurso;
+    - permissões por papel, com `Member` recebendo 403 em escrita e conseguindo ler e usar o Playground;
+    - CRUD de Coleções: "Geral" indelével e cascata na exclusão;
+    - criação e edição de Documentos de cada tipo; validação de formato, 20 MB e cota de 500 MB; exclusão liberando cota; re-sync e reprocessamento;
+    - Agentes: validação dos campos, Coleções só da mesma Empresa, exclusão desvinculando o WhatsApp;
+    - Playground: streaming responde, rate limit a partir da 31ª mensagem, erro do provedor tratado;
+    - WhatsApp: cadastro, limite de 1 número, segredos nunca presentes nas props, edição mantendo segredos, teste de conexão com sucesso e erro, vínculo de Agente;
+    - webhook: handshake válido e inválido, assinatura válida e inválida;
+    - catálogo de Integrações nas props;
+    - checklist e resumo do Dashboard refletindo o estado.
 - **Fronteiras externas** com os fakes do framework, sem seams próprios:
-  - `Embeddings::fake()` e o fake de agente do `laravel/ai` para a OpenAI;
-  - `Http::fake()` para a Graph API e para o download de URLs;
-  - `Storage::fake()` para arquivos;
-  - `Mail::fake()` / `Notification::fake()` para convites;
-  - fila `sync` nos testes de ingestão, para que a requisição de criação rode o pipeline inteiro e o teste verifique status `ready`, chunks gerados e tamanho contabilizado;
-  - `Queue::fake()` apenas onde o teste é sobre o despacho.
+    - `Embeddings::fake()` e o fake de agente do `laravel/ai` para a OpenAI;
+    - `Http::fake()` para a Graph API e para o download de URLs;
+    - `Storage::fake()` para arquivos;
+    - `Mail::fake()` / `Notification::fake()` para convites;
+    - fila `sync` nos testes de ingestão, para que a requisição de criação rode o pipeline inteiro e o teste verifique status `ready`, chunks gerados e tamanho contabilizado;
+    - `Queue::fake()` apenas onde o teste é sobre o despacho.
 - **Extração de texto sem seam**: fixtures reais e pequenas (PDF com texto, PDF só com imagem, DOCX com título e tabela, TXT em Latin-1, HTML com menu e rodapé) passam pelas bibliotecas e pelo `pdftotext` de verdade. O CI precisa de `poppler-utils`.
 - **Seam novo: busca na base de conhecimento**. Testado diretamente contra o Postgres com pgvector usando vetores controlados (embeddings fakeados com vetores conhecidos), cobrindo:
-  - limite de 5 resultados;
-  - corte abaixo de 0.35;
-  - ordenação por similaridade;
-  - exclusão de documentos que não estão `ready`;
-  - isolamento por Empresa;
-  - restrição às Coleções informadas;
-  - conjunto vazio de Coleções.
+    - limite de 5 resultados;
+    - corte abaixo de 0.35;
+    - ordenação por similaridade;
+    - exclusão de documentos que não estão `ready`;
+    - isolamento por Empresa;
+    - restrição às Coleções informadas;
+    - conjunto vazio de Coleções.
 - **Banco de testes**: os testes passam a rodar em Postgres com pgvector (um database de teste dedicado no container), não mais em SQLite em memória. A configuração de testes é ajustada de acordo.
 - **Prior art**: os testes existentes do starter kit (Dashboard, Teams, Auth e Settings) são feature tests Pest via HTTP com factories e `assertInertia`. Os novos seguem o mesmo estilo. Os testes do starter kit afetados por decisões deste spec (team pessoal no cadastro, verificação de e-mail, troca de team, slug na URL, convites no dashboard) são atualizados para refletir o novo comportamento, e não simplesmente apagados.
 
@@ -372,29 +374,30 @@ Uma plataforma SaaS multi-tenant em que cada **Empresa** (o `Team` do sistema) t
 ## Further Notes
 
 - **Glossário usado neste spec**:
-  - **Empresa**: o `Team`, o tenant.
-  - **Equipe**: membros da Empresa.
-  - **Agente**.
-  - **Coleção**.
-  - **Documento**.
-  - **Chunk**: trecho indexado.
-  - **Base de conhecimento**: conjunto das Coleções da Empresa.
-  - **Playground**.
-  - **Canal**: por onde o cliente final conversa (WhatsApp, Chat no site).
-  - **Integração**: sistema externo para onde os dados vão (CRMs).
+    - **Empresa**: o `Team`, o tenant.
+    - **Equipe**: membros da Empresa.
+    - **Agente**.
+    - **Coleção**.
+    - **Documento**.
+    - **Chunk**: trecho indexado.
+    - **Base de conhecimento**: conjunto das Coleções da Empresa.
+    - **Playground**.
+    - **Canal**: por onde o cliente final conversa (WhatsApp, Chat no site).
+    - **Integração**: sistema externo para onde os dados vão (CRMs).
 
-  Canal e Integração são deliberadamente conceitos separados. Ainda não há `CONTEXT.md`; este glossário é bom candidato para o `/domain-modeling`.
+    Canal e Integração são deliberadamente conceitos separados. Ainda não há `CONTEXT.md`; este glossário é bom candidato para o `/domain-modeling`.
+
 - A migração de SQLite para Postgres deve acontecer antes de qualquer model de domínio, porque não há dados a preservar.
 - A ordem natural de construção é:
-  1. infraestrutura (Docker, Postgres, Redis, Horizon, banco de testes);
-  2. tenancy e onboarding;
-  3. Base de conhecimento com ingestão e busca;
-  4. Agentes e Playground;
-  5. Canais/WhatsApp;
-  6. Integrações;
-  7. Dashboard.
+    1. infraestrutura (Docker, Postgres, Redis, Horizon, banco de testes);
+    2. tenancy e onboarding;
+    3. Base de conhecimento com ingestão e busca;
+    4. Agentes e Playground;
+    5. Canais/WhatsApp;
+    6. Integrações;
+    7. Dashboard.
 - Pontos a verificar na implementação:
-  - a API exata do `laravel/ai` 0.11 para agentes com ferramentas, streaming com eventos de ferramenta e embeddings em lote (consultar a documentação instalada);
-  - a disponibilidade do modelo `gpt-5.6-luna` na conta OpenAI usada;
-  - a compatibilidade dos pacotes novos com PHP 8.5.
+    - a API exata do `laravel/ai` 0.11 para agentes com ferramentas, streaming com eventos de ferramenta e embeddings em lote (consultar a documentação instalada);
+    - a disponibilidade do modelo `gpt-5.6-luna` na conta OpenAI usada;
+    - a compatibilidade dos pacotes novos com PHP 8.5.
 - Webhook compartilhado: como a Meta chama uma única URL para todos os números, o número é identificado pelo verify token (GET) e pelo Phone Number ID do payload (POST). Isso já prepara o terreno para vários números e para o Embedded Signup.

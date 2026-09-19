@@ -245,6 +245,7 @@ class WhatsAppController extends Controller
             'displayPhoneNumber' => $phoneNumber?->display_phone_number,
             'verifiedName' => $phoneNumber?->verified_name,
             'qualityRating' => $phoneNumber?->quality_rating,
+            'credentialsSavedAt' => $account?->created_at?->toIso8601String(),
             'lastTestedAt' => $account?->last_tested_at?->toIso8601String(),
             'webhookVerifiedAt' => $account?->webhook_verified_at?->toIso8601String(),
             'agent' => $channel->agent === null ? null : [
