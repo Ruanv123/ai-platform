@@ -1,0 +1,15 @@
+{
+    "object": "whatsapp_business_account",
+    "entry": [{"id": "waba-fixture", "changes": [{"field": "messages", "value": {
+        "messaging_product": "whatsapp",
+        "metadata": {"display_phone_number": "5511888888888", "phone_number_id": "official-phone-number-id"},
+        "contacts": [{"profile": {"name": "Ana Souza"}, "wa_id": "5511999999999"}],
+        "messages": [{
+            "from": "5511999999999",
+            "id": "official-message-sticker-1",
+            "timestamp": "1760000007",
+            "type": "sticker",
+            "sticker": {"id": "media-sticker-1"}
+        }]
+    }}]}]
+}

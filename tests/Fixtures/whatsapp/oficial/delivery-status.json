@@ -1,0 +1,13 @@
+{
+    "object": "whatsapp_business_account",
+    "entry": [{"id": "waba-fixture", "changes": [{"field": "messages", "value": {
+        "messaging_product": "whatsapp",
+        "metadata": {"display_phone_number": "5511888888888", "phone_number_id": "official-phone-number-id"},
+        "statuses": [{
+            "id": "outgoing-message-1",
+            "status": "read",
+            "timestamp": "1760000006",
+            "recipient_id": "5511999999999"
+        }]
+    }}]}]
+}

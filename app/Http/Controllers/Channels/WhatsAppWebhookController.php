@@ -2,7 +2,9 @@
 
 namespace App\Http\Controllers\Channels;
 
+use App\Enums\ChannelType;
 use App\Http\Controllers\Controller;
+use App\Jobs\ProcessWhatsAppWebhook;
 use App\Models\WhatsAppAccount;
 use App\Models\WhatsAppPhoneNumber;
 use Illuminate\Http\Request;
@@ -51,7 +53,7 @@ class WhatsAppWebhookController extends Controller
     }
 
     /**
-     * Validate a signed event without processing it during this phase.
+     * Validate and enqueue a signed Meta event.
      */
     private function receive(Request $request): Response
     {
@@ -71,7 +73,9 @@ class WhatsAppWebhookController extends Controller
             ->with(['channel.agent', 'whatsappAccount'])
             ->first();
 
-        if ($phoneNumber === null || $phoneNumber->whatsappAccount === null) {
+        if ($phoneNumber === null
+            || $phoneNumber->whatsappAccount === null
+            || $phoneNumber->channel->type !== ChannelType::WhatsApp) {
             return response('Forbidden', 403);
         }
 
@@ -84,6 +88,8 @@ class WhatsAppWebhookController extends Controller
         if (! hash_equals($expectedSignature, $signature)) {
             return response('Forbidden', 403);
         }
+
+        ProcessWhatsAppWebhook::dispatch($phoneNumber->channel_id, $payload);
 
         return response('EVENT_RECEIVED');
     }
