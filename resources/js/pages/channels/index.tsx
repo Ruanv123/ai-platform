@@ -1,5 +1,11 @@
-import { Head, Link } from "@inertiajs/react";
-import { ArrowRight, Globe2, Instagram, MessageCircle } from "lucide-react";
+import { Head, Link } from '@inertiajs/react';
+import {
+    ArrowRight,
+    FlaskConical,
+    Globe2,
+    Instagram,
+    MessageCircle,
+} from 'lucide-react';
 import {
     ChannelReadinessRail,
     ChannelSignalLamp,
@@ -7,18 +13,19 @@ import {
     channelNextStep,
     channelSignal,
     type ChannelReadiness,
-} from "@/components/channel-readiness";
-import Heading from "@/components/heading";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import type { TeamPermissions } from "@/types";
+} from '@/components/channel-readiness';
+import Heading from '@/components/heading';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import type { TeamPermissions } from '@/types';
 
 type Channel = ChannelReadiness & {
     value: string;
     label: string;
     description: string;
-    icon: "message-circle" | "globe-2" | "instagram";
+    icon: 'message-circle' | 'flask-conical' | 'globe-2' | 'instagram';
     available: boolean;
+    isTest: boolean;
     destination: string | null;
     displayPhoneNumber: string | null;
     verifiedName: string | null;
@@ -32,8 +39,9 @@ type Props = {
 };
 
 const channelIcons = {
-    "message-circle": MessageCircle,
-    "globe-2": Globe2,
+    'message-circle': MessageCircle,
+    'flask-conical': FlaskConical,
+    'globe-2': Globe2,
     instagram: Instagram,
 } as const;
 
@@ -54,12 +62,20 @@ function OperatingChannelCard({
 }) {
     const Icon = channelIcons[channel.icon];
     const signal = channelSignal(channel);
-    const milestones = channelMilestones(channel);
-    const nextStep = channelNextStep(milestones);
+    const milestones = channel.isTest ? [] : channelMilestones(channel);
+    const nextStep = channel.isTest
+        ? {
+              label:
+                  channel.status === 'connected'
+                      ? 'Gerenciar conexão'
+                      : 'Configurar conexão',
+              primary: channel.status !== 'connected',
+          }
+        : channelNextStep(milestones);
 
     const identity = [channel.displayPhoneNumber, channel.verifiedName]
         .filter((part): part is string => part !== null)
-        .join(" · ");
+        .join(' · ');
 
     return (
         <article className="bg-card flex flex-col gap-4 rounded-xl border p-5 shadow-xs">
@@ -73,24 +89,34 @@ function OperatingChannelCard({
                             {channel.label}
                         </h2>
                         <p className="text-muted-foreground truncate text-sm tabular-nums">
-                            {identity === "" ? channel.description : identity}
+                            {identity === '' ? channel.description : identity}
                         </p>
                     </div>
                 </div>
                 <ChannelSignalLamp signal={signal} />
             </header>
 
-            <ChannelReadinessRail milestones={milestones} />
+            {channel.isTest ? (
+                <p className="text-muted-foreground text-sm">
+                    {channel.status === 'connected'
+                        ? 'Conexão pronta para receber eventos do serviço de testes.'
+                        : 'Informe o endereço, a instância e a credencial do serviço.'}
+                </p>
+            ) : (
+                <ChannelReadinessRail milestones={milestones} />
+            )}
 
             <footer className="flex flex-wrap items-center justify-between gap-3 border-t pt-4">
                 <p className="text-muted-foreground text-sm">
-                    {channel.qualityRating === null
-                        ? "A Meta informa a qualidade do número após o primeiro teste."
-                        : `Qualidade ${channel.qualityRating.toLowerCase()}`}
+                    {channel.isTest
+                        ? 'Uso restrito ao desenvolvimento da plataforma.'
+                        : channel.qualityRating === null
+                          ? 'A Meta informa a qualidade do número após o primeiro teste.'
+                          : `Qualidade ${channel.qualityRating.toLowerCase()}`}
                 </p>
                 {canManage && channel.destination !== null ? (
                     <Button
-                        variant={nextStep.primary ? "default" : "outline"}
+                        variant={nextStep.primary ? 'default' : 'outline'}
                         asChild
                     >
                         <Link href={channel.destination} prefetch>

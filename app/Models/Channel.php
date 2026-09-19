@@ -28,6 +28,7 @@ use Illuminate\Support\Carbon;
  * @property-read Agent|null $agent
  * @property-read Collection<int, Message> $messages
  * @property-read WhatsAppPhoneNumber|null $whatsappPhoneNumber
+ * @property-read WhatsAppTestConnection|null $whatsappTestConnection
  */
 #[Fillable(['team_id', 'type', 'agent_id', 'status', 'last_error'])]
 
@@ -64,6 +65,16 @@ class Channel extends Model
     public function whatsappPhoneNumber(): HasOne
     {
         return $this->hasOne(WhatsAppPhoneNumber::class);
+    }
+
+    /**
+     * Get the non-official WhatsApp connection attached to this channel.
+     *
+     * @return HasOne<WhatsAppTestConnection, $this>
+     */
+    public function whatsappTestConnection(): HasOne
+    {
+        return $this->hasOne(WhatsAppTestConnection::class);
     }
 
     /**

@@ -5,6 +5,7 @@ use App\Http\Controllers\Agents\AgentController;
 use App\Http\Controllers\Agents\PlaygroundController;
 use App\Http\Controllers\Channels\ChannelController;
 use App\Http\Controllers\Channels\WhatsAppController;
+use App\Http\Controllers\Channels\WhatsAppTestController;
 use App\Http\Controllers\Channels\WhatsAppWebhookController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\Integrations\IntegrationController;
@@ -27,6 +28,13 @@ Route::bind('channel', function (string $value): Channel {
     return Channel::query()
         ->whereKey($value)
         ->where('type', ChannelType::WhatsApp)
+        ->firstOrFail();
+});
+
+Route::bind('whatsappTestChannel', function (string $value): Channel {
+    return Channel::query()
+        ->whereKey($value)
+        ->where('type', ChannelType::WhatsAppTest)
         ->firstOrFail();
 });
 
@@ -53,16 +61,24 @@ Route::middleware(['auth', EnsureUserHasTeam::class])->group(function () {
         ->name('channels.index');
     Route::get('channels/whatsapp', [WhatsAppController::class, 'edit'])
         ->name('channels.whatsapp.edit');
+    Route::get('channels/whatsapp-test', [WhatsAppTestController::class, 'edit'])
+        ->name('channels.whatsapp-test.edit');
     Route::get('integrations', [IntegrationController::class, 'index'])
         ->name('integrations.index');
     Route::post('channels/whatsapp', [WhatsAppController::class, 'store'])
         ->name('channels.whatsapp.store');
+    Route::post('channels/whatsapp-test', [WhatsAppTestController::class, 'store'])
+        ->name('channels.whatsapp-test.store');
     Route::patch('channels/whatsapp/{channel}', [WhatsAppController::class, 'update'])
         ->name('channels.whatsapp.update');
     Route::post('channels/whatsapp/{channel}/test', [WhatsAppController::class, 'test'])
         ->name('channels.whatsapp.test');
     Route::delete('channels/whatsapp/{channel}', [WhatsAppController::class, 'destroy'])
         ->name('channels.whatsapp.destroy');
+    Route::patch('channels/whatsapp-test/{whatsappTestChannel}', [WhatsAppTestController::class, 'update'])
+        ->name('channels.whatsapp-test.update');
+    Route::delete('channels/whatsapp-test/{whatsappTestChannel}', [WhatsAppTestController::class, 'destroy'])
+        ->name('channels.whatsapp-test.destroy');
 
     Route::resource('knowledge/collections', CollectionController::class)
         ->only(['index', 'store', 'update', 'destroy'])

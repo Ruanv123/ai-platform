@@ -180,3 +180,43 @@ it('rejects a non-WhatsApp channel on WhatsApp management routes', function () {
     $response->assertNotFound();
     $this->assertModelExists($channel);
 });
+
+it('hides the WhatsApp test channel from a regular customer outside local', function () {
+    $user = User::factory()->withTeam()->create();
+
+    $response = $this->actingAs($user)->get(route('channels.index'));
+
+    $response->assertOk()->assertInertia(fn (Assert $page) => $page
+        ->has('channels', 3)
+        ->missing('channels.3')
+    );
+});
+
+it('shows the WhatsApp test channel to a platform administrator', function () {
+    $user = User::factory()
+        ->withTeam()
+        ->create(['is_platform_admin' => true]);
+
+    $response = $this->actingAs($user)->get(route('channels.index'));
+
+    $response->assertOk()->assertInertia(fn (Assert $page) => $page
+        ->has('channels', 4)
+        ->where('channels.3.value', 'whatsapp_test')
+        ->where('channels.3.label', 'WhatsApp de testes')
+        ->where('channels.3.available', true)
+        ->where('channels.3.destination', route('channels.whatsapp-test.edit'))
+    );
+});
+
+it('shows the WhatsApp test channel in the local catalog', function () {
+    app()->instance('env', 'local');
+    $user = User::factory()->withTeam()->create();
+
+    $response = $this->actingAs($user)->get(route('channels.index'));
+
+    $response->assertOk()->assertInertia(fn (Assert $page) => $page
+        ->has('channels', 4)
+        ->where('channels.3.value', 'whatsapp_test')
+        ->where('channels.3.destination', route('channels.whatsapp-test.edit'))
+    );
+});
