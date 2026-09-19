@@ -7,12 +7,19 @@ use App\Enums\MessageDirection;
 use App\Models\Channel;
 use App\Models\Contact;
 use App\Models\Message;
+use App\WhatsApp\Media\IncomingMediaResolver;
+use App\WhatsApp\Testes\EvolutionGoMediaDownloader;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Str;
 use Throwable;
 
 abstract class EvolutionGoMessageStrategy implements EvolutionGoStrategy
 {
+    public function __construct(
+        protected readonly IncomingMediaResolver $mediaResolver,
+        protected readonly EvolutionGoMediaDownloader $mediaDownloader,
+    ) {}
+
     /**
      * Process a message-shaped Evolution Go payload.
      *
@@ -51,7 +58,7 @@ abstract class EvolutionGoMessageStrategy implements EvolutionGoStrategy
             'direction' => $this->direction($payload),
             'event_type' => $this->eventType($payload),
             'provider_message_id' => $providerMessageId,
-            'content' => $this->content($payload),
+            'content' => $this->content($channel, $payload),
             'delivery_status' => $this->deliveryStatus(),
         ]);
         $timestamp = $this->providerTimestamp($payload);
@@ -75,7 +82,44 @@ abstract class EvolutionGoMessageStrategy implements EvolutionGoStrategy
      *
      * @param  array<string, mixed>  $payload
      */
-    abstract protected function content(array $payload): ?string;
+    abstract protected function content(Channel $channel, array $payload): ?string;
+
+    /**
+     * Download and resolve Evolution Go media when the provider supplied a source.
+     *
+     * @param  array<string, mixed>  $payload
+     */
+    protected function mediaContent(
+        Channel $channel,
+        array $payload,
+        string $type,
+        ?string $caption,
+    ): ?string {
+        try {
+            $media = $this->mediaDownloader->download($channel, $payload, $type);
+
+            if ($media === null) {
+                return $caption;
+            }
+
+            return $this->mediaResolver->withCaption(
+                $caption,
+                $this->mediaResolver->resolve($type, $media),
+            );
+        } catch (Throwable) {
+            return $this->mediaResolver->failure($caption);
+        }
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     */
+    protected function videoContent(array $payload): string
+    {
+        return $this->mediaResolver->videoWarning(
+            $this->textContent($payload),
+        );
+    }
 
     /**
      * Get the message direction for the strategy.

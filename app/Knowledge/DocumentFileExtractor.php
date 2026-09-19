@@ -21,6 +21,17 @@ class DocumentFileExtractor
             throw new RuntimeException('Este tipo de documento não possui um arquivo.');
         }
 
+        return $this->extractContents(
+            $this->storage->contents($document->file_path),
+            $document->original_filename ?? $document->file_path,
+        );
+    }
+
+    /**
+     * Extract text from file contents using the same formats as knowledge documents.
+     */
+    public function extractContents(string $contents, string $filename): string
+    {
         $temporaryPath = tempnam(sys_get_temp_dir(), 'knowledge-document-');
 
         if ($temporaryPath === false) {
@@ -28,13 +39,11 @@ class DocumentFileExtractor
         }
 
         try {
-            $contents = $this->storage->contents($document->file_path);
-
             if (file_put_contents($temporaryPath, $contents) === false) {
                 throw new RuntimeException('Não foi possível preparar o arquivo para leitura.');
             }
 
-            $extension = strtolower(pathinfo($document->original_filename ?? $document->file_path, PATHINFO_EXTENSION));
+            $extension = strtolower(pathinfo($filename, PATHINFO_EXTENSION));
 
             return match ($extension) {
                 'pdf' => $this->extractPdf($temporaryPath),

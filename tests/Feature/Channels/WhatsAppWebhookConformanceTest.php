@@ -10,6 +10,7 @@ use App\Models\Team;
 use App\Models\WhatsAppAccount;
 use App\Models\WhatsAppPhoneNumber;
 use App\Models\WhatsAppTestConnection;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Testing\TestResponse;
 use Symfony\Component\HttpFoundation\Response;
 use Tests\TestCase;
@@ -60,6 +61,10 @@ function postWhatsAppConformanceWebhook(
     string $routeName,
     array $payload,
 ): TestResponse {
+    Http::fake([
+        'graph.facebook.com/*' => Http::response(['error' => 'media unavailable'], 503),
+    ]);
+
     if ($channelType === ChannelType::WhatsAppTest) {
         return $testCase->postJson(route($routeName), $payload);
     }
@@ -96,12 +101,20 @@ it('creates the contact and records each core incoming message', function (
         'phone' => '5511999999999',
         'name' => 'Ana Souza',
     ]);
+    $expectedContent = match (true) {
+        $eventType === 'video' => "{$content}\n\nVídeos ainda não são suportados. Envie um áudio, uma imagem, um documento ou explique o problema por texto.",
+        $channelType === ChannelType::WhatsApp && in_array($eventType, ['audio', 'image', 'document'], true) => filled($content)
+            ? "{$content}\n\nNão foi possível processar esta mídia. O atendimento continuará com as demais mensagens."
+            : 'Não foi possível processar esta mídia. O atendimento continuará com as demais mensagens.',
+        default => $content,
+    };
+
     $this->assertDatabaseHas('messages', [
         'team_id' => $channel->team_id,
         'channel_id' => $channel->id,
         'event_type' => $eventType,
         'direction' => MessageDirection::Incoming->value,
-        'content' => $content,
+        'content' => $expectedContent,
     ]);
 })->with('WhatsApp webhook channels')->with([
     'text' => ['message-text', 'text', 'Olá, preciso de ajuda com meu pedido.'],

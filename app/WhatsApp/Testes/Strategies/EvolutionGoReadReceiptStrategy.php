@@ -42,7 +42,7 @@ final class EvolutionGoReadReceiptStrategy extends EvolutionGoMessageStrategy
     /**
      * @param  array<string, mixed>  $payload
      */
-    protected function content(array $payload): ?string
+    protected function content(Channel $channel, array $payload): ?string
     {
         return null;
     }

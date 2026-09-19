@@ -3,6 +3,7 @@
 namespace App\WhatsApp\Testes;
 
 use App\Models\Channel;
+use App\WhatsApp\Media\IncomingMediaResolver;
 use App\WhatsApp\Testes\Strategies\EvolutionGoAudioStrategy;
 use App\WhatsApp\Testes\Strategies\EvolutionGoDocumentStrategy;
 use App\WhatsApp\Testes\Strategies\EvolutionGoImageStrategy;
@@ -16,6 +17,11 @@ use Illuminate\Support\Str;
 
 final class EvolutionGoEventProcessor
 {
+    public function __construct(
+        private readonly IncomingMediaResolver $mediaResolver,
+        private readonly EvolutionGoMediaDownloader $mediaDownloader,
+    ) {}
+
     /**
      * Process an Evolution Go envelope without translating it to a canonical event.
      *
@@ -28,9 +34,9 @@ final class EvolutionGoEventProcessor
             : '';
         $strategy = match ($event) {
             'MESSAGE' => $this->messageStrategy($payload),
-            'SEND_MESSAGE' => new EvolutionGoSendMessageStrategy,
-            'READ_RECEIPT' => new EvolutionGoReadReceiptStrategy,
-            default => new EvolutionGoUnsupportedStrategy,
+            'SEND_MESSAGE' => new EvolutionGoSendMessageStrategy($this->mediaResolver, $this->mediaDownloader),
+            'READ_RECEIPT' => new EvolutionGoReadReceiptStrategy($this->mediaResolver, $this->mediaDownloader),
+            default => new EvolutionGoUnsupportedStrategy($this->mediaResolver, $this->mediaDownloader),
         };
 
         $strategy->handle($channel, $payload);
@@ -41,15 +47,16 @@ final class EvolutionGoEventProcessor
      */
     private function messageStrategy(array $payload): EvolutionGoStrategy
     {
-        $messageType = (new EvolutionGoTextStrategy)->detectedMessageType($payload);
+        $messageType = (new EvolutionGoTextStrategy($this->mediaResolver, $this->mediaDownloader))
+            ->detectedMessageType($payload);
 
         return match ($messageType) {
-            'text' => new EvolutionGoTextStrategy,
-            'image' => new EvolutionGoImageStrategy,
-            'audio' => new EvolutionGoAudioStrategy,
-            'video' => new EvolutionGoVideoStrategy,
-            'document' => new EvolutionGoDocumentStrategy,
-            default => new EvolutionGoUnsupportedStrategy,
+            'text' => new EvolutionGoTextStrategy($this->mediaResolver, $this->mediaDownloader),
+            'image' => new EvolutionGoImageStrategy($this->mediaResolver, $this->mediaDownloader),
+            'audio' => new EvolutionGoAudioStrategy($this->mediaResolver, $this->mediaDownloader),
+            'video' => new EvolutionGoVideoStrategy($this->mediaResolver, $this->mediaDownloader),
+            'document' => new EvolutionGoDocumentStrategy($this->mediaResolver, $this->mediaDownloader),
+            default => new EvolutionGoUnsupportedStrategy($this->mediaResolver, $this->mediaDownloader),
         };
     }
 }

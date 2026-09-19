@@ -4,6 +4,7 @@ namespace App\WhatsApp\Testes\Strategies;
 
 use App\Enums\MessageDeliveryStatus;
 use App\Enums\MessageDirection;
+use App\Models\Channel;
 use Illuminate\Support\Str;
 
 final class EvolutionGoSendMessageStrategy extends EvolutionGoMessageStrategy
@@ -20,7 +21,7 @@ final class EvolutionGoSendMessageStrategy extends EvolutionGoMessageStrategy
     /**
      * @param  array<string, mixed>  $payload
      */
-    protected function content(array $payload): ?string
+    protected function content(Channel $channel, array $payload): ?string
     {
         return $this->textContent($payload);
     }

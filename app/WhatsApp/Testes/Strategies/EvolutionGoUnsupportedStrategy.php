@@ -2,6 +2,7 @@
 
 namespace App\WhatsApp\Testes\Strategies;
 
+use App\Models\Channel;
 use Illuminate\Support\Str;
 
 final class EvolutionGoUnsupportedStrategy extends EvolutionGoMessageStrategy
@@ -21,7 +22,7 @@ final class EvolutionGoUnsupportedStrategy extends EvolutionGoMessageStrategy
     /**
      * @param  array<string, mixed>  $payload
      */
-    protected function content(array $payload): ?string
+    protected function content(Channel $channel, array $payload): ?string
     {
         return $this->textContent($payload);
     }

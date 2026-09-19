@@ -6,11 +6,18 @@ use App\Enums\MessageDirection;
 use App\Models\Channel;
 use App\Models\Contact;
 use App\Models\Message;
+use App\WhatsApp\Media\IncomingMediaResolver;
+use App\WhatsApp\Oficial\MetaMediaDownloader;
 use Illuminate\Support\Carbon;
 use Throwable;
 
 abstract class MetaMessageStrategy implements MetaStrategy
 {
+    public function __construct(
+        protected readonly IncomingMediaResolver $mediaResolver,
+        protected readonly MetaMediaDownloader $mediaDownloader,
+    ) {}
+
     /**
      * @param  array<string, mixed>  $payload
      */
@@ -48,7 +55,7 @@ abstract class MetaMessageStrategy implements MetaStrategy
             'direction' => MessageDirection::Incoming,
             'event_type' => $this->eventType($payload),
             'provider_message_id' => $providerMessageId,
-            'content' => $this->content($payload),
+            'content' => $this->content($channel, $payload),
         ]);
         $timestamp = $this->providerTimestamp($messageData);
 
@@ -62,8 +69,62 @@ abstract class MetaMessageStrategy implements MetaStrategy
     /** @param array<string, mixed> $payload */
     abstract protected function eventType(array $payload): string;
 
-    /** @param array<string, mixed> $payload */
-    abstract protected function content(array $payload): ?string;
+    /**
+     * Resolve the content stored for this message.
+     *
+     * @param  array<string, mixed>  $payload
+     */
+    abstract protected function content(Channel $channel, array $payload): ?string;
+
+    /**
+     * Download and resolve a Meta media attachment when one is present.
+     *
+     * @param  array<string, mixed>  $payload
+     */
+    protected function mediaContent(
+        Channel $channel,
+        array $payload,
+        string $type,
+        ?string $caption,
+    ): ?string {
+        $media = $this->message($payload)[$type] ?? null;
+
+        if (! is_array($media)) {
+            return $caption;
+        }
+
+        $mediaId = $this->stringValue($media, 'id');
+
+        if ($mediaId === null) {
+            return $caption;
+        }
+
+        try {
+            $downloaded = $this->mediaDownloader->download(
+                $channel,
+                $mediaId,
+                $this->stringValue($media, 'filename'),
+                $this->stringValue($media, 'mime_type'),
+            );
+
+            return $this->mediaResolver->withCaption(
+                $caption,
+                $this->mediaResolver->resolve($type, $downloaded),
+            );
+        } catch (Throwable) {
+            return $this->mediaResolver->failure($caption);
+        }
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     */
+    protected function videoContent(array $payload): string
+    {
+        return $this->mediaResolver->videoWarning(
+            $this->stringValue($this->message($payload), 'video.caption'),
+        );
+    }
 
     /**
      * @param  array<string, mixed>  $payload

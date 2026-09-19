@@ -2,6 +2,8 @@
 
 namespace App\WhatsApp\Oficial\Strategies;
 
+use App\Models\Channel;
+
 final class MetaAudioStrategy extends MetaMessageStrategy
 {
     /** @param array<string, mixed> $payload */
@@ -11,8 +13,8 @@ final class MetaAudioStrategy extends MetaMessageStrategy
     }
 
     /** @param array<string, mixed> $payload */
-    protected function content(array $payload): ?string
+    protected function content(Channel $channel, array $payload): ?string
     {
-        return null;
+        return $this->mediaContent($channel, $payload, 'audio', null);
     }
 }

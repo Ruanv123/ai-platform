@@ -3,6 +3,7 @@
 namespace App\WhatsApp\Oficial;
 
 use App\Models\Channel;
+use App\WhatsApp\Media\IncomingMediaResolver;
 use App\WhatsApp\Oficial\Strategies\MetaAudioStrategy;
 use App\WhatsApp\Oficial\Strategies\MetaDocumentStrategy;
 use App\WhatsApp\Oficial\Strategies\MetaImageStrategy;
@@ -14,6 +15,11 @@ use App\WhatsApp\Oficial\Strategies\MetaVideoStrategy;
 
 final class MetaEventProcessor
 {
+    public function __construct(
+        private readonly IncomingMediaResolver $mediaResolver,
+        private readonly MetaMediaDownloader $mediaDownloader,
+    ) {}
+
     /**
      * Process a Meta event without translating it to a canonical event.
      *
@@ -34,12 +40,12 @@ final class MetaEventProcessor
         }
 
         return match (data_get($payload, 'entry.0.changes.0.value.messages.0.type')) {
-            'text' => new MetaTextStrategy,
-            'image' => new MetaImageStrategy,
-            'audio' => new MetaAudioStrategy,
-            'video' => new MetaVideoStrategy,
-            'document' => new MetaDocumentStrategy,
-            default => new MetaUnsupportedStrategy,
+            'text' => new MetaTextStrategy($this->mediaResolver, $this->mediaDownloader),
+            'image' => new MetaImageStrategy($this->mediaResolver, $this->mediaDownloader),
+            'audio' => new MetaAudioStrategy($this->mediaResolver, $this->mediaDownloader),
+            'video' => new MetaVideoStrategy($this->mediaResolver, $this->mediaDownloader),
+            'document' => new MetaDocumentStrategy($this->mediaResolver, $this->mediaDownloader),
+            default => new MetaUnsupportedStrategy($this->mediaResolver, $this->mediaDownloader),
         };
     }
 }
