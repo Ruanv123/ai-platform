@@ -7,9 +7,11 @@ use App\Enums\ChannelStatus;
 use App\Enums\ChannelType;
 use Database\Factories\ChannelFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
+use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Support\Carbon;
 
@@ -24,6 +26,7 @@ use Illuminate\Support\Carbon;
  * @property Carbon|null $updated_at
  * @property-read Team $team
  * @property-read Agent|null $agent
+ * @property-read Collection<int, Message> $messages
  * @property-read WhatsAppPhoneNumber|null $whatsappPhoneNumber
  */
 #[Fillable(['team_id', 'type', 'agent_id', 'status', 'last_error'])]
@@ -41,6 +44,16 @@ class Channel extends Model
     public function agent(): BelongsTo
     {
         return $this->belongsTo(Agent::class);
+    }
+
+    /**
+     * Get the messages that passed through this channel.
+     *
+     * @return HasMany<Message, $this>
+     */
+    public function messages(): HasMany
+    {
+        return $this->hasMany(Message::class);
     }
 
     /**

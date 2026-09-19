@@ -33,6 +33,8 @@ use Illuminate\Support\Carbon;
  * @property Carbon|null $updated_at
  * @property Carbon|null $deleted_at
  * @property-read Collection<int, TeamInvitation> $invitations
+ * @property-read Collection<int, Contact> $contacts
+ * @property-read Collection<int, Message> $messages
  * @property-read Collection<int, TeamCollection> $collections
  * @property-read Collection<int, Agent> $agents
  * @property-read Collection<int, Channel> $channels
@@ -120,6 +122,26 @@ class Team extends Model
     public function invitations(): HasMany
     {
         return $this->hasMany(TeamInvitation::class);
+    }
+
+    /**
+     * Get all contacts for this Empresa.
+     *
+     * @return HasMany<Contact, $this>
+     */
+    public function contacts(): HasMany
+    {
+        return $this->hasMany(Contact::class);
+    }
+
+    /**
+     * Get all messages for this Empresa.
+     *
+     * @return HasMany<Message, $this>
+     */
+    public function messages(): HasMany
+    {
+        return $this->hasMany(Message::class);
     }
 
     /**
