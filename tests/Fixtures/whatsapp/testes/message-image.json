@@ -1,0 +1,19 @@
+{
+    "event": "MESSAGE",
+    "instance": "local-development",
+    "data": {
+        "key": {
+            "remoteJid": "5511999999999@s.whatsapp.net",
+            "fromMe": false,
+            "id": "test-message-image-1"
+        },
+        "pushName": "Ana Souza",
+        "message": {
+            "imageMessage": {
+                "caption": "Esta é a foto do problema."
+            }
+        },
+        "messageType": "imageMessage",
+        "messageTimestamp": 1760000001
+    }
+}

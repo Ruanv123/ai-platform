@@ -16,7 +16,7 @@ return Application::configure(basePath: dirname(__DIR__))
     )
     ->withMiddleware(function (Middleware $middleware): void {
         $middleware->encryptCookies(except: ['appearance', 'sidebar_state']);
-        $middleware->preventRequestForgery(except: ['webhooks/whatsapp']);
+        $middleware->preventRequestForgery(except: ['webhooks/whatsapp', 'webhooks/whatsapp-test']);
 
         $middleware->web(append: [
             HandleAppearance::class,

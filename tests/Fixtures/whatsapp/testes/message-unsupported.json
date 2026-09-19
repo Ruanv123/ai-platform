@@ -1,0 +1,19 @@
+{
+    "event": "MESSAGE",
+    "instance": "local-development",
+    "data": {
+        "key": {
+            "remoteJid": "5511999999999@s.whatsapp.net",
+            "fromMe": false,
+            "id": "test-message-sticker-1"
+        },
+        "pushName": "Ana Souza",
+        "message": {
+            "stickerMessage": {
+                "fileSha256": "fixture"
+            }
+        },
+        "messageType": "stickerMessage",
+        "messageTimestamp": 1760000007
+    }
+}

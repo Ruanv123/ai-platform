@@ -1,0 +1,12 @@
+{
+    "event": "READ_RECEIPT",
+    "instance": "local-development",
+    "data": {
+        "key": {
+            "remoteJid": "5511999999999@s.whatsapp.net",
+            "id": "test-message-send-1"
+        },
+        "status": "read",
+        "timestamp": 1760000006
+    }
+}

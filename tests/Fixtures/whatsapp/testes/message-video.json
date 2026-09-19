@@ -1,0 +1,19 @@
+{
+    "event": "MESSAGE",
+    "instance": "local-development",
+    "data": {
+        "key": {
+            "remoteJid": "5511999999999@s.whatsapp.net",
+            "fromMe": false,
+            "id": "test-message-video-1"
+        },
+        "pushName": "Ana Souza",
+        "message": {
+            "videoMessage": {
+                "caption": "Um vídeo do defeito."
+            }
+        },
+        "messageType": "videoMessage",
+        "messageTimestamp": 1760000003
+    }
+}

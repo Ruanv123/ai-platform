@@ -6,6 +6,7 @@ use App\Http\Controllers\Agents\PlaygroundController;
 use App\Http\Controllers\Channels\ChannelController;
 use App\Http\Controllers\Channels\WhatsAppController;
 use App\Http\Controllers\Channels\WhatsAppTestController;
+use App\Http\Controllers\Channels\WhatsAppTestWebhookController;
 use App\Http\Controllers\Channels\WhatsAppWebhookController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\Integrations\IntegrationController;
@@ -23,6 +24,9 @@ Route::inertia('/', 'welcome')->name('home');
 Route::match(['get', 'post'], 'webhooks/whatsapp', [WhatsAppWebhookController::class, 'handle'])
     ->middleware('throttle:whatsapp-webhook')
     ->name('webhooks.whatsapp');
+
+Route::post('webhooks/whatsapp-test', [WhatsAppTestWebhookController::class, 'handle'])
+    ->name('webhooks.whatsapp-test');
 
 Route::bind('channel', function (string $value): Channel {
     return Channel::query()

@@ -1,0 +1,16 @@
+{
+    "event": "SEND_MESSAGE",
+    "instance": "local-development",
+    "data": {
+        "key": {
+            "remoteJid": "5511999999999@s.whatsapp.net",
+            "fromMe": true,
+            "id": "test-message-send-1"
+        },
+        "message": {
+            "conversation": "Resposta enviada pelo Agente."
+        },
+        "messageType": "conversation",
+        "messageTimestamp": 1760000005
+    }
+}

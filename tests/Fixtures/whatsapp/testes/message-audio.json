@@ -1,0 +1,19 @@
+{
+    "event": "MESSAGE",
+    "instance": "local-development",
+    "data": {
+        "key": {
+            "remoteJid": "5511999999999@s.whatsapp.net",
+            "fromMe": false,
+            "id": "test-message-audio-1"
+        },
+        "pushName": "Ana Souza",
+        "message": {
+            "audioMessage": {
+                "seconds": 12
+            }
+        },
+        "messageType": "audioMessage",
+        "messageTimestamp": 1760000002
+    }
+}
