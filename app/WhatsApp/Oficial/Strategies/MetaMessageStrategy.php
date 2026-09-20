@@ -21,19 +21,19 @@ abstract class MetaMessageStrategy implements MetaStrategy
     /**
      * @param  array<string, mixed>  $payload
      */
-    public function handle(Channel $channel, array $payload): void
+    public function handle(Channel $channel, array $payload): ?Message
     {
         $messageData = $this->message($payload);
         $providerMessageId = $this->stringValue($messageData, 'id');
 
         if ($this->messageAlreadyExists($channel, $providerMessageId)) {
-            return;
+            return null;
         }
 
         $phone = $this->stringValue($messageData, 'from');
 
         if ($phone === null) {
-            return;
+            return null;
         }
 
         $contact = Contact::query()->firstOrNew([
@@ -64,6 +64,8 @@ abstract class MetaMessageStrategy implements MetaStrategy
         }
 
         $message->save();
+
+        return $message;
     }
 
     /** @param array<string, mixed> $payload */

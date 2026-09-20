@@ -25,18 +25,18 @@ abstract class EvolutionGoMessageStrategy implements EvolutionGoStrategy
      *
      * @param  array<string, mixed>  $payload
      */
-    public function handle(Channel $channel, array $payload): void
+    public function handle(Channel $channel, array $payload): ?Message
     {
         $providerMessageId = $this->providerMessageId($payload);
 
         if ($this->messageAlreadyExists($channel, $providerMessageId)) {
-            return;
+            return null;
         }
 
         $phone = $this->phone($payload);
 
         if ($phone === null) {
-            return;
+            return null;
         }
 
         $contact = Contact::query()->firstOrNew([
@@ -68,6 +68,8 @@ abstract class EvolutionGoMessageStrategy implements EvolutionGoStrategy
         }
 
         $message->save();
+
+        return $message;
     }
 
     /**

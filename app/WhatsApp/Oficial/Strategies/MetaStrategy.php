@@ -3,6 +3,7 @@
 namespace App\WhatsApp\Oficial\Strategies;
 
 use App\Models\Channel;
+use App\Models\Message;
 
 interface MetaStrategy
 {
@@ -11,5 +12,5 @@ interface MetaStrategy
      *
      * @param  array<string, mixed>  $payload
      */
-    public function handle(Channel $channel, array $payload): void;
+    public function handle(Channel $channel, array $payload): ?Message;
 }

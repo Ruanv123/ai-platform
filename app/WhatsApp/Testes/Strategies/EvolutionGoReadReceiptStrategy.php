@@ -14,12 +14,12 @@ final class EvolutionGoReadReceiptStrategy extends EvolutionGoMessageStrategy
      *
      * @param  array<string, mixed>  $payload
      */
-    public function handle(Channel $channel, array $payload): void
+    public function handle(Channel $channel, array $payload): ?Message
     {
         $providerMessageId = $this->providerMessageId($payload);
 
         if ($providerMessageId === null) {
-            return;
+            return null;
         }
 
         Message::query()
@@ -29,6 +29,8 @@ final class EvolutionGoReadReceiptStrategy extends EvolutionGoMessageStrategy
             ->update([
                 'delivery_status' => MessageDeliveryStatus::Read,
             ]);
+
+        return null;
     }
 
     /**

@@ -2,7 +2,9 @@
 
 namespace App\WhatsApp\Testes;
 
+use App\Enums\MessageDirection;
 use App\Models\Channel;
+use App\WhatsApp\IncomingMessageResponseDispatcher;
 use App\WhatsApp\Media\IncomingMediaResolver;
 use App\WhatsApp\Testes\Strategies\EvolutionGoAudioStrategy;
 use App\WhatsApp\Testes\Strategies\EvolutionGoDocumentStrategy;
@@ -20,6 +22,7 @@ final class EvolutionGoEventProcessor
     public function __construct(
         private readonly IncomingMediaResolver $mediaResolver,
         private readonly EvolutionGoMediaDownloader $mediaDownloader,
+        private readonly IncomingMessageResponseDispatcher $responseDispatcher,
     ) {}
 
     /**
@@ -39,7 +42,11 @@ final class EvolutionGoEventProcessor
             default => new EvolutionGoUnsupportedStrategy($this->mediaResolver, $this->mediaDownloader),
         };
 
-        $strategy->handle($channel, $payload);
+        $message = $strategy->handle($channel, $payload);
+
+        if ($message?->direction === MessageDirection::Incoming) {
+            $this->responseDispatcher->dispatch($channel, $message);
+        }
     }
 
     /**

@@ -2,7 +2,9 @@
 
 namespace App\WhatsApp\Oficial;
 
+use App\Enums\MessageDirection;
 use App\Models\Channel;
+use App\WhatsApp\IncomingMessageResponseDispatcher;
 use App\WhatsApp\Media\IncomingMediaResolver;
 use App\WhatsApp\Oficial\Strategies\MetaAudioStrategy;
 use App\WhatsApp\Oficial\Strategies\MetaDocumentStrategy;
@@ -18,6 +20,7 @@ final class MetaEventProcessor
     public function __construct(
         private readonly IncomingMediaResolver $mediaResolver,
         private readonly MetaMediaDownloader $mediaDownloader,
+        private readonly IncomingMessageResponseDispatcher $responseDispatcher,
     ) {}
 
     /**
@@ -27,7 +30,11 @@ final class MetaEventProcessor
      */
     public function process(Channel $channel, array $payload): void
     {
-        $this->strategy($payload)->handle($channel, $payload);
+        $message = $this->strategy($payload)->handle($channel, $payload);
+
+        if ($message?->direction === MessageDirection::Incoming) {
+            $this->responseDispatcher->dispatch($channel, $message);
+        }
     }
 
     /**

@@ -12,19 +12,19 @@ final class MetaStatusStrategy implements MetaStrategy
     /**
      * @param  array<string, mixed>  $payload
      */
-    public function handle(Channel $channel, array $payload): void
+    public function handle(Channel $channel, array $payload): ?Message
     {
         $statusData = data_get($payload, 'entry.0.changes.0.value.statuses.0');
 
         if (! is_array($statusData)) {
-            return;
+            return null;
         }
 
         $providerMessageId = $statusData['id'] ?? null;
         $deliveryStatus = $this->deliveryStatus($statusData['status'] ?? null);
 
         if (! is_scalar($providerMessageId) || blank($providerMessageId) || $deliveryStatus === null) {
-            return;
+            return null;
         }
 
         Message::query()
@@ -34,6 +34,8 @@ final class MetaStatusStrategy implements MetaStrategy
             ->update([
                 'delivery_status' => $deliveryStatus,
             ]);
+
+        return null;
     }
 
     private function deliveryStatus(mixed $status): ?MessageDeliveryStatus
