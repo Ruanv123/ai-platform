@@ -4,11 +4,11 @@
 
 **Blocked by:** 08
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] Falha transitória de IA ou de envio é tentada de novo com backoff
-- [ ] Limite de tempo total do retry, menor que a janela de 24 horas
-- [ ] Esgotado o retry, o Contato recebe aviso genérico e o Canal recebe `last_error`
-- [ ] Resposta fora da janela de 24 horas não é enviada e fica registrada como não entregue
-- [ ] Nenhum template da Meta é implementado
-- [ ] Testes: falha transitória que se recupera, falha que esgota, e envio barrado pela janela
+- [x] Falha transitória de IA ou de envio é tentada de novo com backoff
+- [x] Limite de tempo total do retry, menor que a janela de 24 horas
+- [x] Esgotado o retry, o Contato recebe aviso genérico e o Canal recebe `last_error`
+- [x] Resposta fora da janela de 24 horas não é enviada e fica registrada como não entregue
+- [x] Nenhum template da Meta é implementado
+- [x] Testes: falha transitória que se recupera, falha que esgota, e envio barrado pela janela

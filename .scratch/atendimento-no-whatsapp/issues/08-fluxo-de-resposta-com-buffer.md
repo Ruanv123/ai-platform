@@ -4,14 +4,14 @@
 
 **Blocked by:** 03, 06, 07
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] Fluxo por mensagem recebida, despachado com `delay` de 5 segundos
-- [ ] Marcar como lida e "digitando" disparam na chegada, antes da espera
-- [ ] O fluxo responde as Mensagens não respondidas do Contato naquele Canal e as marca ao enviar
-- [ ] Duas mensagens dentro da janela recebem uma resposta só
-- [ ] Mensagem já respondida nunca é respondida de novo
-- [ ] Agente de atendimento usa persona, tom, Instruções e Coleções do Agente vinculado ao Canal
-- [ ] Canal sem Agente, ou com Agente inativo, registra a Mensagem e não abre fluxo de resposta
-- [ ] Resposta sai em uma única mensagem
-- [ ] Testes com o fake do Agente, no seam da rota; o grupo do agrupamento troca o driver de fila e executa os jobs manualmente
+- [x] Fluxo por mensagem recebida, despachado com `delay` de 5 segundos
+- [x] Marcar como lida e "digitando" disparam na chegada, antes da espera
+- [x] O fluxo responde as Mensagens não respondidas do Contato naquele Canal e as marca ao enviar
+- [x] Duas mensagens dentro da janela recebem uma resposta só
+- [x] Mensagem já respondida nunca é respondida de novo
+- [x] Agente de atendimento usa persona, tom, Instruções e Coleções do Agente vinculado ao Canal
+- [x] Canal sem Agente, ou com Agente inativo, registra a Mensagem e não abre fluxo de resposta
+- [x] Resposta sai em uma única mensagem
+- [x] Testes com o fake do Agente, no seam da rota; o grupo do agrupamento troca o driver de fila e executa os jobs manualmente

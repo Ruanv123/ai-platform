@@ -4,15 +4,15 @@
 
 **Blocked by:** 11 (Agentes CRUD)
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] Model de número de WhatsApp pertencente à Empresa (hasMany no banco), com método de conexão (`manual`), credenciais com cast criptografado, verify token único global gerado, Agente vinculado opcional, status (`unverified`, `connected`, `error`), último erro, dados da Meta, data do último teste e data de verificação do webhook
-- [ ] `TeamPermission` ganha `channel:manage` (Owner e Admin)
-- [ ] Item "Canais" na sidebar com cards WhatsApp e "Chat no site" (em breve)
-- [ ] Cadastro e edição de credenciais; segredo vazio na edição mantém o valor atual; segredos nunca presentes nas props
-- [ ] Validação impede um segundo número na mesma Empresa
-- [ ] URL do webhook e verify token exibidos com botão de copiar
-- [ ] "Testar conexão" via Graph API (versão em configuração) grava status e dados retornados; erros da Meta traduzidos para pt-BR
-- [ ] Vincular, trocar e remover Agente; remover o número
-- [ ] Excluir Agente vinculado desvincula o número na mesma operação; UI de exclusão do Agente avisa
-- [ ] Feature tests com `Http::fake()`: cadastro, limite de 1, segredos ausentes nas props, edição preservando segredos, teste de conexão com sucesso e erro, vínculo e desvinculação ao excluir Agente, permissões e isolamento
+- [x] Model de número de WhatsApp pertencente à Empresa (hasMany no banco), com método de conexão (`manual`), credenciais com cast criptografado, verify token único global gerado, Agente vinculado opcional, status (`unverified`, `connected`, `error`), último erro, dados da Meta, data do último teste e data de verificação do webhook
+- [x] `TeamPermission` ganha `channel:manage` (Owner e Admin)
+- [x] Item "Canais" na sidebar com cards WhatsApp e "Chat no site" (em breve)
+- [x] Cadastro e edição de credenciais; segredo vazio na edição mantém o valor atual; segredos nunca presentes nas props
+- [x] Validação impede um segundo número na mesma Empresa
+- [x] URL do webhook e verify token exibidos com botão de copiar
+- [x] "Testar conexão" via Graph API (versão em configuração) grava status e dados retornados; erros da Meta traduzidos para pt-BR
+- [x] Vincular, trocar e remover Agente; remover o número
+- [x] Excluir Agente vinculado desvincula o número na mesma operação; UI de exclusão do Agente avisa
+- [x] Feature tests com `Http::fake()`: cadastro, limite de 1, segredos ausentes nas props, edição preservando segredos, teste de conexão com sucesso e erro, vínculo e desvinculação ao excluir Agente, permissões e isolamento

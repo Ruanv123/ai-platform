@@ -4,10 +4,10 @@
 
 **Blocked by:** 02 (Catálogo de Canais)
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] Item "WhatsApp conectado" leva para a configuração do WhatsApp
-- [ ] Item "Agente vinculado ao WhatsApp" leva para onde o vínculo é feito
-- [ ] Resumo do WhatsApp lê status e label pelo Canal
-- [ ] Sidebar continua apontando para o catálogo de Canais
-- [ ] Feature tests do Dashboard atualizados para os novos destinos e para o status lido pelo Canal
+- [x] Item "WhatsApp conectado" leva para a configuração do WhatsApp
+- [x] Item "Agente vinculado ao WhatsApp" leva para onde o vínculo é feito
+- [x] Resumo do WhatsApp lê status e label pelo Canal
+- [x] Sidebar continua apontando para o catálogo de Canais
+- [x] Feature tests do Dashboard atualizados para os novos destinos e para o status lido pelo Canal

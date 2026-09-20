@@ -4,12 +4,12 @@
 
 **Blocked by:** 13 (Canais: configuração do WhatsApp)
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] Rota GET e POST pública, sem CSRF e sem autenticação
-- [ ] Handshake válido devolve o challenge em texto puro e grava a data de verificação no número
-- [ ] Verify token desconhecido ou modo diferente de `subscribe` responde 403
-- [ ] POST com assinatura válida responde 200 sem processar o evento
-- [ ] POST com assinatura inválida, ausente ou Phone Number ID desconhecido responde 403
-- [ ] Tela do WhatsApp mostra se o webhook já foi verificado
-- [ ] Feature tests para handshake válido/inválido e assinatura válida/inválida/ausente
+- [x] Rota GET e POST pública, sem CSRF e sem autenticação
+- [x] Handshake válido devolve o challenge em texto puro e grava a data de verificação no número
+- [x] Verify token desconhecido ou modo diferente de `subscribe` responde 403
+- [x] POST com assinatura válida responde 200 sem processar o evento
+- [x] POST com assinatura inválida, ausente ou Phone Number ID desconhecido responde 403
+- [x] Tela do WhatsApp mostra se o webhook já foi verificado
+- [x] Feature tests para handshake válido/inválido e assinatura válida/inválida/ausente

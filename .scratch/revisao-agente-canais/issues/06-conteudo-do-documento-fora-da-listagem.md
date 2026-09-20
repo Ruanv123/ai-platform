@@ -4,11 +4,11 @@
 
 **Blocked by:** None (can start immediately)
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] Link de voltar aponta para a listagem de Coleções
-- [ ] Conteúdo extraído e itens de FAQ saem do payload da listagem
-- [ ] Endpoint devolve um Documento completo, respeitando Empresa e permissões
-- [ ] Modal de edição busca o Documento ao abrir, com estado de carregamento
-- [ ] Editar, salvar e reprocessar continuam funcionando como antes
-- [ ] Feature tests: conteúdo ausente da listagem, presente no endpoint do Documento, Documento de outra Empresa devolve não encontrado
+- [x] Link de voltar aponta para a listagem de Coleções
+- [x] Conteúdo extraído e itens de FAQ saem do payload da listagem
+- [x] Endpoint devolve um Documento completo, respeitando Empresa e permissões
+- [x] Modal de edição busca o Documento ao abrir, com estado de carregamento
+- [x] Editar, salvar e reprocessar continuam funcionando como antes
+- [x] Feature tests: conteúdo ausente da listagem, presente no endpoint do Documento, Documento de outra Empresa devolve não encontrado

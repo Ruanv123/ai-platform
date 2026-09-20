@@ -4,13 +4,13 @@
 
 **Blocked by:** 03 (Agente vinculado a Canais e lista em tabela)
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] Rotas de Agente movidas para o prefixo próprio, com os controllers no namespace de Agentes; nomes de rota preservados
-- [ ] Criar e editar renderizam a mesma página de editor; o modal é removido
-- [ ] Criar redireciona para o editor do Agente recém-criado
-- [ ] Salvar uma edição permanece na página e apenas emite o toast
-- [ ] Erros de validação aparecem em pt-BR junto do campo correspondente
-- [ ] Member não acessa o editor
-- [ ] Rotas do frontend regeneradas e importações atualizadas
-- [ ] Feature tests: página de criação e de edição renderizam, redirecionamento após criar, permanência após salvar, permissões por Papel, isolamento entre Empresas
+- [x] Rotas de Agente movidas para o prefixo próprio, com os controllers no namespace de Agentes; nomes de rota preservados
+- [x] Criar e editar renderizam a mesma página de editor; o modal é removido
+- [x] Criar redireciona para o editor do Agente recém-criado
+- [x] Salvar uma edição permanece na página e apenas emite o toast
+- [x] Erros de validação aparecem em pt-BR junto do campo correspondente
+- [x] Member não acessa o editor
+- [x] Rotas do frontend regeneradas e importações atualizadas
+- [x] Feature tests: página de criação e de edição renderizam, redirecionamento após criar, permanência após salvar, permissões por Papel, isolamento entre Empresas

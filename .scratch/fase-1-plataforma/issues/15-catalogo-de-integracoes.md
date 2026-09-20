@@ -4,10 +4,10 @@
 
 **Blocked by:** 03 (Onboarding da Empresa)
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] Enum `CrmProvider` com os 6 casos, cada um com nome, descrição, logo e lista de capacidades futuras
-- [ ] Item "Integrações" na sidebar; página com cards de todos os provedores
-- [ ] Drawer com detalhes, botão "Conectar" desabilitado e selo "Em breve"
-- [ ] Visível para todos os papéis
-- [ ] Feature test verificando o catálogo nas props da página
+- [x] Enum `CrmProvider` com os 6 casos, cada um com nome, descrição, logo e lista de capacidades futuras
+- [x] Item "Integrações" na sidebar; página com cards de todos os provedores
+- [x] Drawer com detalhes, botão "Conectar" desabilitado e selo "Em breve"
+- [x] Visível para todos os papéis
+- [x] Feature test verificando o catálogo nas props da página

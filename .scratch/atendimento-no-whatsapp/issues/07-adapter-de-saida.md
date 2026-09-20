@@ -4,11 +4,11 @@
 
 **Blocked by:** 01, 02
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] Interface de saída com enviar texto, marcar como lida e "digitando"
-- [ ] Implementação para o WhatsApp oficial e para o WhatsApp de testes
-- [ ] Envio de texto registra a Mensagem de saída com o id do provedor
-- [ ] Nenhum envio de mídia
-- [ ] Nomes distintos para a ação de saída e o status recebido
-- [ ] Testes com `Http::fake()` / `Http::assertSent`, cobrindo os dois Tipos de canal
+- [x] Interface de saída com enviar texto, marcar como lida e "digitando"
+- [x] Implementação para o WhatsApp oficial e para o WhatsApp de testes
+- [x] Envio de texto registra a Mensagem de saída com o id do provedor
+- [x] Nenhum envio de mídia
+- [x] Nomes distintos para a ação de saída e o status recebido
+- [x] Testes com `Http::fake()` / `Http::assertSent`, cobrindo os dois Tipos de canal

@@ -4,18 +4,18 @@
 
 **Blocked by:** 06 (Conteúdo do Documento fora da listagem e volta para a Base de conhecimento)
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] Listagem paginada no servidor, 20 por página
-- [ ] Busca por título, filtro por tipo e filtro por status, carregados da query string
-- [ ] Ordenação por título, tamanho e data de atualização, com atualização mais recente como padrão
-- [ ] Filtros e ordenação preservados ao paginar e ao voltar para a tela
-- [ ] Tabela com título e ícone do tipo, tipo, status, tamanho e data de atualização
-- [ ] Editar, baixar, mover, reprocessar e excluir num menu de ações por linha
-- [ ] Polling sinalizado apenas quando a página renderizada tem Documento pendente ou em processamento, com recarregamento parcial que preserva estado e rolagem
-- [ ] Estado vazio claro quando o filtro não devolve nada, distinto da Coleção sem Documentos
-- [ ] Mensagem de erro do Documento que falhou continua visível
-- [ ] Card de uso de armazenamento da Empresa permanece acima da tabela
-- [ ] `@tanstack/react-table` adicionado, com data table e paginação do shadcn em modo manual
-- [ ] Member vê a tabela sem as ações de gerenciamento
-- [ ] Feature tests: paginação com metadados, cada filtro, cada ordenação, preservação na navegação, sinalização de polling por página, isolamento entre Empresas
+- [x] Listagem paginada no servidor, 20 por página
+- [x] Busca por título, filtro por tipo e filtro por status, carregados da query string
+- [x] Ordenação por título, tamanho e data de atualização, com atualização mais recente como padrão
+- [x] Filtros e ordenação preservados ao paginar e ao voltar para a tela
+- [x] Tabela com título e ícone do tipo, tipo, status, tamanho e data de atualização
+- [x] Editar, baixar, mover, reprocessar e excluir num menu de ações por linha
+- [x] Polling sinalizado apenas quando a página renderizada tem Documento pendente ou em processamento, com recarregamento parcial que preserva estado e rolagem
+- [x] Estado vazio claro quando o filtro não devolve nada, distinto da Coleção sem Documentos
+- [x] Mensagem de erro do Documento que falhou continua visível
+- [x] Card de uso de armazenamento da Empresa permanece acima da tabela
+- [x] `@tanstack/react-table` adicionado, com data table e paginação do shadcn em modo manual
+- [x] Member vê a tabela sem as ações de gerenciamento
+- [x] Feature tests: paginação com metadados, cada filtro, cada ordenação, preservação na navegação, sinalização de polling por página, isolamento entre Empresas

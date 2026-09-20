@@ -4,16 +4,16 @@
 
 **Blocked by:** 04 (Editor do Agente fora do modal)
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] Rota única de streaming, sem binding de Agente, recebendo a configuração completa do formulário mais o histórico
-- [ ] Payload validado com as mesmas regras do formulário de Agente, incluindo Coleções restritas à Empresa do usuário; autorização por pertencer a uma Empresa
-- [ ] Agente de IA montado a partir de uma instância não persistida, com Empresa e Coleções setadas; template de instruções e ferramenta de busca inalterados
-- [ ] Chat renderizado ao lado do formulário, colapsando em abas em telas estreitas
-- [ ] Mensagem de boas-vindas acompanha o formulário enquanto o chat estiver vazio
-- [ ] Histórico preservado quando a configuração muda; reiniciar continua manual
-- [ ] Fontes consultadas em collapsible sob cada resposta, com indicação quando a Base de conhecimento não foi consultada
-- [ ] Limite de uso sobe para 60 mensagens por hora por usuário, com mensagem em pt-BR
-- [ ] Erro ou timeout do provedor vira mensagem amigável no chat
-- [ ] Aviso de alterações não salvas e a página separada de Playground removidos
-- [ ] Feature tests: streaming com rascunho de Agente inexistente, prompt reflete o rascunho e não a configuração salva, Coleção de outra Empresa recusada, Member consegue usar, erro do provedor tratado, limite dispara na mensagem 61
+- [x] Rota única de streaming, sem binding de Agente, recebendo a configuração completa do formulário mais o histórico
+- [x] Payload validado com as mesmas regras do formulário de Agente, incluindo Coleções restritas à Empresa do usuário; autorização por pertencer a uma Empresa
+- [x] Agente de IA montado a partir de uma instância não persistida, com Empresa e Coleções setadas; template de instruções e ferramenta de busca inalterados
+- [x] Chat renderizado ao lado do formulário, colapsando em abas em telas estreitas
+- [x] Mensagem de boas-vindas acompanha o formulário enquanto o chat estiver vazio
+- [x] Histórico preservado quando a configuração muda; reiniciar continua manual
+- [x] Fontes consultadas em collapsible sob cada resposta, com indicação quando a Base de conhecimento não foi consultada
+- [x] Limite de uso sobe para 60 mensagens por hora por usuário, com mensagem em pt-BR
+- [x] Erro ou timeout do provedor vira mensagem amigável no chat
+- [x] Aviso de alterações não salvas e a página separada de Playground removidos
+- [x] Feature tests: streaming com rascunho de Agente inexistente, prompt reflete o rascunho e não a configuração salva, Coleção de outra Empresa recusada, Member consegue usar, erro do provedor tratado, limite dispara na mensagem 61

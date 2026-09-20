@@ -4,13 +4,13 @@
 
 **Blocked by:** 01 (Canal, Conta e Número do WhatsApp)
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] Agente tem muitos Canais; a relação um-para-um com o número do WhatsApp deixa de existir
-- [ ] Excluir um Agente anula o vínculo nos Canais dele sem apagá-los
-- [ ] Gatilhos de transferência removidos: coluna, validação, cast, campo do formulário e a menção no comentário do template de instruções
-- [ ] Lista de Agentes em tabela com nome, objetivo, contagem de Coleções, Canais vinculados e status
-- [ ] Ativar, desativar e excluir movidos para um menu de ações na linha, com confirmação antes de excluir
-- [ ] Member vê a tabela sem as ações de gerenciamento
-- [ ] Componente `table` do shadcn trazido para o projeto se ainda não existir
-- [ ] Feature tests: Canais vinculados aparecem na listagem, gatilhos não são mais aceitos nem devolvidos, exclusão de Agente preserva o Canal, permissões por Papel, isolamento entre Empresas
+- [x] Agente tem muitos Canais; a relação um-para-um com o número do WhatsApp deixa de existir
+- [x] Excluir um Agente anula o vínculo nos Canais dele sem apagá-los
+- [x] Gatilhos de transferência removidos: coluna, validação, cast, campo do formulário e a menção no comentário do template de instruções
+- [x] Lista de Agentes em tabela com nome, objetivo, contagem de Coleções, Canais vinculados e status
+- [x] Ativar, desativar e excluir movidos para um menu de ações na linha, com confirmação antes de excluir
+- [x] Member vê a tabela sem as ações de gerenciamento
+- [x] Componente `table` do shadcn trazido para o projeto se ainda não existir
+- [x] Feature tests: Canais vinculados aparecem na listagem, gatilhos não são mais aceitos nem devolvidos, exclusão de Agente preserva o Canal, permissões por Papel, isolamento entre Empresas
