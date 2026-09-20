@@ -22,7 +22,7 @@ class ProcessWhatsAppTestWebhook implements ShouldBeUnique, ShouldQueue
      * @param  array<string, mixed>  $payload
      */
     public function __construct(
-        public int $channelId,
+        public string|int $channelId,
         public array $payload,
     ) {}
 

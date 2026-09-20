@@ -14,6 +14,7 @@ use App\Models\WhatsAppTestConnection;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Http;
+use RuntimeException;
 
 function responseFlowTestFixture(string $name, string $provider = 'testes'): array
 {
@@ -249,7 +250,9 @@ it('responds to an incoming official WhatsApp message through the public webhook
             'messages' => [['id' => 'official-outgoing-message-1']],
         ]),
     ]);
-    $body = json_encode(responseFlowTestFixture('message-text', 'oficial'), JSON_THROW_ON_ERROR);
+    $payload = responseFlowTestFixture('message-text', 'oficial');
+    $payload['entry'][0]['changes'][0]['value']['messages'][0]['timestamp'] = (string) now()->timestamp;
+    $body = json_encode($payload, JSON_THROW_ON_ERROR);
     $signature = 'sha256='.hash_hmac('sha256', $body, 'official-app-secret');
 
     $response = $this->call('POST', route('webhooks.whatsapp'), [], [], [], [
@@ -283,4 +286,163 @@ it('responds to an incoming official WhatsApp message through the public webhook
                 ],
             ];
     });
+});
+
+it('retries a temporary Agent failure with backoff before sending the response', function () {
+    createResponseFlowTestChannel();
+    $agentAttempts = 0;
+    WhatsAppAgent::fake(function () use (&$agentAttempts): string {
+        $agentAttempts++;
+
+        if ($agentAttempts === 1) {
+            throw new RuntimeException('IA temporariamente indisponível.');
+        }
+
+        return 'Resposta após a recuperação.';
+    });
+    Http::preventStrayRequests();
+    Http::fake([
+        'https://evolution.test/chat/markMessageAsRead/local-development' => Http::response([]),
+        'https://evolution.test/chat/sendPresence/local-development' => Http::response([]),
+        'https://evolution.test/message/sendText/local-development' => Http::response([
+            'key' => ['id' => 'test-outgoing-recovered'],
+        ]),
+    ]);
+    config(['queue.default' => 'database']);
+
+    $this->postJson(
+        route('webhooks.whatsapp-test'),
+        responseFlowTestFixture('message-text'),
+    )->assertOk();
+    Artisan::call('queue:work', ['--once' => true, '--quiet' => true]);
+    $this->travel(5)->seconds();
+    Artisan::call('queue:work', ['--once' => true, '--quiet' => true]);
+    $this->travel(10)->seconds();
+    Artisan::call('queue:work', ['--once' => true, '--quiet' => true]);
+
+    $this->assertDatabaseHas('messages', [
+        'provider_message_id' => 'test-message-text-1',
+        'is_responded' => true,
+    ]);
+    $this->assertDatabaseHas('messages', [
+        'provider_message_id' => 'test-outgoing-recovered',
+        'content' => 'Resposta após a recuperação.',
+    ]);
+    expect($agentAttempts)->toBe(2);
+    Http::assertSentCount(3);
+});
+
+it('retries a temporary provider failure with backoff before recording the response', function () {
+    createResponseFlowTestChannel();
+    WhatsAppAgent::fake(fn (): string => 'Resposta após a recuperação do envio.');
+    $sendAttempts = 0;
+    Http::preventStrayRequests();
+    Http::fake([
+        'https://evolution.test/chat/markMessageAsRead/local-development' => Http::response([]),
+        'https://evolution.test/chat/sendPresence/local-development' => Http::response([]),
+        'https://evolution.test/message/sendText/local-development' => function () use (&$sendAttempts) {
+            $sendAttempts++;
+
+            return $sendAttempts === 1
+                ? Http::response([], 503)
+                : Http::response(['key' => ['id' => 'test-outgoing-provider-recovered']]);
+        },
+    ]);
+    config(['queue.default' => 'database']);
+
+    $this->postJson(
+        route('webhooks.whatsapp-test'),
+        responseFlowTestFixture('message-text'),
+    )->assertOk();
+    Artisan::call('queue:work', ['--once' => true, '--quiet' => true]);
+    $this->travel(5)->seconds();
+    Artisan::call('queue:work', ['--once' => true, '--quiet' => true]);
+    $this->travel(10)->seconds();
+    Artisan::call('queue:work', ['--once' => true, '--quiet' => true]);
+
+    $this->assertDatabaseHas('messages', [
+        'provider_message_id' => 'test-outgoing-provider-recovered',
+        'content' => 'Resposta após a recuperação do envio.',
+    ]);
+    expect($sendAttempts)->toBe(2);
+    Http::assertSentCount(4);
+});
+
+it('notifies the Contact and records the Channel error after response retries are exhausted', function () {
+    $channel = createResponseFlowTestChannel();
+    WhatsAppAgent::fake(function (): never {
+        throw new RuntimeException('IA indisponível de forma permanente.');
+    });
+    Http::preventStrayRequests();
+    Http::fake([
+        'https://evolution.test/chat/markMessageAsRead/local-development' => Http::response([]),
+        'https://evolution.test/chat/sendPresence/local-development' => Http::response([]),
+        'https://evolution.test/message/sendText/local-development' => Http::response([
+            'key' => ['id' => 'test-outgoing-failure-notice'],
+        ]),
+    ]);
+    config(['queue.default' => 'database']);
+
+    $this->postJson(
+        route('webhooks.whatsapp-test'),
+        responseFlowTestFixture('message-text'),
+    )->assertOk();
+    Artisan::call('queue:work', ['--once' => true, '--quiet' => true]);
+    $this->travel(5)->seconds();
+    Artisan::call('queue:work', ['--once' => true, '--quiet' => true]);
+
+    for ($attempt = 0; $attempt < 4; $attempt++) {
+        $this->travel(120)->seconds();
+        Artisan::call('queue:work', ['--once' => true, '--quiet' => true]);
+    }
+
+    $this->assertDatabaseHas('channels', [
+        'id' => $channel->getKey(),
+        'last_error' => 'IA indisponível de forma permanente.',
+    ]);
+    $this->assertDatabaseHas('messages', [
+        'provider_message_id' => 'test-outgoing-failure-notice',
+        'content' => 'Não foi possível concluir seu atendimento neste momento. Tente novamente mais tarde.',
+    ]);
+    $this->assertDatabaseHas('messages', [
+        'provider_message_id' => 'test-message-text-1',
+        'is_responded' => true,
+    ]);
+    Http::assertSentCount(3);
+});
+
+it('does not send an official response after Meta customer-care window expires', function () {
+    $channel = createOfficialResponseFlowTestChannel();
+    $this->travelTo('2026-09-20 12:00:00');
+    WhatsAppAgent::fake(['Resposta que não pode mais ser enviada.']);
+    Http::preventStrayRequests();
+    Http::fake([
+        'https://graph.facebook.com/v23.0/official-phone-number-id/messages' => Http::response([
+            'messages' => [['id' => 'unexpected-official-response']],
+        ]),
+    ]);
+    $payload = responseFlowTestFixture('message-text', 'oficial');
+    $payload['entry'][0]['changes'][0]['value']['messages'][0]['timestamp'] = (string) now()->subHours(25)->timestamp;
+    $body = json_encode($payload, JSON_THROW_ON_ERROR);
+    $signature = 'sha256='.hash_hmac('sha256', $body, 'official-app-secret');
+
+    $response = $this->call('POST', route('webhooks.whatsapp'), [], [], [], [
+        'CONTENT_TYPE' => 'application/json',
+        'HTTP_X_HUB_SIGNATURE_256' => $signature,
+    ], $body);
+
+    $response->assertOk();
+    $this->assertDatabaseHas('messages', [
+        'provider_message_id' => 'official-message-text-1',
+        'is_responded' => true,
+    ]);
+    $this->assertDatabaseHas('messages', [
+        'provider_message_id' => null,
+        'direction' => MessageDirection::Outgoing->value,
+        'delivery_status' => 'failed',
+        'content' => 'Resposta que não pode mais ser enviada.',
+    ]);
+    expect(Message::query()->where('provider_message_id', 'unexpected-official-response')->exists())->toBeFalse();
+    WhatsAppAgent::assertPrompted('Olá, preciso de ajuda com meu pedido.');
+    Http::assertSentCount(2);
 });
