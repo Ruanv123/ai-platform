@@ -4,11 +4,15 @@
 
 **Blocked by:** nada
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] Caso novo em `ChannelType`, com rótulo **WhatsApp de testes**, descrição e ícone
-- [ ] Catálogo esconde o Tipo fora de ambiente local e de administrador da plataforma
-- [ ] Migration, model e factory da conexão do Canal de testes, com segredos `encrypted`
-- [ ] Configuração do Canal salva a conexão e move o `ChannelStatus` como o WhatsApp oficial já faz
-- [ ] Empresa pode ter o Canal oficial e o de testes ao mesmo tempo
-- [ ] Testes: catálogo escondido para cliente comum, visível para administrador e em local; configuração salva; os dois Canais coexistindo
+- [x] Caso novo em `ChannelType`, com rótulo **WhatsApp de testes**, descrição e ícone
+- [x] Catálogo esconde o Tipo fora de ambiente local e de administrador da plataforma
+- [x] Migration, model e factory da conexão do Canal de testes, com segredos `encrypted`
+- [x] Configuração do Canal salva a conexão e move o `ChannelStatus` como o WhatsApp oficial já faz
+- [x] Empresa pode ter o Canal oficial e o de testes ao mesmo tempo
+- [x] Testes: catálogo escondido para cliente comum, visível para administrador e em local; configuração salva; os dois Canais coexistindo
+
+## Comments
+
+- Implementado no commit `93728eb` (Implement WhatsApp test channel configuration).

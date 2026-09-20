@@ -4,15 +4,19 @@
 
 **Blocked by:** 01
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] Handshake e validação de assinatura seguem funcionando como hoje
-- [ ] Evento válido responde ao provedor imediatamente e enfileira o processamento
-- [ ] Strategies de texto, imagem, áudio, vídeo, documento e status, com interface por tipo de evento
-- [ ] Evento de tipo desconhecido registra Mensagem com o tipo bruto em vez de descartar
-- [ ] Status de entrega atualiza a Mensagem de saída existente, sem criar linha nova
-- [ ] Reentrega do mesmo id do provedor não processa duas vezes (`ShouldBeUnique`)
-- [ ] Mensagens são ordenadas pelo timestamp do provedor
-- [ ] Contato criado na primeira mensagem, reusado nas seguintes
-- [ ] Payload com número desconhecido ou assinatura inválida continua recusado
-- [ ] Testes pelo seam da rota, com fixtures em `tests/Fixtures/whatsapp/oficial/`
+- [x] Handshake e validação de assinatura seguem funcionando como hoje
+- [x] Evento válido responde ao provedor imediatamente e enfileira o processamento
+- [x] Strategies de texto, imagem, áudio, vídeo, documento e status, com interface por tipo de evento
+- [x] Evento de tipo desconhecido registra Mensagem com o tipo bruto em vez de descartar
+- [x] Status de entrega atualiza a Mensagem de saída existente, sem criar linha nova
+- [x] Reentrega do mesmo id do provedor não processa duas vezes (`ShouldBeUnique`)
+- [x] Mensagens são ordenadas pelo timestamp do provedor
+- [x] Contato criado na primeira mensagem, reusado nas seguintes
+- [x] Payload com número desconhecido ou assinatura inválida continua recusado
+- [x] Testes pelo seam da rota, com fixtures em `tests/Fixtures/whatsapp/oficial/`
+
+## Comments
+
+- Implementado no commit `07f9764` (Add WhatsApp webhook conformance suite), junto com o issue 05.

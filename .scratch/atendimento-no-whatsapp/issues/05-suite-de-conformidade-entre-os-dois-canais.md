@@ -4,11 +4,15 @@
 
 **Blocked by:** 03, 04
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] Dataset Pest com os dois Tipos de canal, cada um apontando sua rota e sua pasta de fixtures
-- [ ] Mesmas asserções para cada tipo do núcleo: Contato criado, Mensagem registrada com o texto certo, tipo certo e direção certa
-- [ ] Mesma asserção de idempotência nos dois
-- [ ] Mesma asserção de evento não suportado nos dois
-- [ ] Mesma asserção de status de entrega atualizando a Mensagem de saída nos dois
-- [ ] A suíte falha de forma legível quando um lado tem strategy e o outro não
+- [x] Dataset Pest com os dois Tipos de canal, cada um apontando sua rota e sua pasta de fixtures
+- [x] Mesmas asserções para cada tipo do núcleo: Contato criado, Mensagem registrada com o texto certo, tipo certo e direção certa
+- [x] Mesma asserção de idempotência nos dois
+- [x] Mesma asserção de evento não suportado nos dois
+- [x] Mesma asserção de status de entrega atualizando a Mensagem de saída nos dois
+- [x] A suíte falha de forma legível quando um lado tem strategy e o outro não
+
+## Comments
+
+- Implementado no commit `07f9764` (Add WhatsApp webhook conformance suite).

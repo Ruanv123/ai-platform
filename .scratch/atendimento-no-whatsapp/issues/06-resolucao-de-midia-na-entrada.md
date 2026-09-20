@@ -4,13 +4,17 @@
 
 **Blocked by:** 03
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] Áudio baixado do provedor e transcrito; a Mensagem guarda a transcrição
-- [ ] Imagem descrita; a Mensagem guarda a descrição e a legenda, se houver
-- [ ] Documento extraído em texto, reusando a extração já existente
-- [ ] Vídeo reconhecido, não processado, e o Contato avisado de forma clara
-- [ ] `default_for_images` passa para `openai` em `config/ai.php`
-- [ ] Falha de resolução registra a Mensagem com a falha sem interromper o processamento
-- [ ] Uma mídia é resolvida uma única vez, mesmo aparecendo em várias respostas
-- [ ] Testes com `Transcription::fake()` e `Image::fake()`, pelo seam da rota
+- [x] Áudio baixado do provedor e transcrito; a Mensagem guarda a transcrição
+- [x] Imagem descrita; a Mensagem guarda a descrição e a legenda, se houver
+- [x] Documento extraído em texto, reusando a extração já existente
+- [x] Vídeo reconhecido, não processado, e o Contato avisado de forma clara
+- [x] `default_for_images` passa para `openai` em `config/ai.php`
+- [x] Falha de resolução registra a Mensagem com a falha sem interromper o processamento
+- [x] Uma mídia é resolvida uma única vez, mesmo aparecendo em várias respostas
+- [x] Testes com `Transcription::fake()` e `Image::fake()`, pelo seam da rota
+
+## Comments
+
+- Implementado no commit `e3e9754` (Implement incoming WhatsApp media resolution).

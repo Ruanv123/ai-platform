@@ -4,13 +4,17 @@
 
 **Blocked by:** 01, 02
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] Rota própria de webhook para o Canal de testes, fora de autenticação e CSRF
-- [ ] Canal resolvido pelo nome da instância do payload; instância desconhecida é recusada
-- [ ] Strategies do núcleo lendo o envelope `{event, instance, data}`
-- [ ] `READ_RECEIPT` atualiza o status da Mensagem de saída correspondente
-- [ ] Evento fora do núcleo registra Mensagem com o tipo bruto
-- [ ] Idempotência e ordenação com as mesmas regras do issue 03
-- [ ] Nenhuma tradução para um formato comum com o WhatsApp oficial
-- [ ] Testes pelo seam da rota, com fixtures em `tests/Fixtures/whatsapp/testes/`
+- [x] Rota própria de webhook para o Canal de testes, fora de autenticação e CSRF
+- [x] Canal resolvido pelo nome da instância do payload; instância desconhecida é recusada
+- [x] Strategies do núcleo lendo o envelope `{event, instance, data}`
+- [x] `READ_RECEIPT` atualiza o status da Mensagem de saída correspondente
+- [x] Evento fora do núcleo registra Mensagem com o tipo bruto
+- [x] Idempotência e ordenação com as mesmas regras do issue 03
+- [x] Nenhuma tradução para um formato comum com o WhatsApp oficial
+- [x] Testes pelo seam da rota, com fixtures em `tests/Fixtures/whatsapp/testes/`
+
+## Comments
+
+- Implementado no commit `c8542f2` (Implement WhatsApp test webhook strategies).
