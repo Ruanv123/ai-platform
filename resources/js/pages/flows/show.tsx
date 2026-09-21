@@ -85,9 +85,6 @@ export default function FlowShow({
     const [aiOpen, setAiOpen] = useState(false);
     const [playgroundOpen, setPlaygroundOpen] = useState(false);
     const [traceNodeIds, setTraceNodeIds] = useState<string[]>([]);
-    const [connectionSource, setConnectionSource] = useState<string | null>(
-        null,
-    );
     const [publishErrors, setPublishErrors] = useState<string[]>([]);
     const selectedNode =
         nodes.find((node) => node.id === selectedNodeId) ?? null;
@@ -457,15 +454,7 @@ export default function FlowShow({
                             setPaletteAfter(nodeId);
                             setPanelMode('palette');
                         }}
-                        onStartConnection={(nodeId) =>
-                            setConnectionSource(nodeId)
-                        }
-                        onFinishConnection={(nodeId) => {
-                            if (connectionSource !== null) {
-                                connectNodes(connectionSource, nodeId);
-                                setConnectionSource(null);
-                            }
-                        }}
+                        onConnect={connectNodes}
                         onDeleteEdge={(edge) =>
                             applyGraph(
                                 nodes,

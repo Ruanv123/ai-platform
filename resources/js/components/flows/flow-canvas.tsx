@@ -1,4 +1,22 @@
 import {
+    Background,
+    BaseEdge,
+    Controls,
+    EdgeLabelRenderer,
+    getBezierPath,
+    Handle,
+    MarkerType,
+    Position,
+    ReactFlow,
+    type Connection,
+    type Edge,
+    type EdgeProps,
+    type Node,
+    type NodeChange,
+    type NodeProps,
+} from '@xyflow/react';
+import '@xyflow/react/dist/style.css';
+import {
     Bot,
     CircleStop,
     Clock3,
@@ -6,7 +24,6 @@ import {
     Globe2,
     LayoutTemplate,
     MessageSquare,
-    MoreHorizontal,
     Plus,
     Radio,
     Route,
@@ -21,6 +38,7 @@ import {
     Zap,
 } from 'lucide-react';
 import { useMemo, useState } from 'react';
+import type { LucideIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 
@@ -47,7 +65,25 @@ export type NodeCatalogItem = {
     fields: string[];
 };
 
-const icons = {
+type FlowNodeData = Record<string, unknown> & {
+    domainNode: FlowNode;
+    label: string;
+    Icon: LucideIcon;
+    editable: boolean;
+    traceActive: boolean;
+    onDeleteNode: (nodeId: string) => void;
+    onAddAfter: (nodeId: string) => void;
+};
+
+type FlowReactNode = Node<FlowNodeData, 'flowNode'>;
+type FlowEdgeData = Record<string, unknown> & {
+    label?: string;
+    onDeleteEdge: (edge: FlowEdge) => void;
+    domainEdge: FlowEdge;
+};
+type FlowReactEdge = Edge<FlowEdgeData, 'flowEdge'>;
+
+const icons: Record<string, LucideIcon> = {
     Bot,
     CircleStop,
     Clock3,
@@ -69,20 +105,20 @@ const icons = {
 
 const fallbackIcon = MessageSquare;
 
-function iconFor(type: string, catalog: NodeCatalogItem[]) {
+const nodeTypes = { flowNode: FlowNodeCard };
+const edgeTypes = { flowEdge: FlowEdgeLine };
+
+function iconFor(type: string, catalog: NodeCatalogItem[]): LucideIcon {
     const name = catalog.find((item) => item.type === type)?.icon;
 
-    return (
-        (icons as Record<string, typeof MessageSquare>)[name ?? ''] ??
-        fallbackIcon
-    );
+    return icons[name ?? ''] ?? fallbackIcon;
 }
 
-function labelFor(type: string, catalog: NodeCatalogItem[]) {
+function labelFor(type: string, catalog: NodeCatalogItem[]): string {
     return catalog.find((item) => item.type === type)?.label ?? type;
 }
 
-function positionFor(node: FlowNode, index: number) {
+function positionFor(node: FlowNode, index: number): { x: number; y: number } {
     return node.position ?? { x: 96 + index * 300, y: 190 };
 }
 
@@ -96,8 +132,7 @@ type FlowCanvasProps = {
     onMoveNode: (nodeId: string, position: { x: number; y: number }) => void;
     onDeleteNode: (nodeId: string) => void;
     onAddAfter: (nodeId: string) => void;
-    onStartConnection: (nodeId: string) => void;
-    onFinishConnection: (nodeId: string) => void;
+    onConnect: (source: string, target: string) => void;
     onDeleteEdge: (edge: FlowEdge) => void;
     onChooseTrigger: () => void;
     editable?: boolean;
@@ -113,82 +148,145 @@ export function FlowCanvas({
     onMoveNode,
     onDeleteNode,
     onAddAfter,
-    onStartConnection,
-    onFinishConnection,
+    onConnect,
     onDeleteEdge,
     onChooseTrigger,
     editable = true,
 }: FlowCanvasProps) {
-    const [drag, setDrag] = useState<{
-        nodeId: string;
-        offsetX: number;
-        offsetY: number;
-        position: { x: number; y: number };
-    } | null>(null);
-    const [zoom, setZoom] = useState(1);
-    const [connectionSource, setConnectionSource] = useState<string | null>(
-        null,
-    );
-    const positions = useMemo(
+    const reactNodes = useMemo<FlowReactNode[]>(
         () =>
-            new Map(
-                nodes.map((node, index) => [node.id, positionFor(node, index)]),
-            ),
-        [nodes],
+            nodes.map((node, index) => ({
+                id: node.id,
+                type: 'flowNode',
+                position: positionFor(node, index),
+                selected: selectedNodeId === node.id,
+                data: {
+                    domainNode: node,
+                    label: labelFor(node.type, catalog),
+                    Icon: iconFor(node.type, catalog),
+                    editable,
+                    traceActive: traceNodeIds.includes(node.id),
+                    onDeleteNode,
+                    onAddAfter,
+                },
+            })),
+        [
+            catalog,
+            editable,
+            nodes,
+            onAddAfter,
+            onDeleteNode,
+            selectedNodeId,
+            traceNodeIds,
+        ],
     );
 
-    const beginDrag = (
-        event: React.PointerEvent<HTMLDivElement>,
-        node: FlowNode,
-        index: number,
+    const reactEdges = useMemo<FlowReactEdge[]>(
+        () =>
+            edges.map((edge, index) => ({
+                id: edge.id ?? `${edge.source}-${edge.target}-${index}`,
+                type: 'flowEdge',
+                source: edge.source,
+                target: edge.target,
+                markerEnd: { type: MarkerType.ArrowClosed },
+                data: {
+                    label: edge.label,
+                    domainEdge: edge,
+                    onDeleteEdge,
+                },
+            })),
+        [edges, onDeleteEdge],
+    );
+
+    const [dragPositions, setDragPositions] = useState<
+        Record<string, { x: number; y: number }>
+    >({});
+    const renderedNodes = useMemo(
+        () =>
+            reactNodes.map((node) => ({
+                ...node,
+                position: dragPositions[node.id] ?? node.position,
+            })),
+        [dragPositions, reactNodes],
+    );
+
+    const handleNodesChange = (changes: NodeChange<FlowReactNode>[]) => {
+        const positions = changes.reduce<
+            Record<string, { x: number; y: number }>
+        >((current, change) => {
+            if (change.type === 'position' && change.position !== undefined) {
+                current[change.id] = change.position;
+            }
+
+            return current;
+        }, {});
+        if (Object.keys(positions).length > 0) {
+            setDragPositions((current) => ({ ...current, ...positions }));
+        }
+    };
+
+    const handleConnect = (connection: Connection) => {
+        if (
+            editable &&
+            connection.source !== null &&
+            connection.target !== null &&
+            connection.source !== connection.target
+        ) {
+            onConnect(connection.source, connection.target);
+        }
+    };
+
+    const handleNodeDragStop = (
+        _event: MouseEvent | TouchEvent,
+        node: FlowReactNode,
     ) => {
-        if ((event.target as HTMLElement).closest('button')) {
-            return;
+        if (editable) {
+            onMoveNode(node.id, node.position);
+            setDragPositions((current) => {
+                const next = { ...current };
+                delete next[node.id];
+                return next;
+            });
         }
-        const position = positionFor(node, index);
-        setDrag({
-            nodeId: node.id,
-            offsetX: event.clientX - position.x * zoom,
-            offsetY: event.clientY - position.y * zoom,
-            position,
-        });
-        event.currentTarget.setPointerCapture(event.pointerId);
     };
-
-    const moveDrag = (event: React.PointerEvent<HTMLDivElement>) => {
-        if (drag === null) {
-            return;
-        }
-        const position = {
-            x: Math.max(24, (event.clientX - drag.offsetX) / zoom),
-            y: Math.max(104, (event.clientY - drag.offsetY) / zoom),
-        };
-        setDrag({ ...drag, position });
-    };
-
-    const finishDrag = () => {
-        if (drag !== null) {
-            onMoveNode(drag.nodeId, drag.position);
-        }
-        setDrag(null);
-    };
-
-    const visibleNodes = nodes.map((node, index) => ({
-        node,
-        index,
-        position:
-            drag?.nodeId === node.id ? drag.position : positionFor(node, index),
-    }));
 
     return (
-        <div
-            className="relative min-h-[620px] flex-1 overflow-hidden bg-[radial-gradient(circle_at_center,oklch(0.98_0_0),oklch(0.94_0_0))] dark:bg-[radial-gradient(circle_at_center,oklch(0.21_0_0),oklch(0.145_0_0))]"
-            onPointerMove={moveDrag}
-            onPointerUp={finishDrag}
-        >
-            <div className="pointer-events-none absolute inset-0 [background-image:radial-gradient(oklch(0.6_0_0/.26)_1px,transparent_1px)] [background-size:24px_24px] opacity-60 dark:opacity-30" />
+        <div className="relative min-h-[620px] flex-1 overflow-hidden bg-[radial-gradient(circle_at_center,oklch(0.98_0_0),oklch(0.94_0_0))] dark:bg-[radial-gradient(circle_at_center,oklch(0.21_0_0),oklch(0.145_0_0))]">
+            <ReactFlow
+                nodes={renderedNodes}
+                edges={reactEdges}
+                onNodesChange={handleNodesChange}
+                onEdgesChange={() => undefined}
+                nodeTypes={nodeTypes}
+                edgeTypes={edgeTypes}
+                fitView={nodes.length > 0}
+                fitViewOptions={{ padding: 0.25, maxZoom: 1.05 }}
+                nodesDraggable={editable}
+                nodesConnectable={editable}
+                edgesReconnectable={false}
+                deleteKeyCode={null}
+                elementsSelectable
+                panOnDrag
+                onConnect={handleConnect}
+                onNodeClick={(_event, node) => onSelectNode(node.id)}
+                onNodeDragStop={handleNodeDragStop}
+                proOptions={{ hideAttribution: true }}
+                className="[&_.react-flow__controls-button]:bg-background [&_.react-flow__controls-button]:text-foreground [&_.react-flow__controls-button]:fill-foreground [&_.react-flow__controls-button]:border-border [&_.react-flow__controls]:overflow-hidden [&_.react-flow__controls]:rounded-xl [&_.react-flow__controls]:border [&_.react-flow__controls]:shadow-sm"
+            >
+                <Background
+                    color="var(--muted-foreground)"
+                    gap={24}
+                    size={1}
+                    className="opacity-25 dark:opacity-15"
+                />
+                <Controls
+                    position="bottom-right"
+                    showInteractive={false}
+                    className="!right-5 !bottom-5"
+                />
+            </ReactFlow>
 
-            <div className="absolute top-24 left-1/2 z-10 flex -translate-x-1/2 flex-col items-center gap-3 text-center">
+            <div className="pointer-events-none absolute top-24 left-1/2 z-10 flex -translate-x-1/2 flex-col items-center gap-3 text-center">
                 {nodes.length === 0 && (
                     <>
                         <div className="flex size-16 items-center justify-center rounded-2xl border border-dashed border-amber-500/70 bg-amber-500/10 text-amber-600 dark:text-amber-300">
@@ -203,266 +301,157 @@ export function FlowCanvas({
                                 primeiro passo para sair da tela em branco.
                             </p>
                         </div>
-                        <Button variant="outline" onClick={onChooseTrigger}>
+                        <Button
+                            variant="outline"
+                            className="pointer-events-auto"
+                            onClick={onChooseTrigger}
+                        >
                             <Plus />
                             Escolher gatilho
                         </Button>
                     </>
                 )}
             </div>
-
-            {nodes.length > 0 && (
-                <div
-                    className="absolute inset-0 origin-top-left"
-                    style={{ transform: `scale(${zoom})` }}
-                >
-                    <svg className="pointer-events-none absolute inset-0 h-full w-full overflow-visible">
-                        <defs>
-                            <marker
-                                id="flow-arrow"
-                                markerHeight="8"
-                                markerWidth="8"
-                                orient="auto-start-reverse"
-                                refX="7"
-                                refY="4"
-                                viewBox="0 0 8 8"
-                            >
-                                <path
-                                    d="M 0 0 L 8 4 L 0 8 z"
-                                    className="fill-muted-foreground/50"
-                                />
-                            </marker>
-                        </defs>
-                        {edges.map((edge) => {
-                            const source = positions.get(edge.source);
-                            const target = positions.get(edge.target);
-                            if (source === undefined || target === undefined) {
-                                return null;
-                            }
-                            const startX = source.x + 224;
-                            const startY = source.y + 76;
-                            const endX = target.x;
-                            const endY = target.y + 76;
-                            const curve = Math.max(44, (endX - startX) / 2);
-                            return (
-                                <g
-                                    key={
-                                        edge.id ??
-                                        `${edge.source}-${edge.target}`
-                                    }
-                                >
-                                    <path
-                                        d={`M ${startX} ${startY} C ${startX + curve} ${startY}, ${endX - curve} ${endY}, ${endX} ${endY}`}
-                                        fill="none"
-                                        markerEnd="url(#flow-arrow)"
-                                        stroke="currentColor"
-                                        strokeDasharray={
-                                            edge.label ? '5 4' : undefined
-                                        }
-                                        className="text-muted-foreground/45"
-                                        strokeWidth="1.5"
-                                    />
-                                    {edge.label && (
-                                        <text
-                                            x={(startX + endX) / 2}
-                                            y={(startY + endY) / 2 - 8}
-                                            className="fill-muted-foreground text-[11px]"
-                                            textAnchor="middle"
-                                        >
-                                            {edge.label}
-                                        </text>
-                                    )}
-                                    <foreignObject
-                                        x={(startX + endX) / 2 - 10}
-                                        y={(startY + endY) / 2 - 10}
-                                        width="20"
-                                        height="20"
-                                        className="pointer-events-auto overflow-visible"
-                                    >
-                                        <button
-                                            type="button"
-                                            className="bg-background text-muted-foreground hover:text-destructive flex size-5 items-center justify-center rounded-full border text-xs shadow-sm"
-                                            aria-label="Desconectar aresta"
-                                            onClick={(event) => {
-                                                event.stopPropagation();
-                                                onDeleteEdge(edge);
-                                            }}
-                                        >
-                                            ×
-                                        </button>
-                                    </foreignObject>
-                                </g>
-                            );
-                        })}
-                    </svg>
-
-                    {visibleNodes.map(({ node, index, position }) => {
-                        const Icon = iconFor(node.type, catalog);
-                        const isTrigger = node.type === 'trigger';
-                        const isTraceActive = traceNodeIds.includes(node.id);
-                        const isSelected = selectedNodeId === node.id;
-                        const isConnecting = connectionSource === node.id;
-                        return (
-                            <div
-                                key={node.id}
-                                className={cn(
-                                    'bg-card absolute flex h-[152px] w-[224px] cursor-grab touch-none flex-col rounded-2xl border p-4 shadow-sm transition-[box-shadow,transform,border-color] active:cursor-grabbing',
-                                    isTrigger
-                                        ? 'border-amber-500/60 bg-amber-500/[0.06]'
-                                        : 'border-border/80',
-                                    isSelected &&
-                                        'border-primary ring-primary/15 shadow-lg ring-2',
-                                    isTraceActive &&
-                                        'border-signal-live shadow-[0_0_0_4px_color-mix(in_oklch,var(--signal-live)_18%,transparent)]',
-                                    isConnecting && 'ring-2 ring-amber-500/50',
-                                )}
-                                style={{ left: position.x, top: position.y }}
-                                onPointerDown={(event) =>
-                                    beginDrag(event, node, index)
-                                }
-                                onClick={() => {
-                                    if (
-                                        connectionSource !== null &&
-                                        connectionSource !== node.id
-                                    ) {
-                                        onFinishConnection(node.id);
-                                        setConnectionSource(null);
-                                    } else {
-                                        onSelectNode(node.id);
-                                    }
-                                }}
-                            >
-                                {editable && (
-                                    <>
-                                        <button
-                                            type="button"
-                                            className="bg-background text-muted-foreground absolute -top-2 left-1/2 flex size-4 items-center justify-center rounded-full border"
-                                            aria-label={`Conectar antes de ${labelFor(node.type, catalog)}`}
-                                            onClick={(event) => {
-                                                event.stopPropagation();
-                                                onFinishConnection(node.id);
-                                                setConnectionSource(null);
-                                            }}
-                                        >
-                                            <span className="size-1 rounded-full bg-current" />
-                                        </button>
-                                        <button
-                                            type="button"
-                                            className="bg-background text-muted-foreground hover:text-foreground absolute -top-2 right-2 flex size-5 items-center justify-center rounded-full border"
-                                            aria-label={`Excluir ${labelFor(node.type, catalog)}`}
-                                            onClick={(event) => {
-                                                event.stopPropagation();
-                                                onDeleteNode(node.id);
-                                            }}
-                                        >
-                                            <X className="size-3" />
-                                        </button>
-                                    </>
-                                )}
-                                <div className="flex items-start gap-3">
-                                    <span
-                                        className={cn(
-                                            'flex size-9 shrink-0 items-center justify-center rounded-xl',
-                                            isTrigger
-                                                ? 'bg-amber-500/15 text-amber-600 dark:text-amber-300'
-                                                : 'bg-muted text-muted-foreground',
-                                        )}
-                                    >
-                                        <Icon className="size-4" />
-                                    </span>
-                                    <div className="min-w-0">
-                                        <p className="truncate text-sm font-semibold">
-                                            {labelFor(node.type, catalog)}
-                                        </p>
-                                        <p className="text-muted-foreground mt-1 line-clamp-2 text-xs">
-                                            {isTrigger
-                                                ? 'Ponto de entrada'
-                                                : summaryFor(node)}
-                                        </p>
-                                    </div>
-                                </div>
-                                {editable && (
-                                    <>
-                                        <div className="mt-auto flex items-center justify-between gap-2">
-                                            <button
-                                                type="button"
-                                                className="text-muted-foreground hover:text-foreground inline-flex min-h-8 items-center gap-1 rounded-md px-2 text-xs transition-colors"
-                                                onClick={(event) => {
-                                                    event.stopPropagation();
-                                                    onAddAfter(node.id);
-                                                }}
-                                            >
-                                                <Plus className="size-3.5" />
-                                                Próximo
-                                            </button>
-                                            <button
-                                                type="button"
-                                                className="text-muted-foreground hover:text-foreground inline-flex min-h-8 items-center gap-1 rounded-md px-2 text-xs transition-colors"
-                                                onClick={(event) => {
-                                                    event.stopPropagation();
-                                                    setConnectionSource(
-                                                        node.id,
-                                                    );
-                                                    onStartConnection(node.id);
-                                                }}
-                                            >
-                                                <MoreHorizontal className="size-3.5" />
-                                                Ligar
-                                            </button>
-                                        </div>
-                                        <button
-                                            type="button"
-                                            className="bg-background text-muted-foreground hover:text-foreground absolute top-1/2 -right-2 flex size-4 -translate-y-1/2 items-center justify-center rounded-full border"
-                                            aria-label={`Adicionar depois de ${labelFor(node.type, catalog)}`}
-                                            onClick={(event) => {
-                                                event.stopPropagation();
-                                                onAddAfter(node.id);
-                                            }}
-                                        >
-                                            <Plus className="size-3" />
-                                        </button>
-                                    </>
-                                )}
-                            </div>
-                        );
-                    })}
-                </div>
-            )}
-
-            <div className="bg-background/90 absolute right-5 bottom-5 z-20 flex items-center gap-1 rounded-xl border p-1 shadow-sm backdrop-blur">
-                <Button
-                    variant="ghost"
-                    size="icon"
-                    aria-label="Diminuir zoom"
-                    onClick={() =>
-                        setZoom((value) => Math.max(0.65, value - 0.1))
-                    }
-                >
-                    −
-                </Button>
-                <span className="text-muted-foreground min-w-12 text-center text-xs tabular-nums">
-                    {Math.round(zoom * 100)}%
-                </span>
-                <Button
-                    variant="ghost"
-                    size="icon"
-                    aria-label="Aumentar zoom"
-                    onClick={() =>
-                        setZoom((value) => Math.min(1.4, value + 0.1))
-                    }
-                >
-                    +
-                </Button>
-                <Button
-                    variant="ghost"
-                    size="icon"
-                    aria-label="Enquadrar grafo"
-                    onClick={() => setZoom(1)}
-                >
-                    <Workflow />
-                </Button>
-            </div>
         </div>
+    );
+}
+
+function FlowNodeCard({ data, selected }: NodeProps<FlowReactNode>) {
+    const node = data.domainNode;
+    const isTrigger = node.type === 'trigger';
+
+    return (
+        <div
+            className={cn(
+                'bg-card relative flex h-[152px] w-[224px] cursor-grab flex-col rounded-2xl border p-4 shadow-sm transition-[box-shadow,border-color] active:cursor-grabbing',
+                isTrigger
+                    ? 'border-amber-500/60 bg-amber-500/[0.06]'
+                    : 'border-border/80',
+                selected && 'border-primary ring-primary/15 shadow-lg ring-2',
+                data.traceActive &&
+                    'border-signal-live shadow-[0_0_0_4px_color-mix(in_oklch,var(--signal-live)_18%,transparent)]',
+            )}
+        >
+            <Handle
+                type="target"
+                position={Position.Left}
+                id="target"
+                isConnectable={data.editable}
+                className="!bg-muted-foreground !border-background !size-3 !border-2"
+            />
+            <Handle
+                type="source"
+                position={Position.Right}
+                id="source"
+                isConnectable={data.editable}
+                className="!bg-primary !border-background !size-3 !border-2"
+            />
+            {data.editable && (
+                <button
+                    type="button"
+                    className="nodrag nopan bg-background text-muted-foreground hover:text-destructive absolute -top-2 right-2 flex size-6 items-center justify-center rounded-full border shadow-sm"
+                    aria-label={`Excluir ${data.label}`}
+                    onClick={(event) => {
+                        event.stopPropagation();
+                        data.onDeleteNode(node.id);
+                    }}
+                >
+                    <X className="size-3" />
+                </button>
+            )}
+            <div className="flex items-start gap-3">
+                <span
+                    className={cn(
+                        'flex size-9 shrink-0 items-center justify-center rounded-xl',
+                        isTrigger
+                            ? 'bg-amber-500/15 text-amber-600 dark:text-amber-300'
+                            : 'bg-muted text-muted-foreground',
+                    )}
+                >
+                    <data.Icon className="size-4" />
+                </span>
+                <div className="min-w-0">
+                    <p className="truncate text-sm font-semibold">
+                        {data.label}
+                    </p>
+                    <p className="text-muted-foreground mt-1 line-clamp-2 text-xs">
+                        {isTrigger ? 'Ponto de entrada' : summaryFor(node)}
+                    </p>
+                </div>
+            </div>
+            {data.editable && (
+                <button
+                    type="button"
+                    className="nodrag nopan text-muted-foreground hover:text-foreground mt-auto inline-flex min-h-8 w-fit items-center gap-1 rounded-md px-2 text-xs transition-colors"
+                    onClick={(event) => {
+                        event.stopPropagation();
+                        data.onAddAfter(node.id);
+                    }}
+                >
+                    <Plus className="size-3.5" />
+                    Próximo
+                </button>
+            )}
+        </div>
+    );
+}
+
+function FlowEdgeLine({
+    id,
+    sourceX,
+    sourceY,
+    targetX,
+    targetY,
+    sourcePosition,
+    targetPosition,
+    markerEnd,
+    data,
+}: EdgeProps<FlowReactEdge>) {
+    const [edgePath, labelX, labelY] = getBezierPath({
+        sourceX,
+        sourceY,
+        sourcePosition,
+        targetX,
+        targetY,
+        targetPosition,
+    });
+
+    return (
+        <>
+            <BaseEdge
+                id={id}
+                path={edgePath}
+                markerEnd={markerEnd}
+                interactionWidth={24}
+                className="!stroke-muted-foreground/45"
+                style={{ strokeWidth: 1.5 }}
+            />
+            <EdgeLabelRenderer>
+                <div
+                    className="nodrag nopan pointer-events-auto absolute flex -translate-x-1/2 -translate-y-1/2 items-center gap-1"
+                    style={{
+                        transform: `translate(-50%, -50%) translate(${labelX}px, ${labelY}px)`,
+                    }}
+                >
+                    {data?.label && (
+                        <span className="bg-background/90 text-muted-foreground rounded px-1.5 py-0.5 text-[11px] shadow-sm">
+                            {data.label}
+                        </span>
+                    )}
+                    <button
+                        type="button"
+                        className="bg-background text-muted-foreground hover:text-destructive flex size-5 items-center justify-center rounded-full border text-xs shadow-sm"
+                        aria-label="Desconectar aresta"
+                        onClick={(event) => {
+                            event.stopPropagation();
+                            data?.onDeleteEdge(data.domainEdge);
+                        }}
+                    >
+                        ×
+                    </button>
+                </div>
+            </EdgeLabelRenderer>
+        </>
     );
 }
 
