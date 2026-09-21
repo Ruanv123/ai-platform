@@ -57,6 +57,7 @@ final class FlowDslValidator
             $node['id'] = $id;
             $node['type'] = $this->normalizeType($type);
             if (! in_array($node['type'], [
+                'trigger',
                 'message',
                 'capture_response',
                 'condition',

@@ -6,6 +6,7 @@ import {
     MessageSquare,
     Plug,
     Settings,
+    Workflow,
 } from 'lucide-react';
 import AppLogo from '@/components/app-logo';
 import { NavMain } from '@/components/nav-main';
@@ -24,6 +25,7 @@ import { index as collections } from '@/routes/collections';
 import { index as agents } from '@/routes/agents';
 import { index as channels } from '@/routes/channels';
 import { index as integrations } from '@/routes/integrations';
+import { index as flows } from '@/routes/flows';
 import { edit as profile } from '@/routes/profile';
 import type { NavItem } from '@/types';
 
@@ -40,6 +42,11 @@ export function AppSidebar() {
             title: 'Agentes',
             href: agents(),
             icon: Bot,
+        },
+        {
+            title: 'Fluxos',
+            href: flows(),
+            icon: Workflow,
         },
         {
             title: 'Base de conhecimento',

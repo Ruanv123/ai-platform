@@ -9,6 +9,7 @@ use App\Http\Controllers\Channels\WhatsAppTestController;
 use App\Http\Controllers\Channels\WhatsAppTestWebhookController;
 use App\Http\Controllers\Channels\WhatsAppWebhookController;
 use App\Http\Controllers\DashboardController;
+use App\Http\Controllers\Flows\FlowAiController;
 use App\Http\Controllers\Flows\FlowController;
 use App\Http\Controllers\Flows\FlowPlaygroundController;
 use App\Http\Controllers\Flows\FlowWebhookController;
@@ -62,9 +63,12 @@ Route::middleware(['auth', EnsureUserHasTeam::class])->group(function () {
     Route::resource('agents', AgentController::class)
         ->only(['index', 'store', 'edit', 'update', 'destroy'])
         ->names('agents');
+    Route::post('flows/templates/{template}/clone', [FlowController::class, 'cloneTemplate'])->name('flows.templates.clone');
     Route::resource('flows', FlowController::class)
         ->only(['index', 'show', 'store', 'update'])
         ->names('flows');
+    Route::post('flows/{flow}/ai/propose', [FlowAiController::class, 'propose'])->middleware('throttle:playground')->name('flows.ai.propose');
+    Route::post('flows/{flow}/ai/apply', [FlowAiController::class, 'apply'])->name('flows.ai.apply');
     Route::post('flows/{flow}/publish', [FlowController::class, 'publish'])->name('flows.publish');
     Route::post('flows/{flow}/pause', [FlowController::class, 'pause'])->name('flows.pause');
     Route::post('flows/{flow}/rollback/{version}', [FlowController::class, 'rollback'])->name('flows.rollback');

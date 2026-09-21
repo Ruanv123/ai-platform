@@ -27,7 +27,8 @@ final class FlowPublisher
         $warnings = [];
         $previousCategory = $this->publishedCategory($flow);
         if ($previousCategory !== null && $previousCategory !== $category) {
-            $warnings[] = 'O Fluxo mudou de natureza: agora é de '.$category->value.'.';
+            $categoryLabel = $category === FlowCategory::Conversation ? 'conversa' : 'reação';
+            $warnings[] = 'O Fluxo mudou de natureza: agora é de '.$categoryLabel.'.';
         }
 
         if ($flow->trigger_type === FlowTriggerType::Message && $flow->channel_id === null) {
@@ -38,6 +39,13 @@ final class FlowPublisher
             && blank($flow->trigger_event)
         ) {
             throw new FlowValidationException(['Um gatilho de webhook precisa declarar o nome do evento.']);
+        }
+
+        if ($flow->trigger_type === FlowTriggerType::Webhook) {
+            $firstNode = $this->firstExecutableNode($dsl);
+            if (($firstNode['type'] ?? null) === 'message') {
+                $warnings[] = 'Este webhook começa por uma Mensagem. Um Template aprovado é mais seguro quando a janela de 24 horas está fechada.';
+            }
         }
 
         if ($category === FlowCategory::Conversation) {
@@ -101,6 +109,28 @@ final class FlowPublisher
         } catch (Throwable $exception) {
             throw new FlowValidationException(['O desenho do Fluxo é inválido.'], previous: $exception);
         }
+    }
+
+    /**
+     * @param  array{nodes: list<array<string, mixed>>, edges: list<array<string, mixed>>}  $dsl
+     * @return array<string, mixed>
+     */
+    private function firstExecutableNode(array $dsl): array
+    {
+        $nodes = collect($dsl['nodes'])->keyBy('id');
+        $incoming = collect($dsl['edges'])->countBy('target');
+        $current = $nodes->first(fn (array $node): bool => ! $incoming->has($node['id'])) ?? [];
+
+        while (($current['type'] ?? null) === 'trigger') {
+            $nextEdge = collect($dsl['edges'])->firstWhere('source', $current['id']);
+            $nextId = is_array($nextEdge) ? ($nextEdge['target'] ?? null) : null;
+            if (! is_string($nextId) || ! is_array($nodes->get($nextId))) {
+                break;
+            }
+            $current = $nodes->get($nextId);
+        }
+
+        return $current;
     }
 
     private function publishedCategory(Flow $flow): ?FlowCategory

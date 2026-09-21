@@ -401,6 +401,7 @@ final class FlowEngine
         $config = is_array($node['config'] ?? null) ? $node['config'] : [];
 
         return match ($type) {
+            'trigger' => [],
             'message' => $this->messageNode($execution, $node, $config),
             'capture_response' => $this->captureNode($execution, $node, $config, $message),
             'condition' => $this->conditionNode($execution, $node, $config),
