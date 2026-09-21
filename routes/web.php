@@ -11,6 +11,7 @@ use App\Http\Controllers\Channels\WhatsAppWebhookController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\Flows\FlowAiController;
 use App\Http\Controllers\Flows\FlowController;
+use App\Http\Controllers\Flows\FlowExecutionController;
 use App\Http\Controllers\Flows\FlowPlaygroundController;
 use App\Http\Controllers\Flows\FlowWebhookController;
 use App\Http\Controllers\Integrations\IntegrationController;
@@ -64,6 +65,8 @@ Route::middleware(['auth', EnsureUserHasTeam::class])->group(function () {
         ->only(['index', 'store', 'edit', 'update', 'destroy'])
         ->names('agents');
     Route::post('flows/templates/{template}/clone', [FlowController::class, 'cloneTemplate'])->name('flows.templates.clone');
+    Route::get('flows/{flow}/executions/{execution}', [FlowExecutionController::class, 'show'])
+        ->name('flows.executions.show');
     Route::resource('flows', FlowController::class)
         ->only(['index', 'show', 'store', 'update'])
         ->names('flows');

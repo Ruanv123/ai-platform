@@ -19,6 +19,7 @@ use App\Models\ContactField;
 use App\Models\ContactFieldValue;
 use App\Models\Flow;
 use App\Models\FlowExecution;
+use App\Models\FlowExecutionStep;
 use App\Models\FlowVersion;
 use App\Models\GlobalVariable;
 use App\Models\Message;
@@ -349,24 +350,51 @@ final class FlowEngine
 
             $steps++;
             $execution->attempts++;
-            $this->trace($execution, $node['id'], 'started');
+            $execution->save();
+            $startedAt = CarbonImmutable::now();
+            $step = $execution->steps()->create([
+                'team_id' => $execution->team_id,
+                'sequence' => $execution->attempts,
+                'node_id' => $node['id'],
+                'result' => 'running',
+                'duration_ms' => 0,
+                'variables_snapshot' => $execution->variables,
+                'started_at' => $startedAt,
+            ]);
+            $startedAtNanoseconds = hrtime(true);
+            $error = null;
 
             try {
                 $result = $this->executeNode($execution, $node, $message);
             } catch (Throwable $exception) {
                 report($exception);
-                $this->trace($execution, $node['id'], 'failed', $exception->getMessage());
-                $result = $this->exceptionResult($execution, $node, $exception->getMessage());
+                $error = $exception->getMessage();
+                $result = $this->exceptionResult($execution, $node, $error);
             }
 
-            $this->trace($execution, $node['id'], ($result['wait'] ?? false) ? 'waiting' : 'completed');
+            $reportedError = is_string($result['step_error'] ?? null) ? $result['step_error'] : null;
+            $stepError = $error ?? $reportedError ?? (($result['failed'] ?? false) ? (string) ($result['reason'] ?? 'node_failed') : null);
             if (($result['wait'] ?? false) === true) {
+                $this->completeStep(
+                    $step,
+                    $execution,
+                    $stepError === null ? 'waiting' : 'failed',
+                    $startedAtNanoseconds,
+                    $stepError,
+                );
                 $execution->save();
 
                 return;
             }
 
             if (($result['finish'] ?? false) === true) {
+                $this->completeStep(
+                    $step,
+                    $execution,
+                    ($result['failed'] ?? false) || $stepError !== null ? 'failed' : 'completed',
+                    $startedAtNanoseconds,
+                    $stepError,
+                );
                 $execution->finish(
                     ($result['failed'] ?? false) ? FlowExecutionStatus::Failed : FlowExecutionStatus::Completed,
                     (string) ($result['reason'] ?? 'completed'),
@@ -377,6 +405,15 @@ final class FlowEngine
             }
 
             $next = $result['next'] ?? $this->nextNode($dsl, $node['id']);
+            $followedEdge = is_string($next) ? $this->edgeBetween($dsl, $node['id'], $next) : null;
+            $this->completeStep(
+                $step,
+                $execution,
+                $stepError === null ? 'completed' : 'failed',
+                $startedAtNanoseconds,
+                $stepError,
+                $followedEdge,
+            );
             $execution->current_node_id = is_string($next) && $next !== '' ? $next : null;
             $execution->last_activity_at = Carbon::now();
             $execution->save();
@@ -460,7 +497,10 @@ final class FlowEngine
         if (! $this->validCapture($value, $config)) {
             $message->forceFill(['is_responded' => true])->save();
 
-            return $this->exceptionResult($execution, $node, 'invalid_capture');
+            return $this->withStepError(
+                $this->exceptionResult($execution, $node, 'invalid_capture'),
+                'invalid_capture',
+            );
         }
 
         $variable = (string) ($config['variable'] ?? $config['name'] ?? 'response');
@@ -500,7 +540,7 @@ final class FlowEngine
             } catch (Throwable $exception) {
                 $error = $this->edgeFor($execution, $node['id'], 'error');
                 if ($error !== null) {
-                    return ['next' => $error];
+                    return ['next' => $error, 'step_error' => $exception->getMessage()];
                 }
 
                 throw $exception;
@@ -601,7 +641,10 @@ final class FlowEngine
             ? Agent::withoutGlobalScopes()->where('team_id', $execution->team_id)->find($agentId)
             : $execution->channel?->agent;
         if ($agent === null || ! $agent->is_active) {
-            return $this->exceptionResult($execution, $node, 'agent_inactive');
+            return $this->withStepError(
+                $this->exceptionResult($execution, $node, 'agent_inactive'),
+                'agent_inactive',
+            );
         }
 
         if ($message === null && $execution->waiting_for === null) {
@@ -719,7 +762,7 @@ final class FlowEngine
         if ($response->failed()) {
             $error = $this->edgeFor($execution, $node['id'], 'error');
             if ($error !== null) {
-                return ['next' => $error];
+                return ['next' => $error, 'step_error' => 'A Requisição HTTP falhou.'];
             }
 
             throw new RuntimeException('A Requisição HTTP falhou.');
@@ -774,7 +817,7 @@ final class FlowEngine
             : null;
         $version = $flow?->publishedVersion();
         if ($flow === null || $version === null) {
-            return ['next' => $config['error'] ?? null];
+            return ['next' => $config['error'] ?? null, 'step_error' => 'subflow_unavailable'];
         }
 
         $inputs = [];
@@ -822,8 +865,8 @@ final class FlowEngine
             $execution->save();
 
             return [];
-        } catch (Throwable) {
-            return ['next' => $config['error'] ?? null];
+        } catch (Throwable $exception) {
+            return ['next' => $config['error'] ?? null, 'step_error' => $exception->getMessage()];
         }
     }
 
@@ -855,8 +898,11 @@ final class FlowEngine
                     return ['next' => $option['target'] ?? null];
                 }
             }
-        } catch (Throwable) {
-            return ['next' => $config['error'] ?? $config['none'] ?? null];
+        } catch (Throwable $exception) {
+            return [
+                'next' => $config['error'] ?? $config['none'] ?? null,
+                'step_error' => $exception->getMessage(),
+            ];
         }
 
         return ['next' => $config['none'] ?? null];
@@ -873,7 +919,9 @@ final class FlowEngine
         $retryKey = '__retries.'.$node['id'];
         $retries = (int) data_get($execution->variables, $retryKey, 0);
         $first = is_array($steps) ? ($steps[$retries] ?? null) : null;
-        data_set($execution->variables, $retryKey, $retries + 1);
+        $variables = $execution->variables;
+        data_set($variables, $retryKey, $retries + 1);
+        $execution->variables = $variables;
         $execution->save();
 
         if (is_array($first)) {
@@ -1003,6 +1051,21 @@ final class FlowEngine
         foreach ($this->edges($execution->flowVersion->dsl, $source) as $edge) {
             if (strtolower((string) ($edge['label'] ?? $edge['condition'] ?? '')) === strtolower($label)) {
                 return $edge['target'];
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * @param  array<string, mixed>  $dsl
+     * @return array<string, mixed>|null
+     */
+    private function edgeBetween(array $dsl, string $source, string $target): ?array
+    {
+        foreach ($this->edges($dsl, $source) as $edge) {
+            if ($edge['target'] === $target) {
+                return $edge;
             }
         }
 
@@ -1171,12 +1234,43 @@ final class FlowEngine
         $attach ? $execution->contact->tags()->syncWithoutDetaching([$tag->getKey()]) : $execution->contact->tags()->detach($tag->getKey());
     }
 
-    private function trace(FlowExecution $execution, string $nodeId, string $result, ?string $reason = null): void
+    /**
+     * @param  array<string, mixed>  $result
+     * @return array<string, mixed>
+     */
+    private function withStepError(array $result, string $error): array
     {
-        $trace = $execution->trace;
-        $trace[] = ['node_id' => $nodeId, 'result' => $result, 'reason' => $reason, 'at' => now()->toIso8601String()];
-        $execution->trace = $trace;
-        $execution->save();
+        $result['step_error'] = $error;
+
+        return $result;
+    }
+
+    /** @param array<string, mixed>|null $edge */
+    private function completeStep(
+        FlowExecutionStep $step,
+        FlowExecution $execution,
+        string $result,
+        int $startedAtNanoseconds,
+        ?string $error = null,
+        ?array $edge = null,
+    ): void {
+        $source = is_string($edge['source'] ?? null) ? $edge['source'] : null;
+        $target = is_string($edge['target'] ?? null) ? $edge['target'] : null;
+        $edgeId = is_string($edge['id'] ?? null)
+            ? $edge['id']
+            : ($source !== null && $target !== null ? "{$source}->{$target}" : null);
+        $edgeLabel = $edge['label'] ?? $edge['condition'] ?? null;
+
+        $step->forceFill([
+            'result' => $result,
+            'duration_ms' => max(0, (int) round((hrtime(true) - $startedAtNanoseconds) / 1_000_000)),
+            'edge_id' => $edgeId,
+            'edge_source_node_id' => $source,
+            'edge_target_node_id' => $target,
+            'edge_label' => is_scalar($edgeLabel) ? (string) $edgeLabel : null,
+            'error' => $error,
+            'variables_snapshot' => $execution->variables,
+        ])->save();
     }
 
     private function activeConversation(Channel $channel, Contact $contact): ?FlowExecution

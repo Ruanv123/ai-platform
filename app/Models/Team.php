@@ -43,6 +43,7 @@ use Illuminate\Support\Carbon;
  * @property-read Collection<int, Tag> $tags
  * @property-read Collection<int, GlobalVariable> $globalVariables
  * @property-read Collection<int, FlowExecution> $flowExecutions
+ * @property-read Collection<int, FlowExecutionStep> $flowExecutionSteps
  * @property-read Collection<int, Document> $documents
  * @property-read Collection<int, Membership> $memberships
  * @property-read Collection<int, User> $members
@@ -207,6 +208,12 @@ class Team extends Model
     public function flowExecutions(): HasMany
     {
         return $this->hasMany(FlowExecution::class);
+    }
+
+    /** @return HasMany<FlowExecutionStep, $this> */
+    public function flowExecutionSteps(): HasMany
+    {
+        return $this->hasMany(FlowExecutionStep::class);
     }
 
     /**
