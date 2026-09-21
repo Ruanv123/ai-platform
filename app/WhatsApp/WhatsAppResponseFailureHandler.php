@@ -64,7 +64,7 @@ final class WhatsAppResponseFailureHandler
                     'contact_id' => $contact->getKey(),
                     'channel_id' => $channel->getKey(),
                     'direction' => MessageDirection::Outgoing,
-                    'event_type' => 'text',
+                    'payload_type' => 'text',
                     'provider_message_id' => null,
                     'content' => self::GENERIC_FAILURE_NOTICE,
                     'delivery_status' => MessageDeliveryStatus::Failed,

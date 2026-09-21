@@ -2,6 +2,7 @@
 
 namespace App\Ai\Agents;
 
+use App\Ai\Tools\ReturnToFlow;
 use App\Ai\Tools\SearchKnowledgeBase;
 use App\Enums\MessageDirection;
 use App\Knowledge\AgentInstructionTemplate;
@@ -32,6 +33,7 @@ class WhatsAppAgent implements Agent, Conversational, HasTools
         private Collection $conversationMessages,
         private AgentInstructionTemplate $instructionTemplate,
         private KnowledgeBaseSearch $knowledgeBaseSearch,
+        private ?ReturnToFlow $returnToFlow = null,
     ) {}
 
     /**
@@ -51,7 +53,7 @@ class WhatsAppAgent implements Agent, Conversational, HasTools
     {
         return $this->conversationMessages->map(fn (ConversationMessage $message): Message => new Message(
             $message->direction === MessageDirection::Outgoing ? 'assistant' : 'user',
-            $message->content ?? "[Mensagem {$message->event_type} recebida sem conteúdo textual.]",
+            $message->content ?? "[Mensagem {$message->payload_type} recebida sem conteúdo textual.]",
         ));
     }
 
@@ -64,14 +66,18 @@ class WhatsAppAgent implements Agent, Conversational, HasTools
     {
         $collections = $this->configuredAgent->collections;
 
-        if ($collections->isEmpty()) {
-            return [];
+        $tools = [];
+        if ($collections->isNotEmpty()) {
+            $tools[] = new SearchKnowledgeBase(
+                $this->configuredAgent->team,
+                $collections->modelKeys(),
+                $this->knowledgeBaseSearch,
+            );
+        }
+        if ($this->returnToFlow !== null) {
+            $tools[] = $this->returnToFlow;
         }
 
-        return [new SearchKnowledgeBase(
-            $this->configuredAgent->team,
-            $collections->modelKeys(),
-            $this->knowledgeBaseSearch,
-        )];
+        return $tools;
     }
 }

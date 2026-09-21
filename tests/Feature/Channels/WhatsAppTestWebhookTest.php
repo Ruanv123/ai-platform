@@ -1,5 +1,6 @@
 <?php
 
+use App\Enums\ChannelStatus;
 use App\Enums\ChannelType;
 use App\Enums\MessageDeliveryStatus;
 use App\Enums\MessageDirection;
@@ -39,7 +40,7 @@ it('accepts a test webhook without authentication or a CSRF token', function () 
 
     $response->assertOk()->assertContent('EVENT_RECEIVED');
     $this->assertDatabaseHas('messages', [
-        'event_type' => 'text',
+        'payload_type' => 'text',
         'direction' => MessageDirection::Incoming->value,
         'provider_message_id' => 'test-message-text-1',
         'content' => 'Olá, preciso de ajuda com meu pedido.',
@@ -65,7 +66,7 @@ it('registers every supported test message type at the webhook seam', function (
 
     $response->assertOk();
     $this->assertDatabaseHas('messages', [
-        'event_type' => $eventType,
+        'payload_type' => $eventType,
         'direction' => MessageDirection::Incoming->value,
         'content' => $content,
     ]);
@@ -83,7 +84,7 @@ it('records a sent test message as outgoing', function () {
 
     $response->assertOk();
     $this->assertDatabaseHas('messages', [
-        'event_type' => 'text',
+        'payload_type' => 'text',
         'direction' => MessageDirection::Outgoing->value,
         'provider_message_id' => 'test-message-send-1',
         'delivery_status' => MessageDeliveryStatus::Sent->value,
@@ -119,7 +120,7 @@ it('registers unsupported test message types with their raw provider type', func
 
     $response->assertOk();
     $this->assertDatabaseHas('messages', [
-        'event_type' => 'stickerMessage',
+        'payload_type' => 'stickerMessage',
         'direction' => MessageDirection::Incoming->value,
         'provider_message_id' => 'test-message-sticker-1',
     ]);
@@ -134,6 +135,39 @@ it('does not register the same provider message twice', function () {
 
     $this->assertDatabaseCount('messages', 1);
     $this->assertDatabaseCount('contacts', 1);
+});
+
+it('stores the QR code pushed for the pairing session', function () {
+    $channel = createWhatsAppTestWebhookChannel();
+
+    $response = $this->postJson(route('webhooks.whatsapp-test'), whatsappTestWebhookFixture('qrcode'));
+
+    $response->assertOk();
+    expect($channel->whatsappTestConnection->fresh()->qrcode)
+        ->toBe('data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=');
+    expect($channel->fresh()->status)->toBe(ChannelStatus::NotConfigured);
+});
+
+it('connects the Channel and clears the QR code once the session pairs', function () {
+    $channel = createWhatsAppTestWebhookChannel();
+    $channel->whatsappTestConnection->update(['qrcode' => 'data:image/png;base64,stale']);
+
+    $response = $this->postJson(route('webhooks.whatsapp-test'), whatsappTestWebhookFixture('connection-open'));
+
+    $response->assertOk();
+    expect($channel->fresh()->status)->toBe(ChannelStatus::Connected)
+        ->and($channel->whatsappTestConnection->fresh()->qrcode)->toBeNull();
+});
+
+it('marks the Channel in error when the pairing session logs out', function () {
+    $channel = createWhatsAppTestWebhookChannel();
+    $channel->update(['status' => ChannelStatus::Connected]);
+
+    $response = $this->postJson(route('webhooks.whatsapp-test'), whatsappTestWebhookFixture('connection-logged-out'));
+
+    $response->assertOk();
+    expect($channel->fresh()->status)->toBe(ChannelStatus::Error)
+        ->and($channel->fresh()->last_error)->not->toBeNull();
 });
 
 it('uses the provider timestamp when messages arrive out of order', function () {

@@ -17,7 +17,7 @@ return new class extends Migration
             $table->foreignId('contact_id')->constrained('contacts')->cascadeOnDelete();
             $table->foreignId('channel_id')->constrained('channels')->cascadeOnDelete();
             $table->string('direction', 16);
-            $table->string('event_type', 64);
+            $table->string('payload_type', 64);
             $table->string('provider_message_id')->nullable();
             $table->text('content')->nullable();
             $table->string('delivery_status', 16)->nullable();

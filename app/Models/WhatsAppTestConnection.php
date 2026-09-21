@@ -12,15 +12,17 @@ use Illuminate\Support\Carbon;
 
 /**
  * @property int $id
- * @property int $channel_id
+ * @property string $channel_id
  * @property string $service_url
  * @property string $instance_name
+ * @property string $name
  * @property string $access_token
+ * @property string|null $qrcode
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
  * @property-read Channel $channel
  */
-#[Fillable(['channel_id', 'service_url', 'instance_name', 'access_token'])]
+#[Fillable(['channel_id', 'service_url', 'instance_name', 'name', 'access_token', 'qrcode'])]
 #[Hidden(['access_token'])]
 class WhatsAppTestConnection extends Model
 {

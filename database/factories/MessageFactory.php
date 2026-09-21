@@ -26,7 +26,7 @@ class MessageFactory extends Factory
             'contact_id' => Contact::factory(),
             'channel_id' => Channel::factory(),
             'direction' => MessageDirection::Incoming,
-            'event_type' => 'text',
+            'payload_type' => 'text',
             'provider_message_id' => fake()->uuid(),
             'content' => fake()->sentence(),
             'delivery_status' => null,

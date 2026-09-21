@@ -34,7 +34,7 @@ class AgentController extends Controller
         return Inertia::render('agents/index', [
             'agents' => $team->agents()
                 ->withCount(['collections', 'channels'])
-                ->with(['collections', 'channels'])
+                ->with(['collections', 'channels' => fn ($query) => $query->orderBy('id')])
                 ->orderBy('name')
                 ->get()
                 ->map(fn (Agent $agent): array => [

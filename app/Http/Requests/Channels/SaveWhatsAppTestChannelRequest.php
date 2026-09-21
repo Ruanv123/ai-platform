@@ -35,12 +35,12 @@ class SaveWhatsAppTestChannelRequest extends FormRequest
      */
     public function rules(): array
     {
-        $channel = $this->route('whatsappTestChannel');
+        $isEditing = $this->route('whatsappTestChannel') instanceof Channel;
 
         return [
-            'service_url' => ['required', 'url:http,https', 'max:2048'],
-            'instance_name' => ['required', 'string', 'max:255'],
-            'access_token' => [$channel instanceof Channel ? 'nullable' : 'required', 'string', 'max:5000'],
+            'name' => $isEditing
+                ? ['prohibited']
+                : ['required', 'string', 'max:255'],
             'agent_id' => [
                 'nullable',
                 'uuid',
@@ -58,10 +58,7 @@ class SaveWhatsAppTestChannelRequest extends FormRequest
     public function messages(): array
     {
         return [
-            'service_url.required' => 'Informe o endereço do serviço.',
-            'service_url.url' => 'Informe um endereço HTTP ou HTTPS válido.',
-            'instance_name.required' => 'Informe o nome da instância.',
-            'access_token.required' => 'Informe a credencial de acesso.',
+            'name.required' => 'Dê um nome para esta integração.',
             'agent_id.exists' => 'Selecione apenas um Agente da sua Empresa.',
             'channel_id.prohibited' => 'O Canal não pode ser alterado pela requisição.',
         ];
@@ -78,20 +75,17 @@ class SaveWhatsAppTestChannelRequest extends FormRequest
             $teamId = $this->user()?->company()?->getKey();
             $currentChannel = $this->route('whatsappTestChannel');
 
-            if ($teamId === null || ($currentChannel instanceof Channel && $currentChannel->team_id !== $teamId)) {
+            if ($teamId === null || $currentChannel instanceof Channel) {
                 return;
             }
 
-            $query = Channel::query()
+            $exists = Channel::query()
                 ->where('team_id', $teamId)
-                ->where('type', ChannelType::WhatsAppTest);
+                ->where('type', ChannelType::WhatsAppTest)
+                ->exists();
 
-            if ($currentChannel instanceof Channel) {
-                $query->where('id', '!=', $currentChannel->getKey());
-            }
-
-            if ($query->exists()) {
-                $validator->errors()->add('service_url', 'Sua Empresa já possui um WhatsApp de testes configurado.');
+            if ($exists) {
+                $validator->errors()->add('name', 'Sua Empresa já possui um WhatsApp de testes configurado.');
             }
         }];
     }

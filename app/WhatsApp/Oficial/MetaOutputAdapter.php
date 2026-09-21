@@ -39,6 +39,33 @@ final class MetaOutputAdapter extends AbstractWhatsAppOutputAdapter
         return $this->recordOutgoingText($channel, $contact, $content, $providerMessageId);
     }
 
+    public function sendTemplate(Channel $channel, Contact $contact, string $template, array $parameters = []): Message
+    {
+        $this->assertContactBelongsToChannel($channel, $contact);
+        $response = $this->request($channel)->post(
+            $this->messagesUrl($this->phoneNumber($channel)),
+            [
+                'messaging_product' => 'whatsapp',
+                'to' => $contact->phone,
+                'type' => 'template',
+                'template' => [
+                    'name' => $template,
+                    'language' => ['code' => 'pt_BR'],
+                    'components' => $parameters === [] ? [] : [[
+                        'type' => 'body',
+                        'parameters' => array_map(fn (string $parameter): array => ['type' => 'text', 'text' => $parameter], $parameters),
+                    ]],
+                ],
+            ],
+        )->throw();
+        $providerMessageId = $this->providerMessageId($response->json());
+        if ($providerMessageId === null) {
+            throw new RuntimeException('A Meta não retornou o id do Template enviado.');
+        }
+
+        return $this->recordOutgoingTemplate($channel, $contact, $template, $parameters, $providerMessageId);
+    }
+
     public function markIncomingMessageAsRead(Channel $channel, Message $message): void
     {
         $this->assertIncomingMessageBelongsToChannel($channel, $message);

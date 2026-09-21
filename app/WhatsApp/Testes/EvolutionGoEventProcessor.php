@@ -7,8 +7,10 @@ use App\Models\Channel;
 use App\WhatsApp\IncomingMessageResponseDispatcher;
 use App\WhatsApp\Media\IncomingMediaResolver;
 use App\WhatsApp\Testes\Strategies\EvolutionGoAudioStrategy;
+use App\WhatsApp\Testes\Strategies\EvolutionGoConnectionStrategy;
 use App\WhatsApp\Testes\Strategies\EvolutionGoDocumentStrategy;
 use App\WhatsApp\Testes\Strategies\EvolutionGoImageStrategy;
+use App\WhatsApp\Testes\Strategies\EvolutionGoQrCodeStrategy;
 use App\WhatsApp\Testes\Strategies\EvolutionGoReadReceiptStrategy;
 use App\WhatsApp\Testes\Strategies\EvolutionGoSendMessageStrategy;
 use App\WhatsApp\Testes\Strategies\EvolutionGoStrategy;
@@ -39,6 +41,8 @@ final class EvolutionGoEventProcessor
             'MESSAGE' => $this->messageStrategy($payload),
             'SEND_MESSAGE' => new EvolutionGoSendMessageStrategy($this->mediaResolver, $this->mediaDownloader),
             'READ_RECEIPT' => new EvolutionGoReadReceiptStrategy($this->mediaResolver, $this->mediaDownloader),
+            'CONNECTION' => new EvolutionGoConnectionStrategy($this->mediaResolver, $this->mediaDownloader),
+            'QRCODE' => new EvolutionGoQrCodeStrategy($this->mediaResolver, $this->mediaDownloader),
             default => new EvolutionGoUnsupportedStrategy($this->mediaResolver, $this->mediaDownloader),
         };
 

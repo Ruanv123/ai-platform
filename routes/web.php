@@ -9,6 +9,9 @@ use App\Http\Controllers\Channels\WhatsAppTestController;
 use App\Http\Controllers\Channels\WhatsAppTestWebhookController;
 use App\Http\Controllers\Channels\WhatsAppWebhookController;
 use App\Http\Controllers\DashboardController;
+use App\Http\Controllers\Flows\FlowController;
+use App\Http\Controllers\Flows\FlowPlaygroundController;
+use App\Http\Controllers\Flows\FlowWebhookController;
 use App\Http\Controllers\Integrations\IntegrationController;
 use App\Http\Controllers\Knowledge\CollectionController;
 use App\Http\Controllers\Knowledge\DocumentController;
@@ -27,6 +30,10 @@ Route::match(['get', 'post'], 'webhooks/whatsapp', [WhatsAppWebhookController::c
 
 Route::post('webhooks/whatsapp-test', [WhatsAppTestWebhookController::class, 'handle'])
     ->name('webhooks.whatsapp-test');
+
+Route::post('webhooks/flows/{channelId}/{event}', [FlowWebhookController::class, 'handle'])
+    ->middleware('throttle:flow-webhook')
+    ->name('webhooks.flows');
 
 Route::bind('channel', function (string $value): Channel {
     return Channel::query()
@@ -55,6 +62,14 @@ Route::middleware(['auth', EnsureUserHasTeam::class])->group(function () {
     Route::resource('agents', AgentController::class)
         ->only(['index', 'store', 'edit', 'update', 'destroy'])
         ->names('agents');
+    Route::resource('flows', FlowController::class)
+        ->only(['index', 'show', 'store', 'update'])
+        ->names('flows');
+    Route::post('flows/{flow}/publish', [FlowController::class, 'publish'])->name('flows.publish');
+    Route::post('flows/{flow}/pause', [FlowController::class, 'pause'])->name('flows.pause');
+    Route::post('flows/{flow}/rollback/{version}', [FlowController::class, 'rollback'])->name('flows.rollback');
+    Route::post('flows/{flow}/resume', [FlowController::class, 'resume'])->name('flows.resume');
+    Route::post('flows/{flow}/playground', [FlowPlaygroundController::class, 'run'])->name('flows.playground');
     Route::patch('agents/{agent}/toggle', [AgentController::class, 'toggle'])
         ->name('agents.toggle');
     Route::post('agents/playground', [PlaygroundController::class, 'stream'])

@@ -2,7 +2,9 @@
 
 namespace App\WhatsApp;
 
+use App\Flows\FlowEngine;
 use App\Jobs\RespondToWhatsAppMessage;
+use App\Jobs\RunFlowTurn;
 use App\Models\Channel;
 use App\Models\Message;
 use App\WhatsApp\Output\WhatsAppOutputAdapterFactory;
@@ -12,6 +14,7 @@ final class IncomingMessageResponseDispatcher
 {
     public function __construct(
         private readonly WhatsAppOutputAdapterFactory $outputAdapterFactory,
+        private readonly FlowEngine $flowEngine,
     ) {}
 
     /**
@@ -20,8 +23,9 @@ final class IncomingMessageResponseDispatcher
     public function dispatch(Channel $channel, Message $message): void
     {
         $channel->loadMissing('agent');
+        $isFlowChannel = $this->flowEngine->hasManagedMessageFlows($channel);
 
-        if ($channel->agent === null || ! $channel->agent->is_active) {
+        if (! $isFlowChannel && ($channel->agent === null || ! $channel->agent->is_active)) {
             return;
         }
 
@@ -32,6 +36,13 @@ final class IncomingMessageResponseDispatcher
         $this->attempt(function () use ($adapter, $channel, $message): void {
             $adapter->sendTypingIndicator($channel, $message);
         });
+
+        if ($isFlowChannel) {
+            RunFlowTurn::dispatch($channel->getKey(), $message->contact_id)
+                ->delay(now()->addSeconds(5));
+
+            return;
+        }
 
         RespondToWhatsAppMessage::dispatch($channel->getKey(), $message->contact_id)
             ->delay(now()->addSeconds(5));

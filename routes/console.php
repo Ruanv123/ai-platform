@@ -4,6 +4,7 @@ use App\Models\TeamInvitation;
 use Illuminate\Support\Facades\Schedule;
 
 Schedule::command('horizon:snapshot')->everyFiveMinutes();
+Schedule::command('flows:reconcile')->everyMinute()->withoutOverlapping();
 
 Schedule::call(function () {
     TeamInvitation::query()

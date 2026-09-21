@@ -23,7 +23,9 @@ class WhatsAppTestConnectionFactory extends Factory
             'channel_id' => Channel::factory(),
             'service_url' => 'http://localhost:8080',
             'instance_name' => fake()->unique()->slug(2),
+            'name' => fake()->words(2, true),
             'access_token' => 'access-token-'.Str::random(20),
+            'qrcode' => null,
         ];
     }
 }

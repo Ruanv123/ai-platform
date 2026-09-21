@@ -49,6 +49,17 @@ class AppServiceProvider extends ServiceProvider
             return Limit::perMinute(300)
                 ->by('whatsapp-webhook:'.(string) $request->ip().':'.$phoneNumberKey);
         });
+
+        RateLimiter::for('flow-webhook', function (Request $request): array {
+            $channel = (string) $request->route('channelId');
+            $team = (string) ($request->header('X-Company-Id') ?? 'unknown');
+
+            return [
+                Limit::perMinute(120)->by('flow-channel:'.$channel),
+                Limit::perMinute(1000)->by('flow-team:'.$team),
+                Limit::perMinute(10000)->by('flow-global'),
+            ];
+        });
     }
 
     /**

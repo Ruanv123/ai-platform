@@ -159,7 +159,7 @@ class RespondToWhatsAppMessage implements ShouldQueue
             'contact_id' => $contact->getKey(),
             'channel_id' => $channel->getKey(),
             'direction' => MessageDirection::Outgoing,
-            'event_type' => 'text',
+            'payload_type' => 'text',
             'provider_message_id' => null,
             'content' => $content,
             'delivery_status' => MessageDeliveryStatus::Failed,
@@ -183,6 +183,6 @@ class RespondToWhatsAppMessage implements ShouldQueue
     private function promptFor(Message $message): string
     {
         return $message->content
-            ?? "O Contato enviou uma mensagem do tipo {$message->event_type}. Responda orientando-o de forma útil e clara.";
+            ?? "O Contato enviou uma mensagem do tipo {$message->payload_type}. Responda orientando-o de forma útil e clara.";
     }
 }

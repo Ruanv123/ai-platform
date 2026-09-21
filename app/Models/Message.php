@@ -16,9 +16,9 @@ use Illuminate\Support\Carbon;
  * @property int $id
  * @property int $team_id
  * @property int $contact_id
- * @property int $channel_id
+ * @property string $channel_id
  * @property MessageDirection $direction
- * @property string $event_type
+ * @property string $payload_type
  * @property string|null $provider_message_id
  * @property string|null $content
  * @property MessageDeliveryStatus|null $delivery_status
@@ -34,7 +34,7 @@ use Illuminate\Support\Carbon;
     'contact_id',
     'channel_id',
     'direction',
-    'event_type',
+    'payload_type',
     'provider_message_id',
     'content',
     'delivery_status',

@@ -9,15 +9,20 @@ use App\Http\Requests\Channels\SaveWhatsAppTestChannelRequest;
 use App\Models\Agent;
 use App\Models\Channel;
 use App\Models\User;
+use App\WhatsApp\Testes\EvolutionGoClient;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
+use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use Inertia\Response;
+use RuntimeException;
 
 class WhatsAppTestController extends Controller
 {
+    public function __construct(private readonly EvolutionGoClient $evolutionGo) {}
+
     /**
      * Display the WhatsApp test channel configuration page.
      */
@@ -54,7 +59,7 @@ class WhatsAppTestController extends Controller
     }
 
     /**
-     * Store the test channel and its connection atomically.
+     * Create the instance on the platform's Evolution Go server and store the Channel.
      */
     public function store(SaveWhatsAppTestChannelRequest $request): RedirectResponse
     {
@@ -63,30 +68,43 @@ class WhatsAppTestController extends Controller
         Gate::authorize('create', Channel::class);
 
         $validated = $request->validated();
-        $agentId = $validated['agent_id'] ?? null;
-        unset($validated['agent_id']);
+        $name = $validated['name'];
+        $instanceName = 'canal_'.$team->getKey();
 
-        DB::transaction(function () use ($team, $validated, $agentId): void {
+        try {
+            $instance = $this->evolutionGo->createInstance($instanceName);
+            $this->evolutionGo->connect($instance['id'], route('webhooks.whatsapp-test'));
+        } catch (RuntimeException $exception) {
+            throw ValidationException::withMessages(['name' => $exception->getMessage()]);
+        }
+
+        DB::transaction(function () use ($team, $validated, $name, $instanceName, $instance): void {
             $channel = $team->channels()->create([
                 'type' => ChannelType::WhatsAppTest,
-                'agent_id' => $agentId,
-                'status' => ChannelStatus::Connected,
+                'agent_id' => $validated['agent_id'] ?? null,
+                'status' => ChannelStatus::NotConfigured,
                 'last_error' => null,
             ]);
 
-            $channel->whatsappTestConnection()->create($validated);
+            $channel->whatsappTestConnection()->create([
+                'service_url' => config('services.evolution.base_url'),
+                'instance_name' => $instanceName,
+                'name' => $name,
+                'access_token' => $instance['token'],
+                'qrcode' => null,
+            ]);
         });
 
         Inertia::flash('toast', [
             'type' => 'success',
-            'message' => 'WhatsApp de testes configurado com sucesso.',
+            'message' => 'Integração criada. Escaneie o QR code para conectar.',
         ]);
 
         return to_route('channels.whatsapp-test.edit');
     }
 
     /**
-     * Update the test channel and its connection atomically.
+     * Update the Agent linked to the test channel.
      */
     public function update(
         SaveWhatsAppTestChannelRequest $request,
@@ -95,24 +113,7 @@ class WhatsAppTestController extends Controller
         Gate::authorize('update', $whatsappTestChannel);
 
         $validated = $request->validated();
-        $connection = $whatsappTestChannel->whatsappTestConnection()->firstOrFail();
-        $connectionAttributes = [
-            'service_url' => $validated['service_url'],
-            'instance_name' => $validated['instance_name'],
-        ];
-
-        if (filled($validated['access_token'] ?? null)) {
-            $connectionAttributes['access_token'] = $validated['access_token'];
-        }
-
-        DB::transaction(function () use ($whatsappTestChannel, $connection, $connectionAttributes, $validated): void {
-            $whatsappTestChannel->update([
-                'agent_id' => $validated['agent_id'] ?? null,
-                'status' => ChannelStatus::Connected,
-                'last_error' => null,
-            ]);
-            $connection->update($connectionAttributes);
-        });
+        $whatsappTestChannel->update(['agent_id' => $validated['agent_id'] ?? null]);
 
         Inertia::flash('toast', [
             'type' => 'success',
@@ -150,10 +151,8 @@ class WhatsAppTestController extends Controller
 
         return [
             'id' => $channel->id,
-            'serviceUrl' => $connection?->service_url,
-            'instanceName' => $connection?->instance_name,
-            'accessTokenSet' => $canManage && filled($connection?->access_token),
-            'accessTokenMasked' => $canManage ? $this->maskSecret($connection?->access_token) : null,
+            'name' => $connection?->name,
+            'qrcode' => $canManage ? $connection?->qrcode : null,
             'status' => $channel->status->value,
             'statusLabel' => $channel->status->label(),
             'lastError' => $channel->last_error,
@@ -163,14 +162,6 @@ class WhatsAppTestController extends Controller
                 'name' => $channel->agent->name,
             ],
         ];
-    }
-
-    /**
-     * Mask a secret without exposing any of its value to the client.
-     */
-    private function maskSecret(?string $secret): ?string
-    {
-        return filled($secret) ? '••••••••' : null;
     }
 
     /**

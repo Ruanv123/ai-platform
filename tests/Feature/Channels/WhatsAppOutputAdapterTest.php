@@ -87,7 +87,7 @@ it('records a provider text response for each WhatsApp channel', function (Chann
         'contact_id' => $contact->id,
         'channel_id' => $channel->id,
         'direction' => MessageDirection::Outgoing->value,
-        'event_type' => 'text',
+        'payload_type' => 'text',
         'provider_message_id' => $providerMessageId,
         'content' => 'Resposta do Agente.',
         'delivery_status' => 'sent',

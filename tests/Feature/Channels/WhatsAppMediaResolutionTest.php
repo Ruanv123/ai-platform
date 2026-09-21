@@ -79,7 +79,7 @@ it('transcribes audio at the webhook seam and stores the transcription', functio
     postOfficialMediaWebhook($this, mediaResolutionFixture('message-audio'));
 
     $this->assertDatabaseHas('messages', [
-        'event_type' => 'audio',
+        'payload_type' => 'audio',
         'content' => 'O áudio fala sobre o prazo do pedido.',
     ]);
     Transcription::assertGenerated(fn ($prompt): bool => $prompt->language === 'pt');
@@ -101,7 +101,7 @@ it('describes an image and keeps its caption in the resolved content', function 
     postOfficialMediaWebhook($this, mediaResolutionFixture('message-image'));
 
     $this->assertDatabaseHas('messages', [
-        'event_type' => 'image',
+        'payload_type' => 'image',
         'content' => "Esta é a foto do problema.\n\nA imagem mostra uma caixa danificada.",
     ]);
     expect($imageCalls)->toBe(1);
@@ -120,7 +120,7 @@ it('extracts a downloaded document with the knowledge-base extractor', function 
     postOfficialMediaWebhook($this, $payload);
 
     $this->assertDatabaseHas('messages', [
-        'event_type' => 'document',
+        'payload_type' => 'document',
         'content' => "Segue o comprovante.\n\nPedido 123\nPrazo de entrega: 7 dias.",
     ]);
 });
@@ -142,7 +142,7 @@ it('stores a media failure without failing the webhook', function () {
 
     $response->assertOk();
     $this->assertDatabaseHas('messages', [
-        'event_type' => 'audio',
+        'payload_type' => 'audio',
         'content' => 'Não foi possível processar esta mídia. O atendimento continuará com as demais mensagens.',
     ]);
 });
@@ -157,7 +157,7 @@ it('resolves embedded audio from the test WhatsApp webhook', function () {
     $this->postJson(route('webhooks.whatsapp-test'), $payload)->assertOk();
 
     $this->assertDatabaseHas('messages', [
-        'event_type' => 'audio',
+        'payload_type' => 'audio',
         'content' => 'Áudio recebido no canal de testes.',
     ]);
     Transcription::assertGenerated(fn ($prompt): bool => $prompt->language === 'pt');
@@ -169,7 +169,7 @@ it('records an explicit warning for videos', function () {
     postOfficialMediaWebhook($this, mediaResolutionFixture('message-video'));
 
     $this->assertDatabaseHas('messages', [
-        'event_type' => 'video',
+        'payload_type' => 'video',
         'content' => "Um vídeo do defeito.\n\nVídeos ainda não são suportados. Envie um áudio, uma imagem, um documento ou explique o problema por texto.",
     ]);
 });
