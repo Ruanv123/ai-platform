@@ -7,10 +7,12 @@ use App\Enums\FlowExecutionStatus;
 use Database\Factories\FlowExecutionFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Carbon;
 
 /**
@@ -36,6 +38,7 @@ use Illuminate\Support\Carbon;
  * @property-read FlowVersion $flowVersion
  * @property-read Contact|null $contact
  * @property-read Channel|null $channel
+ * @property-read Collection<int, FlowExecutionStep> $steps
  */
 #[Fillable([
     'team_id',
@@ -77,6 +80,12 @@ class FlowExecution extends Model
     public function channel(): BelongsTo
     {
         return $this->belongsTo(Channel::class);
+    }
+
+    /** @return HasMany<FlowExecutionStep, $this> */
+    public function steps(): HasMany
+    {
+        return $this->hasMany(FlowExecutionStep::class)->orderBy('sequence');
     }
 
     /**
