@@ -40,4 +40,9 @@ return [
         'graph_api_url' => env('WHATSAPP_GRAPH_API_URL', 'https://graph.facebook.com'),
     ],
 
+    'evolution' => [
+        'base_url' => env('EVOLUTION_API_URL'),
+        'api_key' => env('EVOLUTION_API_KEY'),
+    ],
+
 ];

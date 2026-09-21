@@ -112,7 +112,7 @@ it('creates the contact and records each core incoming message', function (
     $this->assertDatabaseHas('messages', [
         'team_id' => $channel->team_id,
         'channel_id' => $channel->id,
-        'event_type' => $eventType,
+        'payload_type' => $eventType,
         'direction' => MessageDirection::Incoming->value,
         'content' => $expectedContent,
     ]);
@@ -153,7 +153,7 @@ it('records an unsupported event with the raw provider type', function (
     $response->assertOk();
     $this->assertDatabaseHas('messages', [
         'channel_id' => $channel->id,
-        'event_type' => $expectedEventType,
+        'payload_type' => $expectedEventType,
         'direction' => MessageDirection::Incoming->value,
         'content' => null,
     ]);

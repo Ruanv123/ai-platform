@@ -38,6 +38,11 @@ use Illuminate\Support\Carbon;
  * @property-read Collection<int, TeamCollection> $collections
  * @property-read Collection<int, Agent> $agents
  * @property-read Collection<int, Channel> $channels
+ * @property-read Collection<int, Flow> $flows
+ * @property-read Collection<int, ContactField> $contactFields
+ * @property-read Collection<int, Tag> $tags
+ * @property-read Collection<int, GlobalVariable> $globalVariables
+ * @property-read Collection<int, FlowExecution> $flowExecutions
  * @property-read Collection<int, Document> $documents
  * @property-read Collection<int, Membership> $memberships
  * @property-read Collection<int, User> $members
@@ -172,6 +177,36 @@ class Team extends Model
     public function channels(): HasMany
     {
         return $this->hasMany(Channel::class);
+    }
+
+    /** @return HasMany<Flow, $this> */
+    public function flows(): HasMany
+    {
+        return $this->hasMany(Flow::class);
+    }
+
+    /** @return HasMany<ContactField, $this> */
+    public function contactFields(): HasMany
+    {
+        return $this->hasMany(ContactField::class);
+    }
+
+    /** @return HasMany<Tag, $this> */
+    public function tags(): HasMany
+    {
+        return $this->hasMany(Tag::class);
+    }
+
+    /** @return HasMany<GlobalVariable, $this> */
+    public function globalVariables(): HasMany
+    {
+        return $this->hasMany(GlobalVariable::class);
+    }
+
+    /** @return HasMany<FlowExecution, $this> */
+    public function flowExecutions(): HasMany
+    {
+        return $this->hasMany(FlowExecution::class);
     }
 
     /**

@@ -1,59 +1,47 @@
 import { Head, Link } from '@inertiajs/react';
+import { Plus, Radio } from 'lucide-react';
+import { useState } from 'react';
 import {
-    ArrowRight,
-    FlaskConical,
-    Globe2,
-    Instagram,
-    MessageCircle,
-} from 'lucide-react';
-import {
-    ChannelReadinessRail,
     ChannelSignalLamp,
-    channelMilestones,
-    channelNextStep,
     channelSignal,
-    type ChannelReadiness,
 } from '@/components/channel-readiness';
+import {
+    channelIcons,
+    type ChannelIcon,
+    type ChannelTypeOption,
+} from '@/components/channels/channel-catalog';
+import { ChannelCreateDialog } from '@/components/channels/channel-create-dialog';
 import Heading from '@/components/heading';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import type { TeamPermissions } from '@/types';
 
-type Channel = ChannelReadiness & {
-    value: string;
+type Channel = {
+    id: string;
     label: string;
     description: string;
-    icon: 'message-circle' | 'flask-conical' | 'globe-2' | 'instagram';
-    available: boolean;
-    isTest: boolean;
+    icon: ChannelIcon;
     destination: string | null;
+    status: 'not_configured' | 'connected' | 'error';
+    statusLabel: string;
+    lastError: string | null;
     displayPhoneNumber: string | null;
     verifiedName: string | null;
-    qualityRating: string | null;
-    agentMissing: boolean;
+    agent: { id: string; name: string } | null;
+};
+
+type AgentOption = {
+    id: string;
+    name: string;
 };
 
 type Props = {
     channels: Channel[];
+    channelTypes: ChannelTypeOption[];
+    agents: AgentOption[];
     permissions: TeamPermissions;
 };
 
-const channelIcons = {
-    'message-circle': MessageCircle,
-    'flask-conical': FlaskConical,
-    'globe-2': Globe2,
-    instagram: Instagram,
-} as const;
-
-function GroupLabel({ children }: { children: string }) {
-    return (
-        <p className="text-muted-foreground px-1 text-xs font-medium tracking-wide uppercase">
-            {children}
-        </p>
-    );
-}
-
-function OperatingChannelCard({
+function ChannelCard({
     channel,
     canManage,
 }: {
@@ -61,21 +49,26 @@ function OperatingChannelCard({
     canManage: boolean;
 }) {
     const Icon = channelIcons[channel.icon];
-    const signal = channelSignal(channel);
-    const milestones = channel.isTest ? [] : channelMilestones(channel);
-    const nextStep = channel.isTest
-        ? {
-              label:
-                  channel.status === 'connected'
-                      ? 'Gerenciar conexão'
-                      : 'Configurar conexão',
-              primary: channel.status !== 'connected',
-          }
-        : channelNextStep(milestones);
+    const signal = channelSignal({
+        status: channel.status,
+        statusLabel: channel.statusLabel,
+        lastError: channel.lastError,
+        credentialsSavedAt: null,
+        webhookVerifiedAt: null,
+        lastTestedAt: null,
+        agent: channel.agent,
+    });
 
     const identity = [channel.displayPhoneNumber, channel.verifiedName]
         .filter((part): part is string => part !== null)
         .join(' · ');
+
+    const footerText =
+        channel.status === 'connected' && channel.agent === null
+            ? 'Conectado, mas sem Agente vinculado.'
+            : channel.agent !== null
+              ? `Atendido por ${channel.agent.name}.`
+              : 'Nenhum Agente vinculado ainda.';
 
     return (
         <article className="bg-card flex flex-col gap-4 rounded-xl border p-5 shadow-xs">
@@ -96,110 +89,110 @@ function OperatingChannelCard({
                 <ChannelSignalLamp signal={signal} />
             </header>
 
-            {channel.isTest ? (
-                <p className="text-muted-foreground text-sm">
-                    {channel.status === 'connected'
-                        ? 'Conexão pronta para receber eventos do serviço de testes.'
-                        : 'Informe o endereço, a instância e a credencial do serviço.'}
-                </p>
-            ) : (
-                <ChannelReadinessRail milestones={milestones} />
+            {channel.lastError !== null && (
+                <p className="text-destructive text-sm">{channel.lastError}</p>
             )}
 
             <footer className="flex flex-wrap items-center justify-between gap-3 border-t pt-4">
-                <p className="text-muted-foreground text-sm">
-                    {channel.isTest
-                        ? 'Uso restrito ao desenvolvimento da plataforma.'
-                        : channel.qualityRating === null
-                          ? 'A Meta informa a qualidade do número após o primeiro teste.'
-                          : `Qualidade ${channel.qualityRating.toLowerCase()}`}
-                </p>
-                {canManage && channel.destination !== null ? (
-                    <Button
-                        variant={nextStep.primary ? 'default' : 'outline'}
-                        asChild
-                    >
+                <p className="text-muted-foreground text-sm">{footerText}</p>
+                {canManage && channel.destination !== null && (
+                    <Button variant="outline" asChild>
                         <Link href={channel.destination} prefetch>
-                            {nextStep.label}
-                            {nextStep.primary && <ArrowRight />}
+                            Editar
                         </Link>
                     </Button>
-                ) : (
-                    <p className="text-muted-foreground text-sm">
-                        Somente Owner e Admin alteram este Canal.
-                    </p>
                 )}
             </footer>
         </article>
     );
 }
 
-function UpcomingChannelCard({ channel }: { channel: Channel }) {
-    const Icon = channelIcons[channel.icon];
-
+function EmptyState({
+    canManage,
+    onAddChannel,
+}: {
+    canManage: boolean;
+    onAddChannel: () => void;
+}) {
     return (
-        <article className="flex flex-col gap-3 rounded-xl border border-dashed p-5">
-            <header className="flex items-start justify-between gap-3">
-                <div className="flex min-w-0 items-start gap-3">
-                    <span className="text-muted-foreground flex size-6 shrink-0 items-center justify-center">
-                        <Icon className="size-4" />
-                    </span>
-                    <h2 className="min-w-0 font-medium">{channel.label}</h2>
-                </div>
-                <Badge variant="secondary" className="shrink-0">
-                    Em breve
-                </Badge>
-            </header>
-            <p className="text-muted-foreground text-sm">
-                {channel.description}
-            </p>
-        </article>
+        <div className="flex flex-col items-center gap-4 rounded-xl border border-dashed p-12 text-center">
+            <span className="bg-muted flex size-12 items-center justify-center rounded-full">
+                <Radio className="text-muted-foreground size-5" />
+            </span>
+            <div className="grid gap-1">
+                <h2 className="font-semibold tracking-tight">
+                    Nenhum Canal configurado
+                </h2>
+                <p className="text-muted-foreground max-w-sm text-sm">
+                    Conecte um meio de atendimento para que seus Agentes comecem
+                    a responder por ele.
+                </p>
+            </div>
+            {canManage && (
+                <Button onClick={onAddChannel}>
+                    <Plus />
+                    Adicionar canal
+                </Button>
+            )}
+        </div>
     );
 }
 
-export default function Channels({ channels, permissions }: Props) {
-    const operating = channels.filter((channel) => channel.available);
-    const upcoming = channels.filter((channel) => !channel.available);
+export default function Channels({
+    channels,
+    channelTypes,
+    agents,
+    permissions,
+}: Props) {
+    const [dialogOpen, setDialogOpen] = useState(false);
+    const canManage = permissions.canManageChannels;
+    const canAddChannel = channelTypes.some(
+        (type) => type.available && !type.configured,
+    );
 
     return (
         <>
             <Head title="Canais" />
 
             <div className="flex h-full flex-1 flex-col gap-8 p-4 md:p-6">
-                <Heading
-                    title="Canais"
-                    description="Veja por onde sua Empresa atende e qual Agente responde em cada meio."
-                />
-
-                <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,2fr)_minmax(260px,1fr)]">
-                    <section className="grid gap-3">
-                        <GroupLabel>Em operação</GroupLabel>
-                        <div className="grid gap-4">
-                            {operating.map((channel) => (
-                                <OperatingChannelCard
-                                    key={channel.value}
-                                    channel={channel}
-                                    canManage={permissions.canManageChannels}
-                                />
-                            ))}
-                        </div>
-                    </section>
-
-                    {upcoming.length > 0 && (
-                        <section className="grid gap-3">
-                            <GroupLabel>Em breve</GroupLabel>
-                            <div className="grid gap-4">
-                                {upcoming.map((channel) => (
-                                    <UpcomingChannelCard
-                                        key={channel.value}
-                                        channel={channel}
-                                    />
-                                ))}
-                            </div>
-                        </section>
+                <div className="flex flex-wrap items-start justify-between gap-4">
+                    <Heading
+                        title="Canais"
+                        description="Veja por onde sua Empresa atende e qual Agente responde em cada meio."
+                    />
+                    {canManage && channels.length > 0 && canAddChannel && (
+                        <Button onClick={() => setDialogOpen(true)}>
+                            <Plus />
+                            Adicionar canal
+                        </Button>
                     )}
                 </div>
+
+                {channels.length === 0 ? (
+                    <EmptyState
+                        canManage={canManage}
+                        onAddChannel={() => setDialogOpen(true)}
+                    />
+                ) : (
+                    <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+                        {channels.map((channel) => (
+                            <ChannelCard
+                                key={channel.id}
+                                channel={channel}
+                                canManage={canManage}
+                            />
+                        ))}
+                    </div>
+                )}
             </div>
+
+            <ChannelCreateDialog
+                open={dialogOpen}
+                onOpenChange={setDialogOpen}
+                channelTypes={channelTypes}
+                agents={agents}
+                canManage={canManage}
+            />
         </>
     );
 }

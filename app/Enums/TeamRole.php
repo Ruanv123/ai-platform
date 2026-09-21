@@ -36,6 +36,7 @@ enum TeamRole: string
                 TeamPermission::ManageKnowledge,
                 TeamPermission::ManageAgents,
                 TeamPermission::ManageChannels,
+                TeamPermission::ManageFlows,
                 TeamPermission::CreateInvitation,
                 TeamPermission::CancelInvitation,
             ],

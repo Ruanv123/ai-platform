@@ -56,7 +56,7 @@ abstract class EvolutionGoMessageStrategy implements EvolutionGoStrategy
             'contact_id' => $contact->getKey(),
             'channel_id' => $channel->getKey(),
             'direction' => $this->direction($payload),
-            'event_type' => $this->eventType($payload),
+            'payload_type' => $this->eventType($payload),
             'provider_message_id' => $providerMessageId,
             'content' => $this->content($channel, $payload),
             'delivery_status' => $this->deliveryStatus(),

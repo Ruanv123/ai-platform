@@ -1,0 +1,8 @@
+{
+    "event": "CONNECTION",
+    "instance": "local-development",
+    "data": {
+        "state": "close",
+        "type": "LoggedOut"
+    }
+}

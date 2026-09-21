@@ -8,6 +8,7 @@ use App\Enums\ChannelType;
 use Database\Factories\ChannelFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Collection;
+use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -16,7 +17,7 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Support\Carbon;
 
 /**
- * @property int $id
+ * @property string $id
  * @property int $team_id
  * @property string|null $agent_id
  * @property ChannelType $type
@@ -27,6 +28,7 @@ use Illuminate\Support\Carbon;
  * @property-read Team $team
  * @property-read Agent|null $agent
  * @property-read Collection<int, Message> $messages
+ * @property-read Collection<int, Flow> $flows
  * @property-read WhatsAppPhoneNumber|null $whatsappPhoneNumber
  * @property-read WhatsAppTestConnection|null $whatsappTestConnection
  */
@@ -35,7 +37,7 @@ use Illuminate\Support\Carbon;
 class Channel extends Model
 {
     /** @use HasFactory<ChannelFactory> */
-    use BelongsToTeam, HasFactory;
+    use BelongsToTeam, HasFactory, HasUuids;
 
     /**
      * Get the Agent that responds in this channel.
@@ -55,6 +57,12 @@ class Channel extends Model
     public function messages(): HasMany
     {
         return $this->hasMany(Message::class);
+    }
+
+    /** @return HasMany<Flow, $this> */
+    public function flows(): HasMany
+    {
+        return $this->hasMany(Flow::class);
     }
 
     /**

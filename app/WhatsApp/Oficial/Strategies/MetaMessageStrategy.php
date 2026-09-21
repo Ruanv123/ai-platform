@@ -53,7 +53,7 @@ abstract class MetaMessageStrategy implements MetaStrategy
             'contact_id' => $contact->getKey(),
             'channel_id' => $channel->getKey(),
             'direction' => MessageDirection::Incoming,
-            'event_type' => $this->eventType($payload),
+            'payload_type' => $this->eventType($payload),
             'provider_message_id' => $providerMessageId,
             'content' => $this->content($channel, $payload),
         ]);

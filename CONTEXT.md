@@ -37,7 +37,7 @@ Uma orientação escrita pelo cliente que entra no prompt do Agente. Formam uma 
 _Avoid_: Regra, Prompt, Diretriz
 
 **Playground**:
-O chat de teste do Agente. Roda sobre o rascunho do formulário, não sobre a configuração salva, e nada é persistido.
+O chat de teste do atendimento. Roda sobre o rascunho — do formulário, no caso do Agente, e da Versão não publicada, no caso do Fluxo — e nada é enviado ao Contato. No Fluxo, mostra o Traço do turno ao lado da conversa.
 _Avoid_: Simulador, Preview, Sandbox
 
 **Agente inativo**:
@@ -84,7 +84,7 @@ O Tipo de canal que conecta um número de WhatsApp por um serviço não oficial,
 _Avoid_: Evolution, WhatsApp não oficial, WhatsApp alternativo
 
 **Integração**:
-Uma conexão com um CRM externo, para onde as oportunidades do atendimento são enviadas. É outra coisa que um Canal: Canal traz a conversa, Integração leva o resultado.
+Uma conexão configurada com um sistema externo — CRM, agenda, e-commerce — que os Nós de um Fluxo usam para consultar ou registrar coisas lá fora. É outra coisa que um Canal: Canal traz a conversa, Integração leva e busca o resultado. Guarda a credencial; o Fluxo guarda o que fazer com ela.
 _Avoid_: Conector, Canal, App
 
 ### Atendimento
@@ -100,3 +100,69 @@ _Avoid_: Interação, Evento, Ticket
 **Histórico**:
 A janela recente de Mensagens de um Contato num Canal: o que o Agente lê para responder. É uma leitura das Mensagens, não uma entidade própria.
 _Avoid_: Conversa, Thread, Sessão, Atendimento
+
+### Fluxos
+
+**Fluxo**:
+O atendimento desenhado como um grafo de Nós, pertencente à Empresa. Descreve o que acontece a partir de um Gatilho: o que é perguntado, o que é decidido, o que é chamado fora da plataforma e quando o Agente assume.
+_Avoid_: Workflow, Automação, Jornada, Funil, Bot
+
+**Fluxo de conversa**:
+Um Fluxo que contém algum Nó que espera o Contato responder, e por isso toma o turno da conversa. Um Canal tem no máximo um deles no Gatilho de mensagem, porque o Contato que responde não diz a quem está respondendo.
+_Avoid_: Fluxo principal, Fluxo síncrono
+
+**Fluxo de reação**:
+Um Fluxo que roda do começo ao fim sem esperar resposta. Não toma o turno, e por isso vários podem rodar em paralelo sobre a mesma mensagem. A diferença para o Fluxo de conversa é lida do grafo, não declarada.
+_Avoid_: Regra, Automação, Trigger, Fluxo secundário
+
+**Versão do fluxo**:
+O retrato imutável de um Fluxo no momento em que foi publicado. É o que uma Execução percorre: editar o Fluxo cria rascunho, publicar cria Versão nova, e quem está no meio termina na Versão em que começou.
+_Avoid_: Revisão, Snapshot, Release
+
+**Nó**:
+Cada passo de um Fluxo — mandar mensagem, capturar resposta, decidir, esperar, chamar uma API, entregar ao Agente, transferir para humano, emitir Evento.
+_Avoid_: Bloco, Card, Etapa, Passo
+
+**Gatilho**:
+O Nó que faz um Fluxo começar, e onde vive a escolha do Canal. Dois tipos: mensagem recebida e webhook.
+_Avoid_: Trigger, Evento de entrada, Início
+
+**Execução**:
+Um Contato percorrendo uma Versão do fluxo. Tem começo, fim e Traço, e guarda em que Nó está e as Variáveis que coletou. Não é uma Conversa: não guarda Mensagens, e um Contato pode ter tido muitas ao longo do tempo.
+_Avoid_: Conversa, Sessão, Instância, Run, Percurso
+
+**Variável**:
+Um valor que vive durante uma Execução e morre com ela. Diferente do Campo do Contato, que sobrevive.
+_Avoid_: Contexto, Parâmetro, Estado
+
+**Campo do Contato**:
+Um dado do Contato que a Empresa declarou e que persiste entre Execuções — convênio, cidade, data da última compra. É o que transforma o Contato de identificador em ficha.
+_Avoid_: Atributo, Propriedade, Custom field, Metadado
+
+**Tag**:
+Uma marca livre aplicada a um Contato, sem valor associado. Serve para separar quem é o quê.
+_Avoid_: Etiqueta, Rótulo, Label, Categoria
+
+**Sub-fluxo**:
+Um Fluxo chamado por outro, com parâmetros de entrada e valores de retorno declarados. Não enxerga as Variáveis de quem o chamou.
+_Avoid_: Fluxo filho, Componente, Bloco reutilizável
+
+**Evento**:
+Um acontecimento nomeado que um Nó emite durante uma Execução. Alimenta as métricas do Fluxo e pode sair da plataforma como webhook. O nome é declarado pela Empresa, não escrito à mão a cada uso.
+_Avoid_: Acontecimento, Sinal, Marco, Webhook
+
+**Traço**:
+O registro do que aconteceu numa Execução, nó a nó: por onde passou, quanto demorou, o que enviou e recebeu, quanto custou em IA e onde quebrou.
+_Avoid_: Log, Histórico, Auditoria, Trace
+
+**Modelo de fluxo**:
+Um Fluxo pronto de catálogo que a Empresa clona e adapta. Nunca é chamado de Template, que é outra coisa.
+_Avoid_: Template, Preset, Exemplo
+
+**Template**:
+A mensagem pré-aprovada pela Meta, única forma de escrever para um Contato fora da janela de 24 horas. Pertence à Conta do WhatsApp, porque é lá que a Meta a aprova. Nunca é o nome de um Fluxo pronto.
+_Avoid_: Modelo, HSM, Mensagem pronta
+
+**Transferência para humano**:
+O momento em que um Fluxo para de responder, marca o Contato como aguardando atendimento e avisa a Equipe. O Fluxo só volta a responder quando alguém devolve ou por inatividade.
+_Avoid_: Handoff, Escalação, Takeover

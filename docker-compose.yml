@@ -21,6 +21,32 @@ services:
             timeout: 5s
             retries: 10
 
+    evolution-go:
+        image: evoapicloud/evolution-go:0.7.2
+        environment:
+            SERVER_PORT: 8080
+            CLIENT_NAME: evolution
+            GLOBAL_API_KEY: ${EVOLUTION_API_KEY:-evolution-local-key}
+            POSTGRES_AUTH_DB: >-
+                postgresql://${DB_USERNAME:-laravel}:${DB_PASSWORD:-secret}@postgres:5432/${DB_DATABASE:-laravel}?sslmode=disable&options=-csearch_path%3Devolution
+            POSTGRES_USERS_DB: >-
+                postgresql://${DB_USERNAME:-laravel}:${DB_PASSWORD:-secret}@postgres:5432/${DB_DATABASE:-laravel}?sslmode=disable&options=-csearch_path%3Devolution
+            DATABASE_SAVE_MESSAGES: ${EVOLUTION_DATABASE_SAVE_MESSAGES:-false}
+            WADEBUG: ${EVOLUTION_WADEBUG:-INFO}
+            LOGTYPE: console
+            WEBHOOK_FILES: 'true'
+            CONNECT_ON_STARTUP: 'true'
+            OS_NAME: Evolution GO
+        ports:
+            - '${EVOLUTION_PORT:-8080}:8080'
+        volumes:
+            - evolution-go-data:/app/dbdata
+            - evolution-go-logs:/app/logs
+        depends_on:
+            postgres:
+                condition: service_healthy
+        restart: unless-stopped
+
     redis:
         image: redis:7-alpine
         ports:
@@ -41,4 +67,6 @@ services:
 
 volumes:
     postgres-data:
+    evolution-go-data:
+    evolution-go-logs:
     redis-data:

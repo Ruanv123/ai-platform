@@ -14,6 +14,13 @@ interface WhatsAppOutputAdapter
     public function sendText(Channel $channel, Contact $contact, string $content): Message;
 
     /**
+     * Send a provider-approved template and register the outgoing Message.
+     *
+     * @param  list<string>  $parameters
+     */
+    public function sendTemplate(Channel $channel, Contact $contact, string $template, array $parameters = []): Message;
+
+    /**
      * Tell the provider that an incoming Message was seen by the Agent.
      */
     public function markIncomingMessageAsRead(Channel $channel, Message $message): void;

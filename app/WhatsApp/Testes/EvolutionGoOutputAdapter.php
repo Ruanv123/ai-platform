@@ -33,6 +33,26 @@ final class EvolutionGoOutputAdapter extends AbstractWhatsAppOutputAdapter
         return $this->recordOutgoingText($channel, $contact, $content, $providerMessageId);
     }
 
+    public function sendTemplate(Channel $channel, Contact $contact, string $template, array $parameters = []): Message
+    {
+        $this->assertContactBelongsToChannel($channel, $contact);
+        $connection = $this->connection($channel);
+        $response = $this->request($connection)->post(
+            $this->endpoint($connection, 'message/sendTemplate'),
+            [
+                'number' => $contact->phone,
+                'name' => $template,
+                'parameters' => $parameters,
+            ],
+        )->throw();
+        $providerMessageId = $this->providerMessageId($response->json());
+        if ($providerMessageId === null) {
+            throw new RuntimeException('O WhatsApp de testes não retornou o id do Template enviado.');
+        }
+
+        return $this->recordOutgoingTemplate($channel, $contact, $template, $parameters, $providerMessageId);
+    }
+
     public function markIncomingMessageAsRead(Channel $channel, Message $message): void
     {
         $this->assertIncomingMessageBelongsToChannel($channel, $message);

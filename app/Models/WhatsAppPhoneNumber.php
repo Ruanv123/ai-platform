@@ -11,7 +11,7 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
 
 /**
  * @property int $id
- * @property int $channel_id
+ * @property string $channel_id
  * @property string $phone_number_id
  * @property string|null $display_phone_number
  * @property string|null $verified_name

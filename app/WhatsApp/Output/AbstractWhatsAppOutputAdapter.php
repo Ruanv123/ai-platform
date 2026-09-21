@@ -22,9 +22,29 @@ abstract class AbstractWhatsAppOutputAdapter implements WhatsAppOutputAdapter
             'contact_id' => $contact->getKey(),
             'channel_id' => $channel->getKey(),
             'direction' => MessageDirection::Outgoing,
-            'event_type' => 'text',
+            'payload_type' => 'text',
             'provider_message_id' => $providerMessageId,
             'content' => $content,
+            'delivery_status' => MessageDeliveryStatus::Sent,
+        ]);
+    }
+
+    /** @param list<string> $parameters */
+    protected function recordOutgoingTemplate(
+        Channel $channel,
+        Contact $contact,
+        string $template,
+        array $parameters,
+        string $providerMessageId,
+    ): Message {
+        return Message::create([
+            'team_id' => $channel->team_id,
+            'contact_id' => $contact->getKey(),
+            'channel_id' => $channel->getKey(),
+            'direction' => MessageDirection::Outgoing,
+            'payload_type' => 'template',
+            'provider_message_id' => $providerMessageId,
+            'content' => json_encode(['template' => $template, 'parameters' => $parameters], JSON_THROW_ON_ERROR),
             'delivery_status' => MessageDeliveryStatus::Sent,
         ]);
     }
