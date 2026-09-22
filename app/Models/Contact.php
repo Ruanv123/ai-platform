@@ -29,6 +29,7 @@ use Illuminate\Support\Carbon;
  * @property-read Collection<int, ContactFieldValue> $fieldValues
  * @property-read Collection<int, Tag> $tags
  * @property-read Collection<int, FlowExecution> $flowExecutions
+ * @property-read Collection<int, ContactConsent> $consents
  */
 #[Fillable(['team_id', 'phone', 'name', 'human_waiting', 'human_waiting_at'])]
 class Contact extends Model
@@ -70,6 +71,12 @@ class Contact extends Model
     public function flowExecutions(): HasMany
     {
         return $this->hasMany(FlowExecution::class);
+    }
+
+    /** @return HasMany<ContactConsent, $this> */
+    public function consents(): HasMany
+    {
+        return $this->hasMany(ContactConsent::class);
     }
 
     protected function casts(): array

@@ -120,6 +120,53 @@ it('renders the failed node and all unreached nodes on the execution detail scre
     );
 });
 
+it('lists sibling executions from the same flow filtered by status', function () {
+    $user = User::factory()->withTeam()->create();
+    $team = $user->company();
+    $channel = Channel::factory()->for($team)->create(['type' => ChannelType::WhatsAppTest]);
+    $failingDsl = traceFlowGraph([
+        ['id' => 'broken-message', 'type' => 'message', 'config' => ['exception_ladder' => ['finish']]],
+    ]);
+    $flow = Flow::factory()->for($team)->published()->create([
+        'channel_id' => $channel->getKey(),
+        'trigger_type' => FlowTriggerType::Webhook,
+        'trigger_event' => 'contact.created',
+        'allow_unknown_contact' => true,
+        'draft_dsl' => $failingDsl,
+    ]);
+    FlowVersion::factory()->for($flow)->create([
+        'team_id' => $team->getKey(),
+        'dsl' => $failingDsl,
+        'category' => FlowCategory::Reaction,
+    ]);
+
+    $this->postJson(route('webhooks.flows', [$channel->getKey(), 'contact.created']), [
+        'source' => 'first',
+    ])->assertOk();
+    $this->postJson(route('webhooks.flows', [$channel->getKey(), 'contact.created']), [
+        'source' => 'second',
+    ])->assertOk();
+    $executions = FlowExecution::withoutGlobalScopes()->get();
+    $execution = $executions->first();
+
+    $response = $this->actingAs($user)->get(route('flows.executions.show', [$flow, $execution]));
+
+    $response->assertOk()->assertInertia(fn (Assert $page) => $page
+        ->where('siblingStatus', 'failed')
+        ->has('siblingExecutions.data', 2)
+        ->where('siblingExecutions.counts.failed', 2)
+        ->where('siblingExecutions.counts.all', 2),
+    );
+
+    $this->actingAs($user)
+        ->get(route('flows.executions.show', [$flow, $execution, 'execution_status' => 'all']))
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('siblingStatus', 'all')
+            ->has('siblingExecutions.data', 2),
+        );
+});
+
 it('highlights the node where an execution is waiting', function () {
     $user = User::factory()->withTeam()->create();
     $team = $user->company();

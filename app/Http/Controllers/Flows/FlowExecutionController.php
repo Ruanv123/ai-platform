@@ -3,10 +3,12 @@
 namespace App\Http\Controllers\Flows;
 
 use App\Enums\FlowExecutionStatus;
+use App\Flows\FlowExecutionLister;
 use App\Http\Controllers\Controller;
 use App\Models\Flow;
 use App\Models\FlowExecution;
 use App\Models\FlowExecutionStep;
+use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Gate;
 use Inertia\Inertia;
@@ -14,12 +16,18 @@ use Inertia\Response;
 
 class FlowExecutionController extends Controller
 {
-    public function show(Flow $flow, FlowExecution $execution): Response
+    public function show(Request $request, Flow $flow, FlowExecution $execution, FlowExecutionLister $lister): Response
     {
         Gate::authorize('view', $flow);
         $canViewSensitiveTrace = Gate::allows('viewSensitiveTrace', $flow);
         $execution->load(['flowVersion.flow', 'contact', 'channel', 'steps']);
         abort_unless($execution->flowVersion->flow_id === $flow->getKey(), 404);
+
+        $siblingFilters = $request->validate([
+            'execution_status' => ['nullable', 'in:failed,stuck,all'],
+        ]);
+        $siblingStatus = $siblingFilters['execution_status'] ?? 'failed';
+        $siblingExecutions = $lister->list($flow, ['execution_status' => $siblingStatus, 'per_page' => 30]);
 
         $nodes = $this->nodes($execution->flowVersion->dsl);
         $nodesById = $nodes->keyBy('id');
@@ -51,6 +59,8 @@ class FlowExecutionController extends Controller
                 ...($canViewSensitiveTrace ? ['aiCostBrl' => (float) $execution->ai_cost_brl] : []),
             ],
             'canViewSensitiveTrace' => $canViewSensitiveTrace,
+            'siblingExecutions' => $siblingExecutions,
+            'siblingStatus' => $siblingStatus,
             'steps' => $execution->steps
                 ->map(function (FlowExecutionStep $step) use ($nodesById, $highlightedStepId, $canViewSensitiveTrace): array {
                     $node = $nodesById->get($step->node_id, []);

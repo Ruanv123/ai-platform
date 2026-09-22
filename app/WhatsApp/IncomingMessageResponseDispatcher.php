@@ -15,6 +15,7 @@ final class IncomingMessageResponseDispatcher
     public function __construct(
         private readonly WhatsAppOutputAdapterFactory $outputAdapterFactory,
         private readonly FlowEngine $flowEngine,
+        private readonly OptOutInterceptor $optOutInterceptor,
     ) {}
 
     /**
@@ -24,6 +25,10 @@ final class IncomingMessageResponseDispatcher
     {
         $channel->loadMissing('agent');
         $isFlowChannel = $this->flowEngine->hasManagedMessageFlows($channel);
+
+        if ($this->optOutInterceptor->intercept($channel, $message)) {
+            return;
+        }
 
         if (! $isFlowChannel && ($channel->agent === null || ! $channel->agent->is_active)) {
             return;

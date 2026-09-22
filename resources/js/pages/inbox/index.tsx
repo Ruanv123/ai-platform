@@ -2,11 +2,9 @@ import { Head, Link, router, useForm, usePage } from '@inertiajs/react';
 import {
     ArrowLeft,
     Bot,
-    Check,
     ChevronLeft,
     ChevronRight,
     Clock3,
-    Inbox,
     PanelRight,
     PanelRightClose,
     Search,
@@ -14,12 +12,12 @@ import {
     UserRound,
     Users,
 } from 'lucide-react';
-import { type FormEvent, useState } from 'react';
-import Heading from '@/components/heading';
+import { type FormEvent, type ReactNode, useState } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useInboxRealtime } from '@/hooks/use-inbox-realtime';
+import { cn } from '@/lib/utils';
 import {
     index as inboxIndex,
     returnMethod,
@@ -67,6 +65,17 @@ type SelectedConversation = {
         phone: string;
         fields: { name: string; value: string | null; sensitive: boolean }[];
         tags: { id: string; name: string }[];
+        consents: Record<
+            string,
+            {
+                purpose: string;
+                label: string;
+                granted: boolean;
+                action: string | null;
+                source: string | null;
+                at: string | null;
+            }
+        >;
     };
     channel: { id: string; label: string };
     assignee: { id: number; name: string } | null;
@@ -152,96 +161,26 @@ export default function InboxPage({
     return (
         <>
             <Head title="Atendimento" />
-            <div className="flex min-h-full flex-1 flex-col gap-5 p-4 md:p-6">
-                <header className="flex flex-wrap items-start justify-between gap-4">
-                    <Heading
-                        title="Atendimento"
-                        description="Conversas que um Fluxo transferiu para a Equipe."
-                    />
-                    <div className="text-muted-foreground flex items-center gap-2 text-sm">
-                        <Inbox className="size-4" />
-                        <span>
-                            {counts.awaiting} aguardando sem responsável
-                        </span>
-                    </div>
-                </header>
+            <div className="flex h-full min-h-0 flex-1 flex-col xl:flex-row">
+                <ConversationsPanel
+                    conversations={conversations.data}
+                    counts={counts}
+                    filters={filters}
+                    members={members}
+                    channels={channels}
+                    search={search}
+                    onSearchChange={setSearch}
+                    onSubmitSearch={submitSearch}
+                    onUpdateFilters={updateFilters}
+                    selectedId={selected?.contact.id ?? null}
+                    currentUserId={currentUserId}
+                    className={selected !== null ? 'hidden xl:flex' : undefined}
+                />
 
-                <section className="border-border/70 bg-card grid gap-3 rounded-xl border p-3 lg:grid-cols-[auto_1fr_auto_auto] lg:items-center">
-                    <div className="flex flex-wrap gap-1">
-                        <QueueButton
-                            active={filters.queue === 'awaiting'}
-                            count={counts.awaiting}
-                            onClick={() => updateFilters({ queue: 'awaiting' })}
-                        >
-                            Aguardando
-                        </QueueButton>
-                        <QueueButton
-                            active={filters.queue === 'mine'}
-                            count={counts.mine}
-                            onClick={() => updateFilters({ queue: 'mine' })}
-                        >
-                            Minhas
-                        </QueueButton>
-                        <QueueButton
-                            active={filters.queue === 'all'}
-                            count={counts.all}
-                            onClick={() => updateFilters({ queue: 'all' })}
-                        >
-                            Todas
-                        </QueueButton>
-                    </div>
-                    <form onSubmit={submitSearch} className="relative min-w-0">
-                        <Search className="text-muted-foreground absolute top-1/2 left-3 size-4 -translate-y-1/2" />
-                        <Input
-                            value={search}
-                            onChange={(event) => setSearch(event.target.value)}
-                            placeholder="Buscar por nome ou telefone"
-                            className="pl-9"
-                            aria-label="Buscar por nome ou telefone"
-                        />
-                    </form>
-                    <select
-                        value={filters.assignedTo?.toString() ?? ''}
-                        onChange={(event) =>
-                            updateFilters({
-                                assigned_to: event.target.value || undefined,
-                            })
-                        }
-                        className="border-input bg-background h-9 rounded-md border px-3 text-sm"
-                        aria-label="Atribuída a"
-                    >
-                        <option value="">Atribuída a</option>
-                        <option value="unassigned">Não atribuídas</option>
-                        {members.map((member) => (
-                            <option key={member.id} value={member.id}>
-                                {member.name}
-                            </option>
-                        ))}
-                    </select>
-                    <select
-                        value={filters.channel ?? ''}
-                        onChange={(event) =>
-                            updateFilters({
-                                channel: event.target.value || undefined,
-                            })
-                        }
-                        className="border-input bg-background h-9 rounded-md border px-3 text-sm"
-                        aria-label="Canal"
-                    >
-                        <option value="">Todos os Canais</option>
-                        {channels.map((channel) => (
-                            <option key={channel.id} value={channel.id}>
-                                {channel.label}
-                            </option>
-                        ))}
-                    </select>
-                </section>
-
-                <main className="grid min-h-0 flex-1 gap-4 xl:grid-cols-[minmax(19rem,25rem)_minmax(0,1fr)]">
-                    <ConversationList conversations={conversations.data} />
-                    {selected === null ? (
-                        <EmptySelection />
-                    ) : (
+                {selected === null ? (
+                    <EmptySelection />
+                ) : (
+                    <>
                         <ConversationThread
                             key={selected.contact.id}
                             selected={selected}
@@ -253,14 +192,208 @@ export default function InboxPage({
                             messageType={messageType}
                             onMessageTypeChange={setMessageType}
                         />
-                    )}
-                </main>
+                        {showDetails && <ContactPanel selected={selected} />}
+                    </>
+                )}
             </div>
         </>
     );
 }
 
-function QueueButton({
+function ConversationsPanel({
+    conversations,
+    counts,
+    filters,
+    members,
+    channels,
+    search,
+    onSearchChange,
+    onSubmitSearch,
+    onUpdateFilters,
+    selectedId,
+    currentUserId,
+    className,
+}: {
+    conversations: Conversation[];
+    counts: { awaiting: number; mine: number; all: number };
+    filters: Props['filters'];
+    members: Props['members'];
+    channels: Props['channels'];
+    search: string;
+    onSearchChange: (value: string) => void;
+    onSubmitSearch: (event: FormEvent<HTMLFormElement>) => void;
+    onUpdateFilters: (next: Record<string, string | undefined>) => void;
+    selectedId: number | null;
+    currentUserId: number;
+    className?: string;
+}) {
+    return (
+        <section
+            className={cn(
+                'border-border/70 flex w-full shrink-0 flex-col border-b xl:w-[330px] xl:border-r xl:border-b-0',
+                className,
+            )}
+        >
+            <div className="px-4 pt-4 pb-3">
+                <h1 className="mb-3 text-lg font-semibold">Atendimento</h1>
+
+                <form onSubmit={onSubmitSearch} className="relative">
+                    <Search className="text-muted-foreground absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2" />
+                    <Input
+                        value={search}
+                        onChange={(event) => onSearchChange(event.target.value)}
+                        placeholder="Buscar por nome ou telefone…"
+                        className="bg-muted/40 h-8 pl-8 text-xs"
+                        aria-label="Buscar por nome ou telefone"
+                    />
+                </form>
+
+                <div className="mt-2.5 flex gap-1">
+                    <QueuePill
+                        active={filters.queue === 'awaiting'}
+                        count={counts.awaiting}
+                        onClick={() => onUpdateFilters({ queue: 'awaiting' })}
+                    >
+                        Aguardando
+                    </QueuePill>
+                    <QueuePill
+                        active={filters.queue === 'mine'}
+                        count={counts.mine}
+                        onClick={() => onUpdateFilters({ queue: 'mine' })}
+                    >
+                        Minhas
+                    </QueuePill>
+                    <QueuePill
+                        active={filters.queue === 'all'}
+                        count={counts.all}
+                        onClick={() => onUpdateFilters({ queue: 'all' })}
+                    >
+                        Todas
+                    </QueuePill>
+                </div>
+
+                <div className="mt-2 flex gap-1.5">
+                    <select
+                        value={filters.assignedTo?.toString() ?? ''}
+                        onChange={(event) =>
+                            onUpdateFilters({
+                                assigned_to: event.target.value || undefined,
+                            })
+                        }
+                        className="border-border/70 bg-background h-[30px] min-w-0 flex-1 rounded-md border px-2 text-[11.5px]"
+                        aria-label="Atribuída a"
+                    >
+                        <option value="">Atribuída a: qualquer um</option>
+                        <option value="unassigned">Não atribuídas</option>
+                        {members.map((member) => (
+                            <option key={member.id} value={member.id}>
+                                {member.name}
+                            </option>
+                        ))}
+                    </select>
+                    <select
+                        value={filters.channel ?? ''}
+                        onChange={(event) =>
+                            onUpdateFilters({
+                                channel: event.target.value || undefined,
+                            })
+                        }
+                        className="border-border/70 bg-background h-[30px] w-28 shrink-0 rounded-md border px-2 text-[11.5px]"
+                        aria-label="Canal"
+                    >
+                        <option value="">Todos os canais</option>
+                        {channels.map((channel) => (
+                            <option key={channel.id} value={channel.id}>
+                                {channel.label}
+                            </option>
+                        ))}
+                    </select>
+                </div>
+            </div>
+
+            <div className="border-border/70 min-h-0 flex-1 overflow-y-auto border-t">
+                {conversations.length === 0 ? (
+                    <div className="flex flex-col items-center gap-2 px-6 py-12 text-center">
+                        <span className="bg-muted flex size-9 items-center justify-center rounded-full">
+                            <Users className="text-muted-foreground size-4" />
+                        </span>
+                        <p className="text-muted-foreground text-xs">
+                            Nenhuma conversa corresponde a esta fila.
+                        </p>
+                    </div>
+                ) : (
+                    conversations.map((conversation) => {
+                        const isActive = conversation.id === selectedId;
+
+                        return (
+                            <Link
+                                key={conversation.id}
+                                href={inboxShow(conversation.id)}
+                                className={cn(
+                                    'border-border/70 block border-b px-4 py-3 transition-colors',
+                                    isActive
+                                        ? 'bg-muted border-l-foreground border-l-2 pl-[14px]'
+                                        : 'hover:bg-muted/40',
+                                )}
+                            >
+                                <div className="flex items-baseline justify-between gap-2">
+                                    <span className="truncate text-[13px] font-semibold">
+                                        {conversation.name ??
+                                            conversation.phone}
+                                    </span>
+                                    <span className="text-muted-foreground shrink-0 text-[10.5px]">
+                                        {formatWaiting(
+                                            conversation.waitingSeconds,
+                                        )}
+                                    </span>
+                                </div>
+                                <p className="text-muted-foreground mt-1 truncate text-[11.5px]">
+                                    {conversation.excerpt}
+                                </p>
+                                <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+                                    <span
+                                        className={cn(
+                                            'rounded-md px-1.5 py-0.5 text-[10px] font-semibold',
+                                            reasonBadgeClass(
+                                                conversation.reason.code,
+                                            ),
+                                        )}
+                                    >
+                                        {conversation.reason.label}
+                                    </span>
+                                    {conversation.assignee === null ? (
+                                        <span className="border-border text-muted-foreground rounded-md border px-1.5 py-0.5 text-[10px] font-semibold">
+                                            não atribuída
+                                        </span>
+                                    ) : (
+                                        <span className="bg-muted inline-flex items-center gap-1 rounded-full py-0.5 pr-2 pl-0.5 text-[10px] font-semibold">
+                                            <span className="bg-border flex size-3.5 items-center justify-center rounded-full text-[8px]">
+                                                {initials(
+                                                    conversation.assignee.name,
+                                                )}
+                                            </span>
+                                            {conversation.assignee.id ===
+                                            currentUserId
+                                                ? 'você assumiu'
+                                                : `${conversation.assignee.name} assumiu`}
+                                        </span>
+                                    )}
+                                    {conversation.channel !== null && (
+                                        <span className="text-muted-foreground ml-auto text-[10.5px]">
+                                            {conversation.channel.label}
+                                        </span>
+                                    )}
+                                </div>
+                            </Link>
+                        );
+                    })
+                )}
+            </div>
+        </section>
+    );
+}
+
+function QueuePill({
     active,
     count,
     children,
@@ -275,94 +408,21 @@ function QueueButton({
         <button
             type="button"
             onClick={onClick}
-            className={`rounded-md px-3 py-2 text-sm font-medium transition-colors ${
+            className={cn(
+                'h-[29px] flex-1 rounded-md text-[11.5px] font-semibold transition-colors',
                 active
                     ? 'bg-primary text-primary-foreground'
-                    : 'text-muted-foreground hover:bg-muted hover:text-foreground'
-            }`}
+                    : 'bg-muted text-muted-foreground hover:text-foreground',
+            )}
         >
-            {children} <span className="tabular-nums">{count}</span>
+            {children} {count}
         </button>
-    );
-}
-
-function ConversationList({
-    conversations,
-}: {
-    conversations: Conversation[];
-}) {
-    if (conversations.length === 0) {
-        return (
-            <section className="border-border/70 bg-card flex min-h-80 flex-col items-center justify-center gap-3 rounded-xl border p-8 text-center">
-                <span className="bg-muted flex size-11 items-center justify-center rounded-full">
-                    <Check className="text-muted-foreground size-5" />
-                </span>
-                <div>
-                    <h2 className="font-semibold">Tudo em dia</h2>
-                    <p className="text-muted-foreground mt-1 text-sm">
-                        Nenhuma conversa corresponde a esta fila.
-                    </p>
-                </div>
-            </section>
-        );
-    }
-
-    return (
-        <section className="border-border/70 bg-card min-h-0 overflow-hidden rounded-xl border">
-            <div className="border-border/70 text-muted-foreground border-b px-4 py-3 text-xs font-medium tracking-[0.12em] uppercase">
-                Conversas transferidas
-            </div>
-            <div className="divide-border/70 divide-y">
-                {conversations.map((conversation) => (
-                    <Link
-                        key={conversation.id}
-                        href={inboxShow(conversation.id)}
-                        className="hover:bg-muted/40 focus-visible:bg-muted/50 block px-4 py-4 transition-colors outline-none"
-                    >
-                        <div className="flex items-start justify-between gap-3">
-                            <div className="min-w-0">
-                                <p className="truncate font-medium">
-                                    {conversation.name ?? conversation.phone}
-                                </p>
-                                {conversation.name !== null && (
-                                    <p className="text-muted-foreground mt-0.5 truncate text-xs">
-                                        {conversation.phone}
-                                    </p>
-                                )}
-                            </div>
-                            <span className="text-muted-foreground shrink-0 text-xs tabular-nums">
-                                {formatWaiting(conversation.waitingSeconds)}
-                            </span>
-                        </div>
-                        <p className="text-muted-foreground mt-2 truncate text-sm">
-                            {conversation.excerpt}
-                        </p>
-                        <div className="mt-3 flex flex-wrap items-center gap-2">
-                            <Badge variant="outline" className="text-[11px]">
-                                {conversation.reason.label}
-                            </Badge>
-                            {conversation.assignee !== null && (
-                                <span className="text-muted-foreground flex items-center gap-1 text-xs">
-                                    <UserRound className="size-3" />
-                                    {conversation.assignee.name}
-                                </span>
-                            )}
-                            {conversation.channel !== null && (
-                                <span className="text-muted-foreground ml-auto text-xs">
-                                    {conversation.channel.label}
-                                </span>
-                            )}
-                        </div>
-                    </Link>
-                ))}
-            </div>
-        </section>
     );
 }
 
 function EmptySelection() {
     return (
-        <section className="border-border/70 bg-card flex min-h-80 flex-col items-center justify-center gap-3 rounded-xl border p-8 text-center">
+        <section className="flex flex-1 flex-col items-center justify-center gap-3 p-8 text-center">
             <span className="bg-muted flex size-12 items-center justify-center rounded-full">
                 <Users className="text-muted-foreground size-5" />
             </span>
@@ -427,199 +487,211 @@ function ConversationThread({
     };
 
     return (
-        <section className="border-border/70 bg-card grid min-h-0 min-w-0 overflow-hidden rounded-xl border xl:grid-cols-[minmax(0,1fr)_minmax(16rem,20rem)]">
-            <div className="flex min-h-0 min-w-0 flex-col">
-                <header className="border-border/70 flex items-center justify-between gap-3 border-b px-4 py-3">
-                    <div className="flex min-w-0 items-center gap-3">
-                        <Button
-                            variant="ghost"
-                            size="icon"
-                            asChild
-                            className="xl:hidden"
-                        >
-                            <Link
-                                href={inboxIndex()}
-                                aria-label="Voltar para a lista"
-                            >
-                                <ArrowLeft />
-                            </Link>
-                        </Button>
-                        <div className="bg-muted flex size-9 shrink-0 items-center justify-center rounded-full">
-                            <UserRound className="text-muted-foreground size-4" />
-                        </div>
-                        <div className="min-w-0">
-                            <h2 className="truncate font-semibold">
-                                {selected.contact.name ??
-                                    selected.contact.phone}
-                            </h2>
-                            <p className="text-muted-foreground truncate text-xs">
-                                {selected.contact.name !== null
-                                    ? `${selected.contact.phone} · ${selected.channel.label}`
-                                    : selected.channel.label}
-                            </p>
-                        </div>
+        <section className="flex min-h-0 min-w-0 flex-1 flex-col">
+            <header className="border-border/70 flex h-[60px] shrink-0 items-center gap-3 border-b px-5">
+                <Button
+                    variant="ghost"
+                    size="icon"
+                    asChild
+                    className="-ml-1 xl:hidden"
+                >
+                    <Link href={inboxIndex()} aria-label="Voltar para a lista">
+                        <ArrowLeft />
+                    </Link>
+                </Button>
+                <div className="bg-muted flex size-[34px] shrink-0 items-center justify-center rounded-full text-xs font-semibold">
+                    {initials(selected.contact.name)}
+                </div>
+                <div className="min-w-0">
+                    <div className="truncate text-sm font-semibold">
+                        {selected.contact.name ?? selected.contact.phone}
                     </div>
-                    <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={onToggleDetails}
-                        aria-label={
-                            showDetails ? 'Fechar ficha' : 'Abrir ficha'
-                        }
-                    >
-                        {showDetails ? <PanelRightClose /> : <PanelRight />}
+                    <div className="text-muted-foreground truncate text-[11.5px]">
+                        {selected.contact.name !== null
+                            ? `${selected.contact.phone} · ${selected.channel.label}`
+                            : selected.channel.label}
+                    </div>
+                </div>
+                <div className="flex-1" />
+                <span className="text-muted-foreground bg-muted hidden items-center gap-1.5 rounded-md px-2.5 py-1 text-[11.5px] font-medium sm:flex">
+                    <Bot className="size-3.5" />
+                    Bot pausado
+                </span>
+                {selected.assignee === null ? (
+                    <Button size="sm" onClick={takeConversation}>
+                        Assumir conversa
                     </Button>
-                </header>
+                ) : (
+                    <span className="text-muted-foreground hidden items-center gap-1.5 text-xs md:flex">
+                        <UserRound className="size-3.5" />
+                        {assignedToMe
+                            ? 'Você assumiu'
+                            : `${selected.assignee.name} assumiu`}
+                    </span>
+                )}
+                <button
+                    type="button"
+                    onClick={onToggleDetails}
+                    aria-label={
+                        showDetails
+                            ? 'Fechar o painel do contato'
+                            : 'Abrir o painel do contato'
+                    }
+                    aria-pressed={showDetails}
+                    className={cn(
+                        'border-border/70 flex size-[33px] shrink-0 items-center justify-center rounded-md border',
+                        showDetails ? 'bg-muted' : 'bg-background',
+                    )}
+                >
+                    {showDetails ? (
+                        <PanelRightClose className="size-4" />
+                    ) : (
+                        <PanelRight className="size-4" />
+                    )}
+                </button>
+            </header>
 
-                <div className="border-border/70 bg-muted/20 flex flex-wrap items-center justify-between gap-3 border-b px-4 py-3 text-sm">
-                    <div className="min-w-0">
-                        <p className="text-muted-foreground text-xs font-medium tracking-[0.1em] uppercase">
-                            Motivo da transferência
-                        </p>
-                        <p className="mt-1 font-medium">
-                            {selected.reason.label}
-                        </p>
+            <div className="bg-muted/20 min-h-0 flex-1 space-y-3 overflow-y-auto p-5">
+                <div className="flex justify-center">
+                    <span className="border-border/70 bg-background text-muted-foreground flex items-center gap-1.5 rounded-full border px-3 py-1 text-[11px] font-medium">
+                        <Bot className="text-signal-attention size-3.5" />
+                        O Fluxo{' '}
+                        <strong className="text-foreground font-semibold">
+                            {selected.execution.flowName}
+                        </strong>{' '}
+                        transferiu esta conversa para atendimento humano
+                    </span>
+                </div>
+
+                {selected.messages.data.map((message) => (
+                    <MessageBubble key={message.id} message={message} />
+                ))}
+
+                <HistoryPanel history={selected.history} />
+            </div>
+
+            <div className="border-border/70 bg-background shrink-0 border-t p-4">
+                {!selected.canWrite && (
+                    <div className="border-signal-attention/40 bg-signal-attention/10 text-foreground mb-3 rounded-lg border px-3 py-2 text-sm">
+                        {selected.assignee === null
+                            ? 'Assuma a conversa antes de escrever.'
+                            : `${selected.assignee.name} está atendendo esta conversa. Você precisa assumir antes de escrever.`}
                     </div>
-                    <div className="flex flex-wrap items-center gap-2">
-                        {selected.assignee === null ? (
-                            <Button size="sm" onClick={takeConversation}>
-                                <UserRound />
-                                Assumir
-                            </Button>
+                )}
+                <form onSubmit={sendMessage} className="grid gap-2">
+                    <div className="flex gap-1">
+                        <button
+                            type="button"
+                            onClick={() => onMessageTypeChange('text')}
+                            className={cn(
+                                'rounded px-2 py-1 text-xs font-medium',
+                                messageType === 'text'
+                                    ? 'bg-muted text-foreground'
+                                    : 'text-muted-foreground',
+                            )}
+                        >
+                            Resposta livre
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => onMessageTypeChange('template')}
+                            className={cn(
+                                'rounded px-2 py-1 text-xs font-medium',
+                                messageType === 'template'
+                                    ? 'bg-muted text-foreground'
+                                    : 'text-muted-foreground',
+                            )}
+                        >
+                            Template
+                        </button>
+                    </div>
+                    {messageType === 'template' ? (
+                        <>
+                            <Input
+                                value={form.data.template}
+                                onChange={(event) =>
+                                    form.setData('template', event.target.value)
+                                }
+                                placeholder="Nome do Template aprovado"
+                                disabled={!assignedToMe || form.processing}
+                            />
+                            <textarea
+                                value={form.data.parameters}
+                                onChange={(event) =>
+                                    form.setData(
+                                        'parameters',
+                                        event.target.value,
+                                    )
+                                }
+                                placeholder="Um parâmetro por linha (opcional)"
+                                className="border-border/70 placeholder:text-muted-foreground min-h-[60px] w-full resize-y rounded-lg border bg-transparent px-3 py-2.5 text-sm outline-none focus-visible:ring-2"
+                                disabled={!assignedToMe || form.processing}
+                            />
+                        </>
+                    ) : (
+                        <textarea
+                            value={form.data.content}
+                            onChange={(event) =>
+                                form.setData('content', event.target.value)
+                            }
+                            placeholder={
+                                selected.canWrite
+                                    ? 'Escreva uma resposta…'
+                                    : 'Assuma a conversa para responder…'
+                            }
+                            className="border-border/70 placeholder:text-muted-foreground min-h-[60px] w-full resize-y rounded-lg border bg-transparent px-3 py-2.5 text-sm outline-none focus-visible:ring-2 disabled:cursor-not-allowed disabled:opacity-50"
+                            disabled={
+                                !selected.canWrite ||
+                                !selected.window.open ||
+                                form.processing
+                            }
+                        />
+                    )}
+                    {form.errors.content && (
+                        <p className="text-destructive text-xs">
+                            {form.errors.content}
+                        </p>
+                    )}
+                    <div className="flex flex-wrap items-center gap-3">
+                        {selected.window.open ? (
+                            <span className="text-muted-foreground flex items-center gap-1.5 text-[11px]">
+                                <Clock3 className="text-signal-live size-3.5" />
+                                Janela de 24 h aberta ·{' '}
+                                {formatRemaining(
+                                    selected.window.remainingSeconds,
+                                )}
+                            </span>
                         ) : (
-                            <span className="text-muted-foreground flex items-center gap-1 text-xs">
-                                <UserRound className="size-3.5" />
-                                {assignedToMe
-                                    ? 'Você assumiu esta conversa'
-                                    : `${selected.assignee.name} assumiu esta conversa`}
+                            <span className="text-destructive flex items-center gap-1.5 text-[11px] font-medium">
+                                <Clock3 className="size-3.5" />
+                                Janela de 24 h encerrada · somente Template
                             </span>
                         )}
+                        <span className="flex-1" />
                         <Button
+                            type="button"
                             variant="outline"
                             size="sm"
                             onClick={returnConversation}
                         >
-                            <Bot />
                             Devolver ao bot
                         </Button>
+                        <Button
+                            type="submit"
+                            size="sm"
+                            disabled={
+                                !assignedToMe ||
+                                form.processing ||
+                                (messageType === 'text' &&
+                                    !selected.window.open)
+                            }
+                        >
+                            <Send />
+                            Enviar
+                        </Button>
                     </div>
-                </div>
-
-                <div className="bg-muted/10 min-h-0 flex-1 space-y-3 overflow-y-auto p-4">
-                    {selected.messages.data.map((message) => (
-                        <MessageBubble key={message.id} message={message} />
-                    ))}
-                    <HistoryPanel history={selected.history} />
-                </div>
-
-                <div className="border-border/70 border-t p-4">
-                    {!selected.canWrite && (
-                        <div className="border-signal-attention/40 bg-signal-attention/10 text-foreground mb-3 rounded-lg border px-3 py-2 text-sm">
-                            {selected.assignee === null
-                                ? 'Assuma a conversa antes de escrever.'
-                                : `${selected.assignee.name} está atendendo esta conversa. Você precisa assumir antes de escrever.`}
-                        </div>
-                    )}
-                    {selected.window.open ? (
-                        <p className="text-muted-foreground mb-2 flex items-center gap-1.5 text-xs">
-                            <Clock3 className="size-3.5" />
-                            Janela de 24 horas:{' '}
-                            {formatRemaining(selected.window.remainingSeconds)}
-                        </p>
-                    ) : (
-                        <div className="border-destructive/35 bg-destructive/8 text-destructive mb-3 rounded-lg border px-3 py-2 text-sm">
-                            A janela de 24 horas terminou. Respostas livres
-                            estão bloqueadas; envie um Template aprovado.
-                        </div>
-                    )}
-                    <form onSubmit={sendMessage} className="grid gap-2">
-                        <div className="flex gap-1">
-                            <button
-                                type="button"
-                                onClick={() => onMessageTypeChange('text')}
-                                className={`rounded px-2 py-1 text-xs font-medium ${messageType === 'text' ? 'bg-muted text-foreground' : 'text-muted-foreground'}`}
-                            >
-                                Resposta livre
-                            </button>
-                            <button
-                                type="button"
-                                onClick={() => onMessageTypeChange('template')}
-                                className={`rounded px-2 py-1 text-xs font-medium ${messageType === 'template' ? 'bg-muted text-foreground' : 'text-muted-foreground'}`}
-                            >
-                                Template
-                            </button>
-                        </div>
-                        {messageType === 'template' ? (
-                            <>
-                                <Input
-                                    value={form.data.template}
-                                    onChange={(event) =>
-                                        form.setData(
-                                            'template',
-                                            event.target.value,
-                                        )
-                                    }
-                                    placeholder="Nome do Template aprovado"
-                                    disabled={!assignedToMe || form.processing}
-                                />
-                                <textarea
-                                    value={form.data.parameters}
-                                    onChange={(event) =>
-                                        form.setData(
-                                            'parameters',
-                                            event.target.value,
-                                        )
-                                    }
-                                    placeholder="Um parâmetro por linha (opcional)"
-                                    className="border-input placeholder:text-muted-foreground min-h-20 w-full resize-y rounded-md border bg-transparent px-3 py-2 text-sm outline-none focus-visible:ring-2"
-                                    disabled={!assignedToMe || form.processing}
-                                />
-                            </>
-                        ) : (
-                            <textarea
-                                value={form.data.content}
-                                onChange={(event) =>
-                                    form.setData('content', event.target.value)
-                                }
-                                placeholder="Escreva uma resposta..."
-                                className="border-input placeholder:text-muted-foreground min-h-20 w-full resize-y rounded-md border bg-transparent px-3 py-2 text-sm outline-none focus-visible:ring-2 disabled:cursor-not-allowed disabled:opacity-50"
-                                disabled={
-                                    !selected.canWrite ||
-                                    !selected.window.open ||
-                                    form.processing
-                                }
-                            />
-                        )}
-                        {form.errors.content && (
-                            <p className="text-destructive text-xs">
-                                {form.errors.content}
-                            </p>
-                        )}
-                        <div className="flex items-center justify-between gap-3">
-                            <p className="text-muted-foreground text-xs">
-                                {selected.window.open
-                                    ? 'Enviada pelo mesmo Canal.'
-                                    : 'Somente Template.'}
-                            </p>
-                            <Button
-                                type="submit"
-                                size="sm"
-                                disabled={
-                                    !assignedToMe ||
-                                    form.processing ||
-                                    (messageType === 'text' &&
-                                        !selected.window.open)
-                                }
-                            >
-                                <Send />
-                                Enviar
-                            </Button>
-                        </div>
-                    </form>
-                </div>
+                </form>
             </div>
-
-            {showDetails && <ContactPanel selected={selected} />}
         </section>
     );
 }
@@ -628,28 +700,37 @@ function MessageBubble({ message }: { message: Message }) {
     const outgoing = message.direction === 'outgoing';
 
     return (
-        <div className={`flex ${outgoing ? 'justify-end' : 'justify-start'}`}>
-            <article
-                className={`max-w-[85%] rounded-xl border px-3 py-2 text-sm ${outgoing ? 'border-primary/20 bg-primary/10' : 'border-border/70 bg-card'}`}
+        <div className={cn('flex', outgoing ? 'justify-end' : 'justify-start')}>
+            <div
+                className={cn(
+                    'max-w-[62%] px-3.5 py-2.5 text-[13px] leading-relaxed',
+                    outgoing
+                        ? 'bg-primary text-primary-foreground rounded-2xl rounded-br-sm'
+                        : 'bg-background border-border/70 rounded-2xl rounded-bl-sm border',
+                )}
             >
-                <div className="mb-1 flex items-center gap-2 text-[11px]">
-                    <span className="font-medium">{message.sender}</span>
-                    <span className="text-muted-foreground">
-                        {formatDate(message.createdAt)}
-                    </span>
-                </div>
                 <p className="break-words whitespace-pre-wrap">
                     {message.content ?? `[${message.payloadType}]`}
                 </p>
-            </article>
+                <span
+                    className={cn(
+                        'mt-1.5 block text-[10px]',
+                        outgoing
+                            ? 'text-primary-foreground/60'
+                            : 'text-muted-foreground',
+                    )}
+                >
+                    {message.sender} · {formatDate(message.createdAt)}
+                </span>
+            </div>
         </div>
     );
 }
 
 function HistoryPanel({ history }: { history: MessagePage }) {
     return (
-        <details className="border-border/70 bg-card overflow-hidden rounded-xl border">
-            <summary className="hover:bg-muted/40 cursor-pointer px-4 py-3 text-sm font-medium">
+        <details className="border-border/70 bg-background overflow-hidden rounded-lg border">
+            <summary className="hover:bg-muted/40 cursor-pointer px-4 py-2.5 text-[12.5px] font-medium">
                 Histórico completo · somente leitura
             </summary>
             <div className="border-border/70 grid gap-2 border-t p-3">
@@ -675,72 +756,129 @@ function HistoryPanel({ history }: { history: MessagePage }) {
 
 function ContactPanel({ selected }: { selected: SelectedConversation }) {
     return (
-        <aside className="border-border/70 bg-muted/10 min-h-0 overflow-y-auto border-t p-4 xl:border-t-0 xl:border-l">
-            <div className="grid gap-6">
-                <section>
-                    <p className="text-muted-foreground text-xs font-medium tracking-[0.12em] uppercase">
-                        Ficha do Contato
-                    </p>
-                    <dl className="mt-3 grid gap-3">
-                        <div>
-                            <dt className="text-muted-foreground text-xs">
-                                Nome
-                            </dt>
-                            <dd className="mt-0.5 text-sm font-medium">
-                                {selected.contact.name ?? 'Sem nome'}
-                            </dd>
-                        </div>
-                        <div>
-                            <dt className="text-muted-foreground text-xs">
-                                Telefone
-                            </dt>
-                            <dd className="mt-0.5 text-sm font-medium tabular-nums">
-                                {selected.contact.phone}
-                            </dd>
-                        </div>
-                        {selected.contact.fields.map((field) => (
-                            <div key={field.name}>
-                                <dt className="text-muted-foreground text-xs">
-                                    {field.name}
-                                </dt>
-                                <dd className="mt-0.5 text-sm font-medium">
-                                    {field.value ?? '—'}
-                                </dd>
-                            </div>
+        <aside className="border-border/70 flex w-full shrink-0 flex-col overflow-y-auto border-t xl:w-[300px] xl:border-t-0 xl:border-l">
+            <div className="border-border/70 flex items-start gap-2.5 border-b px-4.5 py-4">
+                <div className="min-w-0 flex-1">
+                    <span className="text-muted-foreground block text-[10px] font-bold tracking-[0.07em] uppercase">
+                        Contato
+                    </span>
+                    <span className="mt-1 block text-[15px] font-semibold">
+                        {selected.contact.name ?? selected.contact.phone}
+                    </span>
+                </div>
+            </div>
+
+            {selected.contact.tags.length > 0 && (
+                <div className="border-border/70 border-b px-4.5 py-3.5">
+                    <div className="flex flex-wrap gap-1.5">
+                        {selected.contact.tags.map((tag) => (
+                            <Badge
+                                key={tag.id}
+                                variant="secondary"
+                                className="text-[10.5px]"
+                            >
+                                {tag.name}
+                            </Badge>
                         ))}
-                    </dl>
-                    {selected.contact.tags.length > 0 && (
-                        <div className="mt-4 flex flex-wrap gap-1.5">
-                            {selected.contact.tags.map((tag) => (
-                                <Badge key={tag.id} variant="secondary">
-                                    {tag.name}
-                                </Badge>
-                            ))}
-                        </div>
-                    )}
-                </section>
-                <section className="border-border/70 border-t pt-4">
-                    <p className="text-muted-foreground text-xs font-medium tracking-[0.12em] uppercase">
-                        Execução pausada
-                    </p>
-                    <div className="mt-3 grid gap-2 text-sm">
-                        <p className="font-medium">
-                            {selected.execution.flowName}
-                        </p>
-                        <p className="text-muted-foreground">
-                            Versão {selected.execution.version} · Nó{' '}
-                            {selected.execution.nodeName}
-                        </p>
-                        <Link
-                            href={selected.execution.traceUrl}
-                            className="text-primary text-xs underline underline-offset-4"
-                        >
-                            Abrir traço da Execução
-                        </Link>
                     </div>
-                </section>
+                </div>
+            )}
+
+            <div className="border-border/70 border-b px-4.5 py-3.5">
+                <div className="text-muted-foreground mb-2.5 text-[10px] font-bold tracking-[0.07em] uppercase">
+                    Campos do contato
+                </div>
+                <div className="grid gap-2">
+                    <ContactField label="Telefone">
+                        <span className="font-mono">
+                            {selected.contact.phone}
+                        </span>
+                    </ContactField>
+                    {selected.contact.fields.map((field) => (
+                        <ContactField key={field.name} label={field.name}>
+                            <span
+                                className={
+                                    field.sensitive ? 'font-mono' : undefined
+                                }
+                            >
+                                {field.value ?? '—'}
+                            </span>
+                        </ContactField>
+                    ))}
+                </div>
+            </div>
+
+            <div className="border-border/70 border-b px-4.5 py-3.5">
+                <div className="text-muted-foreground mb-2.5 text-[10px] font-bold tracking-[0.07em] uppercase">
+                    Consentimentos
+                </div>
+                <div className="grid gap-2">
+                    {Object.values(selected.contact.consents).map((consent) => (
+                        <div
+                            key={consent.purpose}
+                            className="flex items-center justify-between gap-3 text-xs"
+                        >
+                            <span>{consent.label}</span>
+                            <Badge
+                                variant={
+                                    consent.granted ? 'secondary' : 'outline'
+                                }
+                                className="text-[10px]"
+                            >
+                                {consent.granted ? 'Ativo' : 'Não dado'}
+                            </Badge>
+                        </div>
+                    ))}
+                </div>
+            </div>
+
+            <div className="px-4.5 py-3.5">
+                <div className="text-muted-foreground mb-2.5 text-[10px] font-bold tracking-[0.07em] uppercase">
+                    Execução pausada
+                </div>
+                <div className="border-border/70 rounded-lg border p-3">
+                    <div className="text-[12.5px] font-semibold">
+                        {selected.execution.flowName}
+                    </div>
+                    <div className="text-muted-foreground mt-0.5 text-[11px]">
+                        #{selected.execution.id} · v{selected.execution.version}
+                        {' · '}
+                        {selected.execution.nodeName}
+                    </div>
+                    <div className="bg-muted mt-2 flex items-center gap-1.5 rounded-md px-2.5 py-1.5">
+                        <span className="bg-signal-attention size-1.5 shrink-0 rounded-full" />
+                        <span className="text-[11.5px] font-medium">
+                            {selected.reason.label}
+                        </span>
+                    </div>
+                    <Link
+                        href={selected.execution.traceUrl}
+                        className="mt-2.5 inline-block text-[11.5px] font-semibold underline underline-offset-4"
+                    >
+                        Ver o traço completo →
+                    </Link>
+                </div>
             </div>
         </aside>
+    );
+}
+
+function ContactField({
+    label,
+    children,
+}: {
+    label: string;
+    children: ReactNode;
+}) {
+    return (
+        <div className="flex items-baseline justify-between gap-3">
+            <span className="text-muted-foreground shrink-0 text-xs">
+                {label}
+            </span>
+            <span className="truncate text-right text-xs font-medium">
+                {children}
+            </span>
+        </div>
     );
 }
 
@@ -778,10 +916,28 @@ function Pagination({ page }: { page: MessagePage }) {
     );
 }
 
+function reasonBadgeClass(code: string): string {
+    switch (code) {
+        case 'contact_requested':
+            return 'bg-destructive/10 text-destructive';
+        case 'unsupported_media':
+            return 'bg-signal-attention/15 text-signal-attention';
+        default:
+            return 'bg-muted text-muted-foreground';
+    }
+}
+
+function initials(name: string | null): string {
+    if (name === null || name.trim() === '') return '?';
+    const parts = name.trim().split(/\s+/);
+    if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+    return `${parts[0][0]}${parts[parts.length - 1][0]}`.toUpperCase();
+}
+
 function formatWaiting(seconds: number): string {
     if (seconds < 60) return 'agora';
-    if (seconds < 3600) return `${Math.floor(seconds / 60)} min`;
-    return `${Math.floor(seconds / 3600)} h`;
+    if (seconds < 3600) return `há ${Math.floor(seconds / 60)} min`;
+    return `há ${Math.floor(seconds / 3600)} h`;
 }
 
 function formatRemaining(seconds: number | null): string {
@@ -790,8 +946,8 @@ function formatRemaining(seconds: number | null): string {
     const hours = Math.floor(seconds / 3600);
     const minutes = Math.floor((seconds % 3600) / 60);
     return hours > 0
-        ? `${hours}h ${minutes}min restantes`
-        : `${minutes}min restantes`;
+        ? `fecha em ${hours} h ${minutes} min`
+        : `fecha em ${minutes} min`;
 }
 
 function formatDate(value: string | null): string {

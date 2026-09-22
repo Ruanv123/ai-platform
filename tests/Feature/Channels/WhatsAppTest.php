@@ -104,7 +104,7 @@ it('allows an owner to configure one WhatsApp channel with its account and numbe
         ->and($channel->whatsappPhoneNumber->whatsappAccount->app_secret)->toBe('old-app-secret');
 });
 
-it('rejects a second WhatsApp channel for the same company', function () {
+it('allows multiple official WhatsApp channels for the same company', function () {
     $user = User::factory()->withTeam()->create();
     createWhatsAppChannel($user);
 
@@ -113,10 +113,8 @@ it('rejects a second WhatsApp channel for the same company', function () {
         whatsappDetails(),
     );
 
-    $response->assertSessionHasErrors([
-        'waba_id' => 'Sua Empresa já possui um número de WhatsApp configurado.',
-    ]);
-    $this->assertDatabaseCount('channels', 1);
+    $response->assertRedirect(route('channels.whatsapp.edit'));
+    $this->assertDatabaseCount('channels', 2);
 });
 
 it('preserves account secrets when an owner edits the other WhatsApp fields', function () {

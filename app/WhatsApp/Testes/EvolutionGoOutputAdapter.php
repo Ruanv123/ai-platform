@@ -5,6 +5,7 @@ namespace App\WhatsApp\Testes;
 use App\Models\Channel;
 use App\Models\Contact;
 use App\Models\Message;
+use App\Models\WhatsAppTemplate;
 use App\Models\WhatsAppTestConnection;
 use App\WhatsApp\Output\AbstractWhatsAppOutputAdapter;
 use Illuminate\Http\Client\PendingRequest;
@@ -33,7 +34,7 @@ final class EvolutionGoOutputAdapter extends AbstractWhatsAppOutputAdapter
         return $this->recordOutgoingText($channel, $contact, $content, $providerMessageId);
     }
 
-    public function sendTemplate(Channel $channel, Contact $contact, string $template, array $parameters = []): Message
+    public function sendTemplate(Channel $channel, Contact $contact, string|WhatsAppTemplate $template, array $parameters = []): Message
     {
         $this->assertContactBelongsToChannel($channel, $contact);
         $connection = $this->connection($channel);
@@ -41,7 +42,8 @@ final class EvolutionGoOutputAdapter extends AbstractWhatsAppOutputAdapter
             $this->endpoint($connection, 'message/sendTemplate'),
             [
                 'number' => $contact->phone,
-                'name' => $template,
+                'name' => $template instanceof WhatsAppTemplate ? $template->name : $template,
+                'language' => $template instanceof WhatsAppTemplate ? $template->language : 'pt_BR',
                 'parameters' => $parameters,
             ],
         )->throw();

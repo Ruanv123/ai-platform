@@ -41,7 +41,6 @@ import {
 } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import type { LucideIcon } from 'lucide-react';
-import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 
 export type FlowNode = {
@@ -70,6 +69,8 @@ export type NodeCatalogItem = {
 type FlowNodeData = Record<string, unknown> & {
     domainNode: FlowNode;
     label: string;
+    category: string;
+    accent: string;
     Icon: LucideIcon;
     editable: boolean;
     traceActive: boolean;
@@ -122,8 +123,25 @@ function labelFor(type: string, catalog: NodeCatalogItem[]): string {
     return catalog.find((item) => item.type === type)?.label ?? type;
 }
 
+function categoryFor(type: string, catalog: NodeCatalogItem[]): string {
+    return catalog.find((item) => item.type === type)?.category ?? 'Passo';
+}
+
+const categoryAccents: Record<string, string> = {
+    Entrada: 'oklch(0.769 0.188 70.08)',
+    Inteligência: 'oklch(0.488 0.243 264.376)',
+    Conversa: 'oklch(0.6 0.118 184.704)',
+    Comunicação: 'oklch(0.6 0.118 184.704)',
+    Integrações: 'oklch(0.63 0.14 53)',
+};
+const defaultAccent = 'var(--muted-foreground)';
+
+function accentFor(type: string, catalog: NodeCatalogItem[]): string {
+    return categoryAccents[categoryFor(type, catalog)] ?? defaultAccent;
+}
+
 function positionFor(node: FlowNode, index: number): { x: number; y: number } {
-    return node.position ?? { x: 96 + index * 300, y: 190 };
+    return node.position ?? { x: 96 + index * 260, y: 190 };
 }
 
 type FlowCanvasProps = {
@@ -167,6 +185,8 @@ export function FlowCanvas({
                 data: {
                     domainNode: node,
                     label: labelFor(node.type, catalog),
+                    category: categoryFor(node.type, catalog),
+                    accent: accentFor(node.type, catalog),
                     Icon: iconFor(node.type, catalog),
                     editable,
                     traceActive: traceNodeIds.includes(node.id),
@@ -255,7 +275,7 @@ export function FlowCanvas({
     };
 
     return (
-        <div className="relative min-h-[620px] flex-1 overflow-hidden bg-[radial-gradient(circle_at_center,oklch(0.98_0_0),oklch(0.94_0_0))] dark:bg-[radial-gradient(circle_at_center,oklch(0.21_0_0),oklch(0.145_0_0))]">
+        <div className="bg-muted/30 relative min-h-[620px] flex-1 overflow-hidden">
             <ReactFlow
                 nodes={renderedNodes}
                 edges={reactEdges}
@@ -275,47 +295,65 @@ export function FlowCanvas({
                 onNodeClick={(_event, node) => onSelectNode(node.id)}
                 onNodeDragStop={handleNodeDragStop}
                 proOptions={{ hideAttribution: true }}
-                className="[&_.react-flow__controls-button]:bg-background [&_.react-flow__controls-button]:text-foreground [&_.react-flow__controls-button]:fill-foreground [&_.react-flow__controls-button]:border-border [&_.react-flow__controls]:overflow-hidden [&_.react-flow__controls]:rounded-xl [&_.react-flow__controls]:border [&_.react-flow__controls]:shadow-sm"
+                className="[&_.react-flow__controls-button]:bg-background [&_.react-flow__controls-button]:text-foreground [&_.react-flow__controls-button]:fill-foreground [&_.react-flow__controls-button]:border-border [&_.react-flow__controls]:overflow-hidden [&_.react-flow__controls]:rounded-xl [&_.react-flow__controls]:border [&_.react-flow__controls]:shadow-md"
             >
-                <Background
-                    color="var(--muted-foreground)"
-                    gap={24}
-                    size={1}
-                    className="opacity-25 dark:opacity-15"
-                />
+                <Background color="var(--ring)" gap={18} size={1} />
                 <Controls
-                    position="bottom-right"
+                    position="bottom-left"
                     showInteractive={false}
-                    className="!right-5 !bottom-5"
+                    className="!bottom-5 !left-5"
                 />
             </ReactFlow>
 
-            <div className="pointer-events-none absolute top-24 left-1/2 z-10 flex -translate-x-1/2 flex-col items-center gap-3 text-center">
-                {nodes.length === 0 && (
-                    <>
-                        <div className="flex size-16 items-center justify-center rounded-2xl border border-dashed border-amber-500/70 bg-amber-500/10 text-amber-600 dark:text-amber-300">
-                            <Zap className="size-7" />
-                        </div>
-                        <div>
-                            <p className="font-semibold tracking-tight">
-                                Escolha o gatilho
-                            </p>
-                            <p className="text-muted-foreground mt-1 max-w-xs text-sm">
-                                Todo atendimento começa por aqui. Adicione o
-                                primeiro passo para sair da tela em branco.
-                            </p>
-                        </div>
-                        <Button
-                            variant="outline"
-                            className="pointer-events-auto"
-                            onClick={onChooseTrigger}
-                        >
-                            <Plus />
-                            Escolher gatilho
-                        </Button>
-                    </>
-                )}
-            </div>
+            {nodes.length === 0 && (
+                <div className="pointer-events-none absolute inset-0 z-10 flex flex-col items-center justify-center gap-[18px]">
+                    <button
+                        type="button"
+                        onClick={onChooseTrigger}
+                        className="border-border bg-card pointer-events-auto flex w-[230px] flex-col items-center gap-2 rounded-xl border-[1.5px] border-dashed p-5"
+                    >
+                        <span className="bg-muted flex size-[38px] items-center justify-center rounded-[10px]">
+                            <Zap className="text-signal-attention size-[19px]" />
+                        </span>
+                        <span className="text-[13.5px] font-semibold">
+                            Escolha o gatilho
+                        </span>
+                        <span className="text-muted-foreground text-center text-[11.5px] leading-[1.45]">
+                            O que faz este fluxo começar
+                        </span>
+                    </button>
+
+                    <svg
+                        width="2"
+                        height="30"
+                        viewBox="0 0 2 30"
+                        fill="none"
+                        aria-hidden="true"
+                    >
+                        <path
+                            d="M1 0v30"
+                            stroke="var(--border)"
+                            strokeWidth="1.5"
+                            strokeDasharray="3 3"
+                        />
+                    </svg>
+
+                    <button
+                        type="button"
+                        onClick={onChooseTrigger}
+                        aria-label="Escolher gatilho"
+                        className="border-border text-muted-foreground bg-card pointer-events-auto flex size-[26px] items-center justify-center rounded-full border border-dashed"
+                    >
+                        <Plus className="size-[13px]" />
+                    </button>
+
+                    <p className="text-muted-foreground mt-1 max-w-[280px] text-center text-xs leading-[1.55]">
+                        Um fluxo sempre começa por um gatilho. Escolha um — ou
+                        descreva o atendimento no painel ao lado e deixe a IA
+                        montar.
+                    </p>
+                </div>
+            )}
         </div>
     );
 }
@@ -327,33 +365,32 @@ function FlowNodeCard({ data, selected }: NodeProps<FlowReactNode>) {
     return (
         <div
             className={cn(
-                'bg-card relative flex h-[152px] w-[224px] cursor-grab flex-col rounded-2xl border p-4 shadow-sm transition-[box-shadow,border-color] active:cursor-grabbing',
-                isTrigger
-                    ? 'border-amber-500/60 bg-amber-500/[0.06]'
-                    : 'border-border/80',
-                selected && 'border-primary ring-primary/15 shadow-lg ring-2',
+                'bg-card border-border relative flex min-h-[74px] w-[190px] cursor-grab flex-col gap-[3px] rounded-[10px] border p-[11px_13px] text-left shadow-sm transition-[box-shadow,border-color] active:cursor-grabbing',
+                isTrigger && 'border-l-[3px]',
+                selected && 'ring-foreground ring-2 ring-offset-0',
                 data.traceActive &&
                     'border-signal-live shadow-[0_0_0_4px_color-mix(in_oklch,var(--signal-live)_18%,transparent)]',
             )}
+            style={isTrigger ? { borderLeftColor: data.accent } : undefined}
         >
             <Handle
                 type="target"
                 position={Position.Left}
                 id="target"
                 isConnectable={data.editable}
-                className="!bg-muted-foreground !border-background !size-3 !border-2"
+                className="!bg-muted-foreground !border-background !size-2.5 !border-2"
             />
             <Handle
                 type="source"
                 position={Position.Right}
                 id="source"
                 isConnectable={data.editable}
-                className="!bg-primary !border-background !size-3 !border-2"
+                className="!bg-primary !border-background !size-2.5 !border-2"
             />
             {data.editable && (
                 <button
                     type="button"
-                    className="nodrag nopan bg-background text-muted-foreground hover:text-destructive absolute -top-2 right-2 flex size-6 items-center justify-center rounded-full border shadow-sm"
+                    className="nodrag nopan bg-background text-muted-foreground hover:text-destructive absolute -top-2 -right-2 flex size-5 items-center justify-center rounded-full border shadow-sm"
                     aria-label={`Excluir ${data.label}`}
                     onClick={(event) => {
                         event.stopPropagation();
@@ -363,39 +400,34 @@ function FlowNodeCard({ data, selected }: NodeProps<FlowReactNode>) {
                     <X className="size-3" />
                 </button>
             )}
-            <div className="flex items-start gap-3">
-                <span
-                    className={cn(
-                        'flex size-9 shrink-0 items-center justify-center rounded-xl',
-                        isTrigger
-                            ? 'bg-amber-500/15 text-amber-600 dark:text-amber-300'
-                            : 'bg-muted text-muted-foreground',
-                    )}
-                >
-                    <data.Icon className="size-4" />
-                </span>
-                <div className="min-w-0">
-                    <p className="truncate text-sm font-semibold">
-                        {data.label}
-                    </p>
-                    <p className="text-muted-foreground mt-1 line-clamp-2 text-xs">
-                        {isTrigger ? 'Ponto de entrada' : summaryFor(node)}
-                    </p>
-                </div>
-            </div>
             {data.editable && (
                 <button
                     type="button"
-                    className="nodrag nopan text-muted-foreground hover:text-foreground mt-auto inline-flex min-h-8 w-fit items-center gap-1 rounded-md px-2 text-xs transition-colors"
+                    className="nodrag nopan border-border bg-background text-muted-foreground hover:text-foreground absolute top-1/2 -right-[11px] z-10 flex size-[22px] -translate-y-1/2 items-center justify-center rounded-full border shadow-sm"
+                    aria-label={`Adicionar depois de ${data.label}`}
                     onClick={(event) => {
                         event.stopPropagation();
                         data.onAddAfter(node.id);
                     }}
                 >
-                    <Plus className="size-3.5" />
-                    Próximo
+                    <Plus className="size-3" />
                 </button>
             )}
+            <span
+                className="flex items-center gap-1.5"
+                style={{ color: data.accent }}
+            >
+                <data.Icon className="size-[13px]" strokeWidth={2.2} />
+                <span className="text-[9px] font-bold tracking-[0.06em] uppercase">
+                    {data.category}
+                </span>
+            </span>
+            <span className="text-[13px] leading-[1.25] font-semibold">
+                {data.label}
+            </span>
+            <span className="text-muted-foreground truncate text-[11px] leading-[1.3]">
+                {isTrigger ? 'Ponto de entrada' : summaryFor(node)}
+            </span>
         </div>
     );
 }

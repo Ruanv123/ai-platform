@@ -5,6 +5,7 @@ namespace App\WhatsApp\Output;
 use App\Models\Channel;
 use App\Models\Contact;
 use App\Models\Message;
+use App\Models\WhatsAppTemplate;
 
 interface WhatsAppOutputAdapter
 {
@@ -18,7 +19,7 @@ interface WhatsAppOutputAdapter
      *
      * @param  list<string>  $parameters
      */
-    public function sendTemplate(Channel $channel, Contact $contact, string $template, array $parameters = []): Message;
+    public function sendTemplate(Channel $channel, Contact $contact, string|WhatsAppTemplate $template, array $parameters = []): Message;
 
     /**
      * Tell the provider that an incoming Message was seen by the Agent.

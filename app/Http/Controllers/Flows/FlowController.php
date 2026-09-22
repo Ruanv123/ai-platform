@@ -3,10 +3,10 @@
 namespace App\Http\Controllers\Flows;
 
 use App\Enums\FlowCategory;
-use App\Enums\FlowExecutionStatus;
 use App\Enums\FlowStatus;
 use App\Enums\FlowTriggerType;
 use App\Flows\FlowExecutionAnalytics;
+use App\Flows\FlowExecutionLister;
 use App\Flows\FlowPublisher;
 use App\Flows\FlowValidationException;
 use App\Http\Controllers\Controller;
@@ -14,10 +14,10 @@ use App\Http\Requests\Flows\SaveFlowRequest;
 use App\Models\Channel;
 use App\Models\Flow;
 use App\Models\FlowEvent;
-use App\Models\FlowExecution;
 use App\Models\FlowVersion;
 use App\Models\Integration;
 use App\Models\Team;
+use App\Models\WhatsAppTemplate;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -35,6 +35,7 @@ class FlowController extends Controller
         Gate::authorize('viewAny', Flow::class);
         $team = $request->user()->company();
         $filters = $request->validate([
+            'search' => ['nullable', 'string', 'max:255'],
             'channel' => ['nullable', 'uuid'],
             'trigger' => ['nullable', 'in:message,webhook,manual'],
             'status' => ['nullable', 'in:draft,published,paused'],
@@ -50,6 +51,10 @@ class FlowController extends Controller
                 'executions as completed_executions_count' => fn ($query) => $query->where('flow_executions.status', 'completed'),
             ])
             ->withMax('executions', 'created_at')
+            ->when(
+                filled($filters['search'] ?? null),
+                fn ($query) => $query->whereRaw('LOWER(name) LIKE ?', ['%'.mb_strtolower($filters['search']).'%']),
+            )
             ->when(isset($filters['channel']), fn ($query) => $query->where('channel_id', $filters['channel']))
             ->when(isset($filters['trigger']), fn ($query) => $query->where('trigger_type', $filters['trigger']))
             ->when(isset($filters['status']), fn ($query) => $query->where('status', $filters['status']))
@@ -71,6 +76,7 @@ class FlowController extends Controller
                 'perPage' => $flows->perPage(),
             ],
             'filters' => [
+                'search' => $filters['search'] ?? '',
                 'channel' => $filters['channel'] ?? null,
                 'trigger' => $filters['trigger'] ?? null,
                 'status' => $filters['status'] ?? null,
@@ -91,7 +97,7 @@ class FlowController extends Controller
         ]);
     }
 
-    public function show(Request $request, Flow $flow, FlowExecutionAnalytics $analytics): Response
+    public function show(Request $request, Flow $flow, FlowExecutionAnalytics $analytics, FlowExecutionLister $lister): Response
     {
         Gate::authorize('view', $flow);
         $team = $request->user()->company();
@@ -113,7 +119,7 @@ class FlowController extends Controller
                 'status' => $filters['execution_status'] ?? 'failed',
                 'error' => $filters['error'] ?? null,
             ],
-            'executions' => $this->executionList($flow, $filters),
+            'executions' => $lister->list($flow, $filters),
             'channels' => $team->channels()
                 ->orderBy('type')
                 ->get(['id', 'type'])
@@ -141,6 +147,7 @@ class FlowController extends Controller
                 'description' => $event->description,
             ])->values(),
             'templates' => $this->templates($team),
+            'whatsappTemplates' => $this->whatsappTemplates($team),
             'permissions' => $request->user()->toTeamPermissions($team),
         ]);
     }
@@ -315,85 +322,6 @@ class FlowController extends Controller
         return to_route('flows.show', $flow);
     }
 
-    /**
-     * @param  array<string, mixed>  $filters
-     * @return array<string, mixed>
-     */
-    private function executionList(Flow $flow, array $filters): array
-    {
-        $status = (string) ($filters['execution_status'] ?? 'failed');
-        $perPage = (int) ($filters['per_page'] ?? 10);
-        $applyErrorFilter = function ($query) use ($filters): void {
-            if (! filled($filters['error'] ?? null)) {
-                return;
-            }
-
-            $query->where(function ($query) use ($filters): void {
-                $query->where('final_reason', $filters['error'])
-                    ->orWhereHas('steps', fn ($steps) => $steps->where('error', $filters['error']));
-            });
-        };
-        $baseQuery = $flow->executions();
-        $counts = [
-            'failed' => (clone $baseQuery)->where('flow_executions.status', FlowExecutionStatus::Failed)->tap($applyErrorFilter)->count(),
-            'stuck' => (clone $baseQuery)->stuck()->tap($applyErrorFilter)->count(),
-            'all' => (clone $baseQuery)->tap($applyErrorFilter)->count(),
-        ];
-
-        $executions = $flow->executions()
-            ->with(['contact', 'flowVersion', 'lastStep'])
-            ->when($status === 'failed', fn ($query) => $query->where('status', 'failed'))
-            ->when($status === 'stuck', fn ($query) => $query->stuck())
-            ->tap($applyErrorFilter)
-            ->latest('flow_executions.created_at')
-            ->latest('flow_executions.id')
-            ->paginate($perPage)
-            ->withQueryString();
-
-        return [
-            'data' => $executions->getCollection()->map(fn (FlowExecution $execution): array => $this->serializeExecution($execution))->values(),
-            'currentPage' => $executions->currentPage(),
-            'lastPage' => $executions->lastPage(),
-            'from' => $executions->firstItem(),
-            'to' => $executions->lastItem(),
-            'total' => $executions->total(),
-            'perPage' => $executions->perPage(),
-            'counts' => $counts,
-        ];
-    }
-
-    /** @return array<string, mixed> */
-    private function serializeExecution(FlowExecution $execution): array
-    {
-        $isStuck = $execution->status->value === 'stuck' || $execution->isActive() && $execution->wake_at?->isPast() && $execution->wake_at?->lte(now()->subMinutes(5));
-        $nodeId = $execution->lastStep?->node_id ?? $execution->current_node_id;
-        $node = collect($execution->flowVersion->dsl['nodes'] ?? [])->firstWhere('id', $nodeId);
-        $reason = $execution->lastStep?->error ?? $execution->final_reason;
-
-        return [
-            'id' => $execution->getKey(),
-            'contact' => $execution->contact === null ? null : [
-                'name' => $execution->contact->name,
-                'phone' => $execution->contact->phone,
-            ],
-            'status' => $isStuck ? 'stuck' : $execution->status->value,
-            'statusLabel' => $isStuck ? 'Presa' : match ($execution->status) {
-                FlowExecutionStatus::Completed => 'Concluída',
-                FlowExecutionStatus::Failed => 'Falhou',
-                FlowExecutionStatus::Abandoned => 'Abandonada',
-                FlowExecutionStatus::Waiting => 'Aguardando',
-                FlowExecutionStatus::Paused => 'Pausada',
-                default => 'Em execução',
-            },
-            'nodeId' => $nodeId,
-            'nodeLabel' => is_array($node) ? ($node['label'] ?? data_get($node, 'config.label') ?? data_get($node, 'config.title') ?? 'Nó') : null,
-            'reason' => $reason,
-            'version' => $execution->flowVersion->number,
-            'createdAt' => $execution->created_at?->toIso8601String(),
-            'traceUrl' => route('flows.executions.show', [$execution->flowVersion->flow_id, $execution]),
-        ];
-    }
-
     private function assertChannelBelongsToTeam(?string $channelId, int $teamId): void
     {
         if ($channelId !== null && ! Channel::withoutGlobalScopes()->where('team_id', $teamId)->whereKey($channelId)->exists()) {
@@ -472,6 +400,26 @@ class FlowController extends Controller
         }
 
         return $templates;
+    }
+
+    /** @return list<array<string, mixed>> */
+    private function whatsappTemplates(Team $team): array
+    {
+        return WhatsAppTemplate::query()
+            ->where('status', 'approved')
+            ->whereHas('account.phoneNumber.channel', fn ($query) => $query->where('team_id', $team->getKey())->where('type', 'whatsapp'))
+            ->with('account.phoneNumber')
+            ->orderBy('name')
+            ->get()
+            ->map(fn (WhatsAppTemplate $template): array => [
+                'id' => $template->getKey(),
+                'name' => $template->name,
+                'language' => $template->language,
+                'channelId' => $template->account->phoneNumber->channel_id,
+                'category' => $template->assigned_category?->value ?? $template->requested_category->value,
+                'body' => $template->body,
+                'variables' => $template->variableDefinitions(),
+            ])->values()->all();
     }
 
     /** @return list<array<string, mixed>> */

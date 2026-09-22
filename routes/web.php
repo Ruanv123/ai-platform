@@ -8,6 +8,7 @@ use App\Http\Controllers\Channels\WhatsAppController;
 use App\Http\Controllers\Channels\WhatsAppTestController;
 use App\Http\Controllers\Channels\WhatsAppTestWebhookController;
 use App\Http\Controllers\Channels\WhatsAppWebhookController;
+use App\Http\Controllers\ContactConsentController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\Events\FlowEventController;
 use App\Http\Controllers\Events\FlowEventWebhookController;
@@ -23,6 +24,7 @@ use App\Http\Controllers\Knowledge\CollectionController;
 use App\Http\Controllers\Knowledge\DocumentController;
 use App\Http\Controllers\Onboarding\CompanyController;
 use App\Http\Controllers\Teams\TeamInvitationController;
+use App\Http\Controllers\Templates\WhatsAppTemplateController;
 use App\Http\Middleware\EnsureUserHasTeam;
 use App\Http\Middleware\RedirectIfUserHasTeam;
 use App\Models\Channel;
@@ -69,6 +71,7 @@ Route::middleware(['auth', EnsureUserHasTeam::class])->group(function () {
     Route::get('atendimento/{contact}', [InboxController::class, 'show'])->name('inbox.show');
     Route::post('atendimento/{contact}/take', [InboxController::class, 'take'])->name('inbox.take');
     Route::post('atendimento/{contact}/messages', [InboxController::class, 'storeMessage'])->name('inbox.messages.store');
+    Route::post('atendimento/{contact}/consents', [ContactConsentController::class, 'store'])->name('inbox.consents.store');
     Route::post('atendimento/{contact}/return', [InboxController::class, 'returnToBot'])->name('inbox.return');
 
     Route::resource('agents', AgentController::class)
@@ -99,6 +102,19 @@ Route::middleware(['auth', EnsureUserHasTeam::class])->group(function () {
         ->name('channels.whatsapp.edit');
     Route::get('channels/whatsapp-test', [WhatsAppTestController::class, 'edit'])
         ->name('channels.whatsapp-test.edit');
+    Route::get('templates', [WhatsAppTemplateController::class, 'index'])
+        ->name('templates.index');
+    Route::post('templates', [WhatsAppTemplateController::class, 'store'])
+        ->name('templates.store');
+    Route::post('templates/sync', [WhatsAppTemplateController::class, 'sync'])
+        ->name('templates.sync');
+    Route::get('templates/{template}', [WhatsAppTemplateController::class, 'show'])
+        ->name('templates.show');
+    Route::put('templates/{template}', [WhatsAppTemplateController::class, 'update'])
+        ->name('templates.update');
+    Route::post('templates/{template}/submit', [WhatsAppTemplateController::class, 'submit'])
+        ->name('templates.submit');
+
     Route::get('integrations', [IntegrationController::class, 'index'])
         ->name('integrations.index');
     Route::post('integrations', [IntegrationController::class, 'store'])

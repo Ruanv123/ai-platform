@@ -6,9 +6,11 @@ use App\Enums\WhatsAppConnectionMethod;
 use Database\Factories\WhatsAppAccountFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
+use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Carbon;
 
 /**
@@ -22,6 +24,7 @@ use Illuminate\Support\Carbon;
  * @property Carbon|null $webhook_verified_at
  * @property Carbon|null $last_tested_at
  * @property-read WhatsAppPhoneNumber $phoneNumber
+ * @property-read Collection<int, WhatsAppTemplate> $templates
  */
 #[Fillable([
     'whatsapp_phone_number_id',
@@ -50,6 +53,12 @@ class WhatsAppAccount extends Model
     public function phoneNumber(): BelongsTo
     {
         return $this->belongsTo(WhatsAppPhoneNumber::class, 'whatsapp_phone_number_id');
+    }
+
+    /** @return HasMany<WhatsAppTemplate, $this> */
+    public function templates(): HasMany
+    {
+        return $this->hasMany(WhatsAppTemplate::class);
     }
 
     /**

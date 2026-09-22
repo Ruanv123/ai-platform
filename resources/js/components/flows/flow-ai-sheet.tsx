@@ -9,6 +9,7 @@ import type { FlowNode, FlowEdge } from '@/components/flows/flow-canvas';
 type FlowAiSheetProps = {
     flowId: string;
     open: boolean;
+    initialMessage?: string;
     onClose: () => void;
     onApply: (dsl: {
         version: number;
@@ -31,10 +32,11 @@ type AiResponse = {
 export function FlowAiSheet({
     flowId,
     open,
+    initialMessage,
     onClose,
     onApply,
 }: FlowAiSheetProps) {
-    const [message, setMessage] = useState('');
+    const [message, setMessage] = useState(initialMessage ?? '');
     const [history, setHistory] = useState<
         Array<{ role: 'user' | 'assistant'; content: string }>
     >([]);

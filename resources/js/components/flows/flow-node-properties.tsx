@@ -1,3 +1,4 @@
+import { SlidersHorizontal, X } from 'lucide-react';
 import { useState, type ReactNode } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -26,12 +27,23 @@ type EventOption = {
     description: string | null;
 };
 
+type WhatsAppTemplateOption = {
+    id: number;
+    name: string;
+    language: string;
+    channelId: string;
+    category: string;
+    body: string;
+    variables: { position: number; component: string }[];
+};
+
 type FlowNodePropertiesProps = {
     node: FlowNode;
     catalog: NodeCatalogItem[];
     channels: ChannelOption[];
     integrations: IntegrationOption[];
     events: EventOption[];
+    whatsappTemplates: WhatsAppTemplateOption[];
     triggerType: string;
     triggerEvent: string | null;
     channelId: string | null;
@@ -46,6 +58,7 @@ export function FlowNodeProperties({
     channels,
     integrations,
     events,
+    whatsappTemplates,
     triggerType,
     triggerEvent,
     channelId,
@@ -61,15 +74,20 @@ export function FlowNodeProperties({
     };
 
     return (
-        <aside className="bg-background absolute top-20 right-5 z-30 flex max-h-[calc(100%-7rem)] w-[min(360px,calc(100%-2rem))] flex-col overflow-hidden rounded-2xl border shadow-xl">
-            <div className="flex items-start justify-between gap-4 border-b p-5">
-                <div>
-                    <p className="text-muted-foreground text-[11px] font-medium tracking-[0.16em] uppercase">
-                        Configurar passo
-                    </p>
-                    <h2 className="mt-1 text-base font-semibold tracking-tight">
-                        {label}
-                    </h2>
+        <aside className="bg-background absolute inset-y-0 right-0 z-40 flex w-[min(360px,100%)] flex-col border-l">
+            <header className="flex items-start justify-between gap-4 border-b p-5">
+                <div className="flex items-start gap-3">
+                    <span className="bg-muted text-foreground flex size-9 shrink-0 items-center justify-center rounded-xl">
+                        <SlidersHorizontal className="size-4" />
+                    </span>
+                    <div>
+                        <p className="text-muted-foreground text-[11px] font-medium tracking-[0.16em] uppercase">
+                            Configurar passo
+                        </p>
+                        <h2 className="mt-1 font-semibold tracking-tight">
+                            {label}
+                        </h2>
+                    </div>
                 </div>
                 <Button
                     variant="ghost"
@@ -77,9 +95,9 @@ export function FlowNodeProperties({
                     aria-label="Fechar propriedades"
                     onClick={onClose}
                 >
-                    ×
+                    <X />
                 </Button>
-            </div>
+            </header>
             <div className="flex-1 space-y-5 overflow-y-auto p-5">
                 {node.type === 'trigger' && (
                     <>
@@ -146,6 +164,18 @@ export function FlowNodeProperties({
                             Fluxo.
                         </p>
                     </>
+                )}
+                {node.type === 'send_template' && (
+                    <TemplateFields
+                        node={node}
+                        templates={whatsappTemplates.filter(
+                            (template) =>
+                                channelId === null ||
+                                template.channelId === channelId,
+                        )}
+                        channelId={channelId}
+                        onChange={setConfig}
+                    />
                 )}
                 {node.type === 'message' && (
                     <Field label="Mensagem">
@@ -403,6 +433,133 @@ const dedicatedNodeTypes = [
     'exception',
 ] as const;
 
+function TemplateFields({
+    node,
+    templates,
+    channelId,
+    onChange,
+}: {
+    node: FlowNode;
+    templates: WhatsAppTemplateOption[];
+    channelId: string | null;
+    onChange: (key: string, value: unknown) => void;
+}) {
+    const templateId = stringValue(node.config.template_id);
+    const template = templates.find(
+        (candidate) => String(candidate.id) === templateId,
+    );
+    const variables = Array.isArray(node.config.variables)
+        ? node.config.variables
+        : [];
+    const preview = template?.body.replace(
+        /{{\s*(\d+)\s*}}/g,
+        (_match, position: string) => {
+            const index = template.variables.findIndex(
+                (variable) =>
+                    variable.component === 'body' &&
+                    variable.position === Number(position),
+            );
+
+            return index >= 0 && stringValue(variables[index]) !== ''
+                ? stringValue(variables[index])
+                : `{{${position}}}`;
+        },
+    );
+
+    return (
+        <div className="grid gap-4">
+            <Field label="Template aprovado">
+                <select
+                    className="border-input bg-background h-9 w-full rounded-md border px-3 text-sm"
+                    value={templateId}
+                    onChange={(event) =>
+                        onChange('template_id', event.target.value)
+                    }
+                >
+                    <option value="">Escolha um Template</option>
+                    {templates.map((candidate) => (
+                        <option key={candidate.id} value={candidate.id}>
+                            {candidate.name} · {candidate.language}
+                        </option>
+                    ))}
+                </select>
+                {channelId === null && (
+                    <p className="text-muted-foreground text-xs leading-5">
+                        Escolha o Canal no Gatilho para listar os Templates
+                        disponíveis.
+                    </p>
+                )}
+                {channelId !== null && templates.length === 0 && (
+                    <p className="text-muted-foreground text-xs leading-5">
+                        Este Canal ainda não tem Template aprovado na Meta.
+                    </p>
+                )}
+            </Field>
+            <Field label="Finalidade do envio">
+                <select
+                    className="border-input bg-background h-9 w-full rounded-md border px-3 text-sm"
+                    value={stringValue(node.config.purpose) || 'utility'}
+                    onChange={(event) =>
+                        onChange('purpose', event.target.value)
+                    }
+                >
+                    <option value="utility">Utilidade</option>
+                    <option value="marketing">Marketing</option>
+                    <option value="authentication">Autenticação</option>
+                </select>
+                <p className="text-muted-foreground text-xs leading-5">
+                    Fora da janela de 24 horas, o Contato precisa ter consentido
+                    esta finalidade.
+                </p>
+            </Field>
+            {template !== undefined && template.variables.length > 0 && (
+                <div className="grid gap-3">
+                    <Label>Variáveis posicionais</Label>
+                    {template.variables.map((variable, index) => (
+                        <div
+                            key={`${variable.component}-${variable.position}`}
+                            className="grid gap-1.5"
+                        >
+                            <span className="text-muted-foreground text-xs">
+                                {'{{'}
+                                {variable.position}
+                                {'}}'} ·{' '}
+                                {variable.component === 'header'
+                                    ? 'cabeçalho'
+                                    : 'corpo'}
+                            </span>
+                            <Input
+                                value={stringValue(variables[index])}
+                                placeholder="{{ variables.nome }}"
+                                onChange={(event) => {
+                                    const next = [...variables];
+                                    next[index] = event.target.value;
+                                    onChange('variables', next);
+                                }}
+                            />
+                        </div>
+                    ))}
+                    <p className="text-muted-foreground text-xs leading-5">
+                        {
+                            'Use {{ variables.nome }}, {{ field.nome }} ou {{ global.nome }}.'
+                        }
+                    </p>
+                </div>
+            )}
+            {preview !== undefined && (
+                <div className="bg-muted/50 grid gap-1 rounded-lg border p-3">
+                    <span className="text-muted-foreground text-xs font-medium">
+                        Prévia
+                    </span>
+                    <p className="text-sm leading-5 whitespace-pre-wrap">
+                        {preview}
+                    </p>
+                </div>
+            )}
+        </div>
+    );
+}
+
 function NodeConfigFields({
     node,
     onChange,
@@ -456,14 +613,6 @@ function NodeConfigFields({
             { key: 'start', label: 'Começa em' },
             { key: 'end', label: 'Termina em' },
             { key: 'output_variable', label: 'Guardar identificador em' },
-        ],
-        send_template: [
-            { key: 'template', label: 'Template aprovado' },
-            {
-                key: 'variables',
-                label: 'Variáveis posicionais',
-                multiline: true,
-            },
         ],
         subflow: [
             { key: 'flow_id', label: 'Fluxo chamado' },

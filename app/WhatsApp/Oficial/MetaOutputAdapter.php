@@ -6,6 +6,7 @@ use App\Models\Channel;
 use App\Models\Contact;
 use App\Models\Message;
 use App\Models\WhatsAppAccount;
+use App\Models\WhatsAppTemplate;
 use App\WhatsApp\Output\AbstractWhatsAppOutputAdapter;
 use Illuminate\Http\Client\PendingRequest;
 use Illuminate\Support\Facades\Http;
@@ -39,9 +40,29 @@ final class MetaOutputAdapter extends AbstractWhatsAppOutputAdapter
         return $this->recordOutgoingText($channel, $contact, $content, $providerMessageId);
     }
 
-    public function sendTemplate(Channel $channel, Contact $contact, string $template, array $parameters = []): Message
+    public function sendTemplate(Channel $channel, Contact $contact, string|WhatsAppTemplate $template, array $parameters = []): Message
     {
         $this->assertContactBelongsToChannel($channel, $contact);
+        $components = [];
+        $definitions = $template instanceof WhatsAppTemplate ? $template->variableDefinitions() : [];
+        if ($template instanceof WhatsAppTemplate && $definitions !== []) {
+            $grouped = [];
+            foreach ($definitions as $index => $definition) {
+                $component = (string) ($definition['component'] ?? 'body');
+                $grouped[$component][] = [
+                    'type' => 'text',
+                    'text' => (string) ($parameters[$index] ?? ''),
+                ];
+            }
+            foreach ($grouped as $component => $values) {
+                $components[] = ['type' => $component, 'parameters' => $values];
+            }
+        } elseif ($parameters !== []) {
+            $components[] = [
+                'type' => 'body',
+                'parameters' => array_map(fn (string $parameter): array => ['type' => 'text', 'text' => $parameter], $parameters),
+            ];
+        }
         $response = $this->request($channel)->post(
             $this->messagesUrl($this->phoneNumber($channel)),
             [
@@ -49,12 +70,9 @@ final class MetaOutputAdapter extends AbstractWhatsAppOutputAdapter
                 'to' => $contact->phone,
                 'type' => 'template',
                 'template' => [
-                    'name' => $template,
-                    'language' => ['code' => 'pt_BR'],
-                    'components' => $parameters === [] ? [] : [[
-                        'type' => 'body',
-                        'parameters' => array_map(fn (string $parameter): array => ['type' => 'text', 'text' => $parameter], $parameters),
-                    ]],
+                    'name' => $template instanceof WhatsAppTemplate ? $template->name : $template,
+                    'language' => ['code' => $template instanceof WhatsAppTemplate ? $template->language : 'pt_BR'],
+                    'components' => $components,
                 ],
             ],
         )->throw();

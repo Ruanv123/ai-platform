@@ -30,6 +30,21 @@ it('paginates and filters the company flow listing', function () {
     );
 });
 
+it('searches the company flow listing by name', function () {
+    $user = User::factory()->withTeam()->create();
+    Flow::factory()->for($user->company())->create(['name' => 'Agendamento de consulta']);
+    Flow::factory()->for($user->company())->create(['name' => 'Confirmação de retorno']);
+
+    $response = $this->actingAs($user)->get(route('flows.index', ['search' => 'agendamento']));
+
+    $response->assertOk()->assertInertia(fn (Assert $page) => $page
+        ->component('flows/index')
+        ->has('flows.data', 1)
+        ->where('flows.data.0.name', 'Agendamento de consulta')
+        ->where('filters.search', 'agendamento'),
+    );
+});
+
 it('lets a member view a flow but forbids publishing it', function () {
     $owner = User::factory()->withTeam()->create();
     $flow = Flow::factory()->for($owner->company())->create();

@@ -4,6 +4,9 @@ namespace App\Flows;
 
 use App\Ai\Agents\WhatsAppAgent;
 use App\Ai\Tools\ReturnToFlow;
+use App\Consent\ContactConsentService;
+use App\Enums\ChannelType;
+use App\Enums\ConsentPurpose;
 use App\Enums\FlowCategory;
 use App\Enums\FlowCollisionPolicy;
 use App\Enums\FlowExecutionStatus;
@@ -28,6 +31,7 @@ use App\Models\GlobalVariable;
 use App\Models\Integration;
 use App\Models\Message;
 use App\Models\Tag;
+use App\Models\WhatsAppTemplate;
 use App\WhatsApp\Output\WhatsAppOutputAdapterFactory;
 use App\WhatsApp\WhatsAppCustomerCareWindow;
 use Carbon\CarbonImmutable;
@@ -51,6 +55,7 @@ final class FlowEngine
         private readonly FlowExecutionAggregator $aggregator,
         private readonly IntegrationClient $integrationClient,
         private readonly FlowEventBus $eventBus,
+        private readonly ContactConsentService $consents,
     ) {}
 
     public function hasActiveMessageFlows(Channel $channel): bool
@@ -507,7 +512,7 @@ final class FlowEngine
             'http_request' => $this->httpNode($execution, $node, $config),
             'agenda_availability', 'calendar_availability', 'check_availability' => $this->agendaAvailabilityNode($execution, $node, $config),
             'agenda_create_event', 'calendar_create_event', 'create_calendar_event' => $this->agendaCreateEventNode($execution, $node, $config),
-            'send_template' => $this->templateNode($execution, $config),
+            'send_template' => $this->templateNode($execution, $node, $config),
             'subflow', 'sub_flow' => $this->subflowNode($execution, $config),
             'ai_task' => $this->aiTaskNode($execution, $node, $config),
             'intent_router', 'route_intent' => $this->intentNode($execution, $node, $config, $message),
@@ -529,7 +534,14 @@ final class FlowEngine
             throw new RuntimeException('O Nó de Mensagem não possui texto.');
         }
 
-        $this->sendText($execution, $content, allowOutsideWindow: false);
+        if (! $this->sendText($execution, $content, allowOutsideWindow: false)) {
+            return [
+                'finish' => true,
+                'failed' => true,
+                'reason' => 'customer_care_window_closed',
+                'step_error' => 'A janela de atendimento de 24 horas está fechada; use um Template aprovado.',
+            ];
+        }
 
         return [];
     }
@@ -1051,26 +1063,114 @@ final class FlowEngine
     }
 
     /**
+     * @param  array<string, mixed>  $node
      * @param  array<string, mixed>  $config
      * @return array<string, mixed>
      */
-    private function templateNode(FlowExecution $execution, array $config): array
+    private function templateNode(FlowExecution $execution, array $node, array $config): array
     {
-        $template = (string) ($config['template'] ?? $config['name'] ?? 'template');
-        $parameters = array_map(fn (mixed $value): mixed => $this->interpolateValue($value, $execution), (array) ($config['parameters'] ?? []));
         $channel = $execution->channel;
         $contact = $execution->contact;
         if ($channel === null || $contact === null) {
             throw new RuntimeException('O Nó de Template precisa de Canal e Contato.');
         }
-        $this->outputAdapterFactory->make($channel)->sendTemplate(
-            $channel,
-            $contact,
-            $template,
-            array_values(array_map('strval', $parameters)),
-        );
+
+        $purpose = ConsentPurpose::tryFrom(strtolower((string) ($config['purpose'] ?? $config['finality'] ?? '')));
+        if ($purpose === null) {
+            return $this->templateFailure($execution, $node, 'consent_purpose_missing', 'O Nó de Enviar Template precisa declarar uma finalidade de consentimento.');
+        }
+
+        $lastIncoming = $contact->messages()
+            ->where('channel_id', $channel->getKey())
+            ->where('direction', MessageDirection::Incoming)
+            ->latest('created_at')
+            ->latest('id')
+            ->first();
+        $outsideWindow = $lastIncoming === null || $this->customerCareWindow->hasExpired($channel, $lastIncoming);
+        if ($outsideWindow && ! $this->consents->isGranted($contact, $purpose)) {
+            return $this->templateFailure(
+                $execution,
+                $node,
+                'consent_required_'.$purpose->value,
+                'Envio recusado: o Contato não tem consentimento ativo para '.strtolower($purpose->label()).'.',
+            );
+        }
+
+        $template = $this->templateForChannel($channel, $config);
+        if ($template === null) {
+            return $this->templateFailure($execution, $node, 'template_unavailable', 'O Template escolhido não está disponível neste Canal.');
+        }
+        if (! $template->isSendable()) {
+            return $this->templateFailure($execution, $node, 'template_not_approved', 'O Template não está aprovado pela Meta e não pode ser enviado.');
+        }
+
+        $parameters = $this->templateParameters($config, $execution);
+        $this->outputAdapterFactory->make($channel)->sendTemplate($channel, $contact, $template, $parameters);
 
         return [];
+    }
+
+    /** @param array<string, mixed> $config */
+    private function templateForChannel(Channel $channel, array $config): ?WhatsAppTemplate
+    {
+        $templateId = $config['template_id'] ?? $config['templateId'] ?? null;
+        if (! is_numeric($templateId)) {
+            return null;
+        }
+
+        $channel->loadMissing('whatsappPhoneNumber.whatsappAccount');
+        $account = $channel->whatsappPhoneNumber?->whatsappAccount;
+        if ($account === null) {
+            return null;
+        }
+
+        return WhatsAppTemplate::query()
+            ->where('whatsapp_account_id', $account->getKey())
+            ->find((int) $templateId);
+    }
+
+    /**
+     * @param  array<string, mixed>  $config
+     * @return list<string>
+     */
+    private function templateParameters(array $config, FlowExecution $execution): array
+    {
+        $configured = $config['variables'] ?? $config['parameters'] ?? [];
+        if (! is_array($configured)) {
+            return [];
+        }
+
+        return array_values(array_map(function (mixed $value) use ($execution): string {
+            if (is_array($value)) {
+                $source = strtolower((string) ($value['source'] ?? $value['type'] ?? ''));
+                $path = (string) ($value['path'] ?? $value['value'] ?? $value['name'] ?? '');
+                $path = match ($source) {
+                    'variable', 'variables' => 'variables.'.$path,
+                    'contact_field', 'field', 'contact' => 'field.'.$path,
+                    'global', 'global_variable', 'globals' => 'global.'.$path,
+                    default => $path,
+                };
+                $value = $this->resolveValue($path, $execution);
+            } else {
+                $value = $this->interpolateValue($value, $execution);
+            }
+
+            return is_scalar($value) ? (string) $value : '';
+        }, $configured));
+    }
+
+    /**
+     * @param  array<string, mixed>  $node
+     * @return array<string, mixed>
+     */
+    private function templateFailure(FlowExecution $execution, array $node, string $reason, string $message): array
+    {
+        $error = $this->edgeFor($execution, (string) $node['id'], 'error');
+        if ($error !== null) {
+            return ['next' => $error, 'step_error' => $reason.': '.$message];
+        }
+
+        return ['finish' => true, 'failed' => true, 'reason' => $reason, 'step_error' => $reason.': '.$message];
     }
 
     /**
@@ -1252,7 +1352,7 @@ final class FlowEngine
         return ['next' => $execution->current_node_id];
     }
 
-    private function sendText(FlowExecution $execution, string $content, bool $allowOutsideWindow): void
+    private function sendText(FlowExecution $execution, string $content, bool $allowOutsideWindow): bool
     {
         $channel = $execution->channel;
         $contact = $execution->contact;
@@ -1265,7 +1365,9 @@ final class FlowEngine
             ->where('direction', MessageDirection::Incoming)
             ->latest('created_at')
             ->first();
-        if (! $allowOutsideWindow && $lastIncoming !== null && $this->customerCareWindow->hasExpired($channel, $lastIncoming)) {
+        $outsideWindow = $channel->type === ChannelType::WhatsApp
+            && ($lastIncoming === null || $this->customerCareWindow->hasExpired($channel, $lastIncoming));
+        if (! $allowOutsideWindow && $outsideWindow) {
             Message::create([
                 'team_id' => $channel->team_id,
                 'contact_id' => $contact->getKey(),
@@ -1277,10 +1379,12 @@ final class FlowEngine
                 'delivery_status' => MessageDeliveryStatus::Failed,
             ]);
 
-            return;
+            return false;
         }
 
         $this->outputAdapterFactory->make($channel)->sendText($channel, $contact, $content);
+
+        return true;
     }
 
     /**

@@ -3,6 +3,7 @@
 namespace App\Http\Middleware;
 
 use App\Data\UserTeam;
+use App\Enums\ChannelType;
 use App\Enums\FlowExecutionStatus;
 use App\Models\FlowExecution;
 use Illuminate\Http\Request;
@@ -58,6 +59,10 @@ class HandleInertiaRequests extends Middleware
                     ->where('status', FlowExecutionStatus::Paused)
                     ->where('waiting_for', 'human')
                     ->count(),
+            'hasOfficialWhatsApp' => fn (): bool => $user?->company()?->channels()
+                ->where('type', ChannelType::WhatsApp)
+                ->whereHas('whatsappPhoneNumber.whatsappAccount')
+                ->exists() ?? false,
         ];
     }
 }

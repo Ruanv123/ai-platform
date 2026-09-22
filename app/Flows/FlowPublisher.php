@@ -10,6 +10,7 @@ use App\Models\Flow;
 use App\Models\FlowEvent;
 use App\Models\FlowVersion;
 use App\Models\Integration;
+use App\Models\WhatsAppTemplate;
 use Illuminate\Support\Facades\DB;
 use InvalidArgumentException;
 use Throwable;
@@ -169,6 +170,31 @@ final class FlowPublisher
                 }
                 if ($this->containsLegacyCredential($config)) {
                     $warnings[] = "O Nó {$node['id']} ainda contém uma credencial antiga no DSL; ela será ignorada. Edite-o para usar a Integração salva.";
+                }
+            }
+            if ($type === 'send_template') {
+                $purpose = strtolower((string) ($config['purpose'] ?? $config['finality'] ?? ''));
+                if (! in_array($purpose, ['marketing', 'utility', 'authentication'], true)) {
+                    throw new FlowValidationException(["O Nó {$node['id']} precisa declarar a finalidade do envio."]);
+                }
+                $templateId = $config['template_id'] ?? $config['templateId'] ?? null;
+                $channel = $flow->channel_id === null
+                    ? null
+                    : Channel::withoutGlobalScopes()->find($flow->channel_id);
+                if ($channel?->type?->value === 'whatsapp') {
+                    if (! is_numeric($templateId)) {
+                        throw new FlowValidationException(["O Nó {$node['id']} precisa escolher um Template aprovado."]);
+                    }
+                    $channel->loadMissing('whatsappPhoneNumber.whatsappAccount');
+                    $accountId = $channel->whatsappPhoneNumber?->whatsappAccount?->getKey();
+                    $template = $accountId === null
+                        ? null
+                        : WhatsAppTemplate::query()
+                            ->where('whatsapp_account_id', $accountId)
+                            ->find((int) $templateId);
+                    if ($template === null || ! $template->isSendable()) {
+                        throw new FlowValidationException(["O Template do Nó {$node['id']} não está aprovado neste Canal."]);
+                    }
                 }
             }
             if ($type === 'emit_event') {

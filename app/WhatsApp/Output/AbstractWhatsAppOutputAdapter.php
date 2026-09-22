@@ -7,6 +7,7 @@ use App\Enums\MessageDirection;
 use App\Models\Channel;
 use App\Models\Contact;
 use App\Models\Message;
+use App\Models\WhatsAppTemplate;
 use InvalidArgumentException;
 
 abstract class AbstractWhatsAppOutputAdapter implements WhatsAppOutputAdapter
@@ -33,7 +34,7 @@ abstract class AbstractWhatsAppOutputAdapter implements WhatsAppOutputAdapter
     protected function recordOutgoingTemplate(
         Channel $channel,
         Contact $contact,
-        string $template,
+        string|WhatsAppTemplate $template,
         array $parameters,
         string $providerMessageId,
     ): Message {
@@ -44,7 +45,12 @@ abstract class AbstractWhatsAppOutputAdapter implements WhatsAppOutputAdapter
             'direction' => MessageDirection::Outgoing,
             'payload_type' => 'template',
             'provider_message_id' => $providerMessageId,
-            'content' => json_encode(['template' => $template, 'parameters' => $parameters], JSON_THROW_ON_ERROR),
+            'content' => json_encode([
+                'template' => $template instanceof WhatsAppTemplate ? $template->name : $template,
+                'template_id' => $template instanceof WhatsAppTemplate ? $template->getKey() : null,
+                'language' => $template instanceof WhatsAppTemplate ? $template->language : null,
+                'parameters' => $parameters,
+            ], JSON_THROW_ON_ERROR),
             'delivery_status' => MessageDeliveryStatus::Sent,
         ]);
     }

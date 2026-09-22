@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Consent\ContactConsentService;
 use App\Enums\FlowExecutionStatus;
 use App\Enums\MessageDirection;
 use App\Http\Requests\SendHumanMessageRequest;
@@ -249,6 +250,7 @@ final class InboxController extends Controller
             ->first();
         $expiresAt = $window->expiresAt($channel, $lastIncoming);
         $flow = $execution->flowVersion->flow;
+        $consents = app(ContactConsentService::class)->snapshot($contact);
 
         return [
             'contact' => [
@@ -267,6 +269,7 @@ final class InboxController extends Controller
                     'id' => $tag->id,
                     'name' => $tag->name,
                 ])->values(),
+                'consents' => $consents,
             ],
             'channel' => [
                 'id' => $channel->id,

@@ -28,6 +28,7 @@ import { index as collections } from '@/routes/collections';
 import { index as agents } from '@/routes/agents';
 import { index as channels } from '@/routes/channels';
 import { index as integrations } from '@/routes/integrations';
+import { index as templates } from '@/routes/templates';
 import { index as flows } from '@/routes/flows';
 import { edit as profile } from '@/routes/profile';
 import { index as inbox } from '@/routes/inbox';
@@ -41,6 +42,7 @@ export function AppSidebar() {
     const { props } = usePage<{
         currentTeam?: { id: number } | null;
         pendingHumanCount?: number;
+        hasOfficialWhatsApp?: boolean;
     }>();
     const teamId = props.currentTeam?.id ?? null;
     useInboxRealtime(teamId, ['pendingHumanCount']);
@@ -77,6 +79,15 @@ export function AppSidebar() {
             href: channels(),
             icon: MessageSquare,
         },
+        ...(props.hasOfficialWhatsApp
+            ? [
+                  {
+                      title: 'Templates',
+                      href: templates(),
+                      icon: LayoutGrid,
+                  },
+              ]
+            : []),
         {
             title: 'Integrações',
             href: integrations(),
@@ -90,7 +101,7 @@ export function AppSidebar() {
     ];
 
     return (
-        <Sidebar collapsible="icon" variant="inset">
+        <Sidebar collapsible="icon" variant="sidebar">
             <SidebarHeader>
                 <SidebarMenu>
                     <SidebarMenuItem className="flex items-center gap-1 group-data-[collapsible=icon]:gap-0">
