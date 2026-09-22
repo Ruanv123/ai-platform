@@ -57,6 +57,7 @@ final class FlowDslValidator
             $node['id'] = $id;
             $node['type'] = $this->normalizeType($type);
             if (! in_array($node['type'], [
+                'trigger',
                 'message',
                 'capture_response',
                 'condition',
@@ -68,6 +69,12 @@ final class FlowDslValidator
                 'transfer_human',
                 'emit_event',
                 'http_request',
+                'agenda_availability',
+                'calendar_availability',
+                'check_availability',
+                'agenda_create_event',
+                'calendar_create_event',
+                'create_calendar_event',
                 'send_template',
                 'subflow',
                 'sub_flow',

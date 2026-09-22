@@ -43,9 +43,12 @@ use Illuminate\Support\Carbon;
  * @property-read Collection<int, Tag> $tags
  * @property-read Collection<int, GlobalVariable> $globalVariables
  * @property-read Collection<int, FlowExecution> $flowExecutions
+ * @property-read Collection<int, FlowExecutionStep> $flowExecutionSteps
  * @property-read Collection<int, Document> $documents
  * @property-read Collection<int, Membership> $memberships
  * @property-read Collection<int, User> $members
+ * @property-read Collection<int, Integration> $integrations
+ * @property-read Collection<int, FlowEvent> $flowEvents
  */
 #[Fillable([
     'name',
@@ -209,6 +212,12 @@ class Team extends Model
         return $this->hasMany(FlowExecution::class);
     }
 
+    /** @return HasMany<FlowExecutionStep, $this> */
+    public function flowExecutionSteps(): HasMany
+    {
+        return $this->hasMany(FlowExecutionStep::class);
+    }
+
     /**
      * Get all documents for this Empresa.
      *
@@ -217,6 +226,18 @@ class Team extends Model
     public function documents(): HasMany
     {
         return $this->hasMany(Document::class);
+    }
+
+    /** @return HasMany<Integration, $this> */
+    public function integrations(): HasMany
+    {
+        return $this->hasMany(Integration::class);
+    }
+
+    /** @return HasMany<FlowEvent, $this> */
+    public function flowEvents(): HasMany
+    {
+        return $this->hasMany(FlowEvent::class);
     }
 
     /**

@@ -14,6 +14,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasManyThrough;
 
 /**
  * @property string $id
@@ -63,10 +64,17 @@ class Flow extends Model
         return $this->hasMany(FlowVersion::class);
     }
 
-    /** @return HasMany<FlowExecution, $this> */
-    public function executions(): HasMany
+    /** @return HasManyThrough<FlowExecution, FlowVersion, $this> */
+    public function executions(): HasManyThrough
     {
-        return $this->hasMany(FlowExecution::class);
+        return $this->hasManyThrough(
+            FlowExecution::class,
+            FlowVersion::class,
+            'flow_id',
+            'flow_version_id',
+            'id',
+            'id',
+        );
     }
 
     public function publishedVersion(): ?FlowVersion

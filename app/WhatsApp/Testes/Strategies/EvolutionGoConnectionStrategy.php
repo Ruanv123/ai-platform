@@ -56,6 +56,7 @@ final class EvolutionGoConnectionStrategy extends EvolutionGoMessageStrategy
 
     /**
      * @param  array<string, mixed>  $payload
+     * @param  list<string>  $needles
      */
     private function stateContains(array $payload, array $needles): bool
     {

@@ -277,7 +277,8 @@ class DocumentController extends Controller
      */
     public function move(MoveDocumentRequest $request, Document $document): RedirectResponse
     {
-        $collection = Collection::query()->findOrFail($request->validated('collection_id'));
+        $collectionId = (string) $request->validated('collection_id');
+        $collection = Collection::query()->findOrFail($collectionId);
 
         DB::transaction(function () use ($document, $collection): void {
             $document->update(['collection_id' => $collection->getKey()]);
@@ -400,13 +401,13 @@ class DocumentController extends Controller
      *     status: string,
      *     sort: string,
      *     sortColumn: string,
-     *     direction: string
+     *     direction: 'asc'|'desc'
      * }
      */
     private function documentFilters(Request $request): array
     {
-        $type = DocumentType::tryFrom($request->string('type')->toString())?->value ?? '';
-        $status = DocumentStatus::tryFrom($request->string('status')->toString())?->value ?? '';
+        $type = DocumentType::tryFrom($request->string('type')->toString())->value ?? '';
+        $status = DocumentStatus::tryFrom($request->string('status')->toString())->value ?? '';
         $sortOptions = [
             'title' => 'title',
             'size' => 'size_bytes',
@@ -415,9 +416,11 @@ class DocumentController extends Controller
         $sort = $request->string('sort')->toString();
         $sort = array_key_exists($sort, $sortOptions) ? $sort : 'updated_at';
         $direction = $request->string('direction')->toString();
-        $direction = in_array($direction, ['asc', 'desc'], true)
-            ? $direction
-            : ($sort === 'updated_at' ? 'desc' : 'asc');
+        $direction = match ($direction) {
+            'asc' => 'asc',
+            'desc' => 'desc',
+            default => $sort === 'updated_at' ? 'desc' : 'asc',
+        };
 
         return [
             'search' => trim($request->string('search')->toString()),

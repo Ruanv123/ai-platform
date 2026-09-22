@@ -40,6 +40,10 @@ class FlowExecutionFactory extends Factory
             'queued_triggers' => [],
             'status' => FlowExecutionStatus::Running,
             'waiting_for' => null,
+            'human_assigned_user_id' => null,
+            'human_assigned_at' => null,
+            'human_last_activity_at' => null,
+            'human_transfer_reason' => null,
             'wake_at' => null,
             'expires_at' => now()->addDays(30),
             'attempts' => 0,
@@ -54,6 +58,18 @@ class FlowExecutionFactory extends Factory
         return $this->state([
             'status' => FlowExecutionStatus::Waiting,
             'waiting_for' => 'contact_response',
+        ]);
+    }
+
+    public function waitingForHuman(?Contact $contact = null): static
+    {
+        return $this->state([
+            'contact_id' => $contact?->getKey(),
+            'status' => FlowExecutionStatus::Paused,
+            'waiting_for' => 'human',
+            'human_transfer_reason' => 'contact_requested',
+            'human_last_activity_at' => now(),
+            'wake_at' => now()->addDay(),
         ]);
     }
 

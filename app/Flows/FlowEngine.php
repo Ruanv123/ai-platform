@@ -9,6 +9,8 @@ use App\Enums\FlowCollisionPolicy;
 use App\Enums\FlowExecutionStatus;
 use App\Enums\MessageDeliveryStatus;
 use App\Enums\MessageDirection;
+use App\Events\HumanConversationUpdated;
+use App\Integrations\IntegrationClient;
 use App\Jobs\WakeFlowExecution;
 use App\Knowledge\AgentInstructionTemplate;
 use App\Knowledge\KnowledgeBaseSearch;
@@ -18,9 +20,12 @@ use App\Models\Contact;
 use App\Models\ContactField;
 use App\Models\ContactFieldValue;
 use App\Models\Flow;
+use App\Models\FlowEvent;
 use App\Models\FlowExecution;
+use App\Models\FlowExecutionStep;
 use App\Models\FlowVersion;
 use App\Models\GlobalVariable;
+use App\Models\Integration;
 use App\Models\Message;
 use App\Models\Tag;
 use App\WhatsApp\Output\WhatsAppOutputAdapterFactory;
@@ -29,7 +34,7 @@ use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Carbon;
-use Illuminate\Support\Facades\Http;
+use Laravel\Ai\Responses\AgentResponse;
 use RuntimeException;
 use Throwable;
 
@@ -42,6 +47,10 @@ final class FlowEngine
         private readonly WhatsAppCustomerCareWindow $customerCareWindow,
         private readonly AgentInstructionTemplate $instructionTemplate,
         private readonly KnowledgeBaseSearch $knowledgeBaseSearch,
+        private readonly TraceSanitizer $traceSanitizer,
+        private readonly FlowExecutionAggregator $aggregator,
+        private readonly IntegrationClient $integrationClient,
+        private readonly FlowEventBus $eventBus,
     ) {}
 
     public function hasActiveMessageFlows(Channel $channel): bool
@@ -169,7 +178,12 @@ final class FlowEngine
         }
 
         if ($execution->expires_at->isPast()) {
-            $execution->finish(FlowExecutionStatus::Failed, 'execution_ttl_exceeded');
+            $waitingFor = $execution->waiting_for;
+            $this->finishExecution($execution, FlowExecutionStatus::Failed, 'execution_ttl_exceeded');
+            if ($waitingFor === 'human') {
+                $this->clearHumanWaiting($execution);
+                HumanConversationUpdated::dispatch($execution->team_id, $execution->contact_id, 'expired');
+            }
 
             return;
         }
@@ -183,12 +197,15 @@ final class FlowEngine
             'status' => FlowExecutionStatus::Running,
             'wake_at' => null,
             'waiting_for' => null,
+            ...($waitingFor === 'human' ? [
+                'human_assigned_user_id' => null,
+                'human_assigned_at' => null,
+                'human_last_activity_at' => null,
+            ] : []),
         ])->save();
-        if ($waitingFor === 'human' && $execution->contact_id !== null) {
-            Contact::withoutGlobalScopes()->whereKey($execution->contact_id)->update([
-                'human_waiting' => false,
-                'human_waiting_at' => null,
-            ]);
+        if ($waitingFor === 'human') {
+            $this->clearHumanWaiting($execution);
+            HumanConversationUpdated::dispatch($execution->team_id, $execution->contact_id, 'returned');
         }
         $this->hydrate($execution);
         if ($waitingFor === 'contact_response') {
@@ -225,14 +242,14 @@ final class FlowEngine
         $dsl = $this->validator->normalize($execution->flowVersion->dsl);
         $node = collect($dsl['nodes'])->firstWhere('id', $execution->current_node_id);
         if (! is_array($node)) {
-            $execution->finish(FlowExecutionStatus::Failed, 'node_not_found');
+            $this->finishExecution($execution, FlowExecutionStatus::Failed, 'node_not_found');
 
             return;
         }
 
         $result = $this->exceptionResult($execution, $node, 'contact_timeout');
         if (($result['finish'] ?? false) === true) {
-            $execution->finish(FlowExecutionStatus::Failed, (string) ($result['reason'] ?? 'contact_timeout'));
+            $this->finishExecution($execution, FlowExecutionStatus::Abandoned, (string) ($result['reason'] ?? 'contact_timeout'));
 
             return;
         }
@@ -248,22 +265,41 @@ final class FlowEngine
             return;
         }
 
+        if ($execution->expires_at->isPast()) {
+            $this->finishExecution($execution, FlowExecutionStatus::Failed, 'execution_ttl_exceeded');
+            $this->clearHumanWaiting($execution);
+            HumanConversationUpdated::dispatch($execution->team_id, $execution->contact_id, 'returned');
+
+            return;
+        }
+
         $execution->forceFill([
             'status' => FlowExecutionStatus::Running,
             'waiting_for' => null,
             'wake_at' => null,
+            'human_assigned_user_id' => null,
+            'human_assigned_at' => null,
+            'human_last_activity_at' => null,
         ])->save();
-        if ($execution->contact_id !== null) {
-            Contact::withoutGlobalScopes()->whereKey($execution->contact_id)->update([
-                'human_waiting' => false,
-                'human_waiting_at' => null,
-            ]);
-        }
+        $this->clearHumanWaiting($execution);
         $this->hydrate($execution);
         $dsl = $this->validator->normalize($execution->flowVersion->dsl);
         $execution->current_node_id = $this->nextNode($dsl, (string) $execution->current_node_id);
         $execution->save();
         $this->run($execution, null);
+        HumanConversationUpdated::dispatch($execution->team_id, $execution->contact_id, 'returned');
+    }
+
+    private function clearHumanWaiting(FlowExecution $execution): void
+    {
+        if ($execution->contact_id === null) {
+            return;
+        }
+
+        Contact::withoutGlobalScopes()->whereKey($execution->contact_id)->update([
+            'human_waiting' => false,
+            'human_waiting_at' => null,
+        ]);
     }
 
     /** @param array<string, mixed> $variables */
@@ -314,6 +350,10 @@ final class FlowEngine
         }
 
         $execution->saveQuietly();
+        $this->aggregator->recordStarted($execution);
+        if (! $execution->isActive()) {
+            $this->aggregator->recordFinished($execution, $execution->status);
+        }
 
         return $execution;
     }
@@ -322,7 +362,7 @@ final class FlowEngine
     {
         if (! $execution->isActive() || $execution->expires_at->isPast()) {
             if ($execution->expires_at->isPast() && $execution->isActive()) {
-                $execution->finish(FlowExecutionStatus::Failed, 'execution_ttl_exceeded');
+                $this->finishExecution($execution, FlowExecutionStatus::Failed, 'execution_ttl_exceeded');
             }
 
             return;
@@ -335,39 +375,81 @@ final class FlowEngine
 
         while ($execution->current_node_id !== null && $steps < (int) config('flows.max_steps_per_turn', 50)) {
             if ($execution->expires_at->isPast()) {
-                $execution->finish(FlowExecutionStatus::Failed, 'execution_ttl_exceeded');
+                $this->finishExecution($execution, FlowExecutionStatus::Failed, 'execution_ttl_exceeded');
 
                 return;
             }
 
             $node = $nodes[$execution->current_node_id] ?? null;
             if (! is_array($node)) {
-                $execution->finish(FlowExecutionStatus::Failed, 'node_not_found');
+                $this->finishExecution($execution, FlowExecutionStatus::Failed, 'node_not_found');
 
                 return;
             }
 
             $steps++;
             $execution->attempts++;
-            $this->trace($execution, $node['id'], 'started');
+            $execution->save();
+            $startedAt = CarbonImmutable::now();
+            $step = $execution->steps()->create([
+                'team_id' => $execution->team_id,
+                'sequence' => $execution->attempts,
+                'node_id' => $node['id'],
+                'result' => 'running',
+                'duration_ms' => 0,
+                'variables_snapshot' => $this->traceSanitizer->sanitizeVariables($execution->variables, $this->nodeConfig($node)),
+                'started_at' => $startedAt,
+            ]);
+            $startedAtNanoseconds = hrtime(true);
+            $error = null;
 
             try {
                 $result = $this->executeNode($execution, $node, $message);
             } catch (Throwable $exception) {
                 report($exception);
-                $this->trace($execution, $node['id'], 'failed', $exception->getMessage());
-                $result = $this->exceptionResult($execution, $node, $exception->getMessage());
+                $error = $exception->getMessage();
+                $result = $this->exceptionResult($execution, $node, $error);
+                if ($exception instanceof TraceableFlowException) {
+                    $result['trace_data'] = $exception->traceData;
+                }
             }
 
-            $this->trace($execution, $node['id'], ($result['wait'] ?? false) ? 'waiting' : 'completed');
+            $reportedError = is_string($result['step_error'] ?? null) ? $result['step_error'] : null;
+            $stepError = $error ?? $reportedError ?? (($result['failed'] ?? false) ? (string) ($result['reason'] ?? 'node_failed') : null);
+            if ($stepError !== null) {
+                $stepError = $this->traceSanitizer->sanitizeText(
+                    $stepError,
+                    $this->sensitiveFields($this->nodeConfig($node)),
+                    $execution->variables,
+                );
+            }
             if (($result['wait'] ?? false) === true) {
+                $this->completeStep(
+                    $step,
+                    $execution,
+                    $stepError === null ? 'waiting' : 'failed',
+                    $startedAtNanoseconds,
+                    $stepError,
+                    traceData: $result['trace_data'] ?? [],
+                    nodeConfig: $this->nodeConfig($node),
+                );
                 $execution->save();
 
                 return;
             }
 
             if (($result['finish'] ?? false) === true) {
-                $execution->finish(
+                $this->completeStep(
+                    $step,
+                    $execution,
+                    ($result['failed'] ?? false) || $stepError !== null ? 'failed' : 'completed',
+                    $startedAtNanoseconds,
+                    $stepError,
+                    traceData: $result['trace_data'] ?? [],
+                    nodeConfig: $this->nodeConfig($node),
+                );
+                $this->finishExecution(
+                    $execution,
                     ($result['failed'] ?? false) ? FlowExecutionStatus::Failed : FlowExecutionStatus::Completed,
                     (string) ($result['reason'] ?? 'completed'),
                 );
@@ -377,6 +459,17 @@ final class FlowEngine
             }
 
             $next = $result['next'] ?? $this->nextNode($dsl, $node['id']);
+            $followedEdge = is_string($next) ? $this->edgeBetween($dsl, $node['id'], $next) : null;
+            $this->completeStep(
+                $step,
+                $execution,
+                $stepError === null ? 'completed' : 'failed',
+                $startedAtNanoseconds,
+                $stepError,
+                $followedEdge,
+                traceData: $result['trace_data'] ?? [],
+                nodeConfig: $this->nodeConfig($node),
+            );
             $execution->current_node_id = is_string($next) && $next !== '' ? $next : null;
             $execution->last_activity_at = Carbon::now();
             $execution->save();
@@ -384,9 +477,9 @@ final class FlowEngine
         }
 
         if ($execution->current_node_id !== null) {
-            $execution->finish(FlowExecutionStatus::Failed, 'step_limit_exceeded');
+            $this->finishExecution($execution, FlowExecutionStatus::Failed, 'step_limit_exceeded');
         } else {
-            $execution->finish(FlowExecutionStatus::Completed, 'completed');
+            $this->finishExecution($execution, FlowExecutionStatus::Completed, 'completed');
         }
         $this->drainQueued($execution);
     }
@@ -401,6 +494,7 @@ final class FlowEngine
         $config = is_array($node['config'] ?? null) ? $node['config'] : [];
 
         return match ($type) {
+            'trigger' => [],
             'message' => $this->messageNode($execution, $node, $config),
             'capture_response' => $this->captureNode($execution, $node, $config, $message),
             'condition' => $this->conditionNode($execution, $node, $config),
@@ -411,6 +505,8 @@ final class FlowEngine
             'transfer_human' => $this->transferNode($execution, $config),
             'emit_event' => $this->eventNode($execution, $config),
             'http_request' => $this->httpNode($execution, $node, $config),
+            'agenda_availability', 'calendar_availability', 'check_availability' => $this->agendaAvailabilityNode($execution, $node, $config),
+            'agenda_create_event', 'calendar_create_event', 'create_calendar_event' => $this->agendaCreateEventNode($execution, $node, $config),
             'send_template' => $this->templateNode($execution, $config),
             'subflow', 'sub_flow' => $this->subflowNode($execution, $config),
             'ai_task' => $this->aiTaskNode($execution, $node, $config),
@@ -459,7 +555,10 @@ final class FlowEngine
         if (! $this->validCapture($value, $config)) {
             $message->forceFill(['is_responded' => true])->save();
 
-            return $this->exceptionResult($execution, $node, 'invalid_capture');
+            return $this->withStepError(
+                $this->exceptionResult($execution, $node, 'invalid_capture'),
+                'invalid_capture',
+            );
         }
 
         $variable = (string) ($config['variable'] ?? $config['name'] ?? 'response');
@@ -499,7 +598,7 @@ final class FlowEngine
             } catch (Throwable $exception) {
                 $error = $this->edgeFor($execution, $node['id'], 'error');
                 if ($error !== null) {
-                    return ['next' => $error];
+                    return ['next' => $error, 'step_error' => $exception->getMessage()];
                 }
 
                 throw $exception;
@@ -600,7 +699,10 @@ final class FlowEngine
             ? Agent::withoutGlobalScopes()->where('team_id', $execution->team_id)->find($agentId)
             : $execution->channel?->agent;
         if ($agent === null || ! $agent->is_active) {
-            return $this->exceptionResult($execution, $node, 'agent_inactive');
+            return $this->withStepError(
+                $this->exceptionResult($execution, $node, 'agent_inactive'),
+                'agent_inactive',
+            );
         }
 
         if ($message === null && $execution->waiting_for === null) {
@@ -610,6 +712,7 @@ final class FlowEngine
                 ->first();
         }
 
+        $traceData = [];
         if ($message !== null || $execution->waiting_for === null) {
             if ($message !== null) {
                 $variables = $execution->variables;
@@ -630,6 +733,7 @@ final class FlowEngine
                 $this->knowledgeBaseSearch,
                 new ReturnToFlow($execution),
             ))->prompt($prompt, provider: config('ai.playground.provider'), model: config('ai.playground.model'), timeout: (int) config('ai.playground.timeout', 60));
+            $traceData = $this->aiTraceData($prompt, $response, $config, $execution->variables);
             $text = trim($response->text);
             if ($text !== '') {
                 $this->sendText($execution, $text, allowOutsideWindow: false);
@@ -653,16 +757,16 @@ final class FlowEngine
                 if (! $this->expressions->evaluate($returnWhen, $this->expressionContext($execution))) {
                     $execution->forceFill(['status' => FlowExecutionStatus::Waiting, 'waiting_for' => 'agent'])->save();
 
-                    return ['wait' => true];
+                    return ['wait' => true, 'trace_data' => $traceData];
                 }
             } catch (Throwable) {
                 $execution->forceFill(['status' => FlowExecutionStatus::Waiting, 'waiting_for' => 'agent'])->save();
 
-                return ['wait' => true];
+                return ['wait' => true, 'trace_data' => $traceData];
             }
         }
 
-        return [];
+        return ['trace_data' => $traceData];
     }
 
     /**
@@ -672,66 +776,278 @@ final class FlowEngine
     private function transferNode(FlowExecution $execution, array $config): array
     {
         $contact = $execution->contact;
+        $now = now();
         if ($contact !== null) {
-            $contact->forceFill(['human_waiting' => true, 'human_waiting_at' => now()])->save();
+            $contact->forceFill(['human_waiting' => true, 'human_waiting_at' => $now])->save();
         }
-        $inactivity = (int) ($config['return_after_seconds'] ?? 86400);
+
+        $reason = $this->humanTransferReason($execution, $config);
+        $inactivity = (int) ($config['return_after_seconds'] ?? config('flows.human_return_after_seconds', 86400));
         $execution->forceFill([
             'status' => FlowExecutionStatus::Paused,
             'waiting_for' => 'human',
+            'human_transfer_reason' => $reason,
+            'human_assigned_user_id' => null,
+            'human_assigned_at' => null,
+            'human_last_activity_at' => null,
             'wake_at' => CarbonImmutable::now()->addSeconds($inactivity),
         ])->save();
         dispatch(new WakeFlowExecution($execution->getKey()))->delay($execution->wake_at);
+        HumanConversationUpdated::dispatch($execution->team_id, $execution->contact_id, 'transferred');
 
         return ['wait' => true];
     }
 
+    /** @param array<string, mixed> $config */
+    private function humanTransferReason(FlowExecution $execution, array $config): string
+    {
+        $configuredReason = trim((string) ($config['reason'] ?? $config['message'] ?? ''));
+        if ($configuredReason !== '') {
+            return $configuredReason;
+        }
+
+        $exceptionReason = (string) data_get($execution->variables, '__human_transfer_reason', '');
+        if ($exceptionReason !== '') {
+            return $exceptionReason === 'unsupported_media' ? $exceptionReason : 'exception_exhausted';
+        }
+
+        return data_get($execution->variables, 'payload_type') === 'unsupported'
+            ? 'unsupported_media'
+            : 'contact_requested';
+    }
+
     /**
      * @param  array<string, mixed>  $config
      * @return array<string, mixed>
      */
+    /** @param array<string, mixed> $config */
     private function eventNode(FlowExecution $execution, array $config): array
     {
-        $event = (string) ($config['name'] ?? $config['event'] ?? 'event');
-        $events = $execution->emitted_events;
-        $events[] = $event;
-        $execution->emitted_events = array_values(array_unique($events));
-        $execution->save();
+        $eventId = $config['event_id'] ?? null;
+        if (! is_string($eventId) || $eventId === '') {
+            $legacyName = (string) ($config['name'] ?? $config['event'] ?? '');
+            $eventId = (string) FlowEvent::withoutGlobalScopes()
+                ->where('team_id', $execution->team_id)
+                ->where('name', $legacyName)
+                ->value('id');
+        }
+        if ($eventId === '') {
+            throw new RuntimeException('O Nó de Emitir Evento precisa escolher um Evento declarado.');
+        }
+
+        $payload = $this->interpolateValue($config['payload'] ?? [], $execution);
+        if (! is_array($payload)) {
+            $payload = ['value' => $payload];
+        }
+        $this->eventBus->emit($execution, $eventId, $payload);
 
         return [];
     }
 
+    /** @param array<string, mixed> $config */
+    private function httpNode(FlowExecution $execution, array $node, array $config): array
+    {
+        try {
+            $integration = $this->integrationFor($execution, $config);
+        } catch (Throwable $exception) {
+            return $this->integrationError($execution, $node, $exception);
+        }
+
+        return $this->executeHttpRequest($execution, $node, $config, $integration);
+    }
+
+    /** @param array<string, mixed> $config */
+    private function agendaAvailabilityNode(FlowExecution $execution, array $node, array $config): array
+    {
+        try {
+            $integration = $this->integrationFor($execution, $config);
+        } catch (Throwable $exception) {
+            return $this->integrationError($execution, $node, $exception);
+        }
+        if ($integration->type !== 'agenda') {
+            return $this->integrationError($execution, $node, new RuntimeException('Este Nó precisa usar uma Integração de Agenda.'));
+        }
+        $request = [
+            'method' => 'GET',
+            'url' => (string) ($config['path'] ?? $integration->credential('availability_path', '/availability')),
+            'body' => array_filter([
+                'start' => $this->interpolateValue($config['start'] ?? $config['start_at'] ?? null, $execution),
+                'end' => $this->interpolateValue($config['end'] ?? $config['end_at'] ?? null, $execution),
+                'timezone' => (string) ($execution->team?->timezone ?? $config['timezone'] ?? 'America/Sao_Paulo'),
+            ], fn (mixed $value): bool => $value !== null && $value !== ''),
+            'response_map' => [
+                (string) ($config['output_variable'] ?? 'available_slots') => (string) ($config['response_path'] ?? 'slots'),
+            ],
+        ];
+
+        return $this->executeHttpRequest($execution, $node, [...$config, ...$request], $integration);
+    }
+
+    /** @param array<string, mixed> $config */
+    private function agendaCreateEventNode(FlowExecution $execution, array $node, array $config): array
+    {
+        try {
+            $integration = $this->integrationFor($execution, $config);
+        } catch (Throwable $exception) {
+            return $this->integrationError($execution, $node, $exception);
+        }
+        if ($integration->type !== 'agenda') {
+            return $this->integrationError($execution, $node, new RuntimeException('Este Nó precisa usar uma Integração de Agenda.'));
+        }
+        $body = is_array($config['body'] ?? null) ? $this->interpolateValue($config['body'], $execution) : [
+            'title' => $this->interpolateValue($config['title'] ?? $config['summary'] ?? 'Compromisso', $execution),
+            'start' => $this->interpolateValue($config['start'] ?? $config['start_at'] ?? null, $execution),
+            'end' => $this->interpolateValue($config['end'] ?? $config['end_at'] ?? null, $execution),
+            'timezone' => (string) ($execution->team?->timezone ?? $config['timezone'] ?? 'America/Sao_Paulo'),
+            'contact' => $execution->contact === null ? null : [
+                'name' => $execution->contact->name,
+                'phone' => $execution->contact->phone,
+            ],
+        ];
+        $request = [
+            'method' => 'POST',
+            'url' => (string) ($config['path'] ?? $integration->credential('event_path', '/events')),
+            'body' => $body,
+            'response_map' => [
+                (string) ($config['output_variable'] ?? 'appointment_id') => (string) ($config['response_path'] ?? 'id'),
+            ],
+        ];
+
+        return $this->executeHttpRequest($execution, $node, [...$config, ...$request], $integration);
+    }
+
+    /** @return array<string, mixed> */
+    private function integrationError(FlowExecution $execution, array $node, Throwable $exception): array
+    {
+        $error = $this->edgeFor($execution, (string) $node['id'], 'error');
+        if ($error !== null) {
+            return ['next' => $error, 'step_error' => $exception->getMessage()];
+        }
+
+        throw $exception;
+    }
+
+    /** @param array<string, mixed> $config */
+    private function integrationFor(FlowExecution $execution, array $config): Integration
+    {
+        $integrationId = $config['integration_id'] ?? null;
+        if (! is_string($integrationId) || $integrationId === '') {
+            throw new RuntimeException('Este Nó precisa escolher uma Integração salva.');
+        }
+
+        $integration = Integration::withoutGlobalScopes()
+            ->where('team_id', $execution->team_id)
+            ->find($integrationId);
+        if ($integration === null) {
+            throw new RuntimeException('A Integração escolhida não existe nesta Empresa.');
+        }
+        if ($integration->status === 'error') {
+            throw new RuntimeException('A Integração está com erro: '.($integration->status_message ?: 'teste a conexão novamente.'));
+        }
+
+        return $integration;
+    }
+
     /**
-     * @param  array<string, mixed>  $node
+     * Execute every external request, including typed connectors, through the same retry and trace path.
+     *
      * @param  array<string, mixed>  $config
      * @return array<string, mixed>
      */
-    private function httpNode(FlowExecution $execution, array $node, array $config): array
+    private function executeHttpRequest(FlowExecution $execution, array $node, array $config, Integration $integration): array
     {
         $method = strtoupper((string) ($config['method'] ?? 'GET'));
-        $url = $this->interpolate((string) ($config['url'] ?? ''), $execution);
+        $url = $this->integrationClient->url($integration, $this->interpolate((string) ($config['url'] ?? ''), $execution));
         $headers = $this->interpolateArray($config['headers'] ?? [], $execution);
         $body = $this->interpolateValue($config['body'] ?? [], $execution);
-        $request = Http::withHeaders($headers)->retry((int) config('flows.http_retry_times', 2), 100, throw: false)->timeout(15);
-        $response = $request->send($method, $url, $method === 'GET' ? ['query' => $body] : ['json' => $body]);
+        $sensitiveFields = $this->sensitiveFields($config);
+        $sanitizedRequest = [
+            'method' => $method,
+            'url' => $this->traceSanitizer->sanitizeUrl($url, $sensitiveFields),
+            'headers' => $this->traceSanitizer->sanitizeHeaders($headers, $sensitiveFields),
+            'body' => $this->traceSanitizer->sanitize($body, $sensitiveFields),
+        ];
+        $retryLimit = max(0, (int) config('flows.http_retry_times', 2));
+        $response = null;
+        $lastException = null;
+        $retryCount = 0;
 
-        if ($response->failed()) {
-            $error = $this->edgeFor($execution, $node['id'], 'error');
+        for ($attempt = 0; $attempt <= $retryLimit; $attempt++) {
+            try {
+                $request = $this->integrationClient->request($integration, $headers);
+                $response = $request->send($method, $url, $method === 'GET' ? ['query' => $body] : ['json' => $body]);
+                $lastException = null;
+                $retryable = $response->serverError() || in_array($response->status(), [408, 425, 429], true);
+                if (! $retryable || $attempt === $retryLimit) {
+                    break;
+                }
+                $retryCount++;
+                usleep(100_000 * (2 ** $attempt));
+            } catch (Throwable $exception) {
+                $lastException = $exception;
+                if ($attempt === $retryLimit) {
+                    break;
+                }
+                $retryCount++;
+                usleep(100_000 * (2 ** $attempt));
+            }
+        }
+
+        $responseBody = $response?->json();
+        $traceData = [
+            'http_request' => $sanitizedRequest,
+            'http_response' => $response === null ? null : [
+                'status' => $response->status(),
+                'headers' => $this->traceSanitizer->sanitizeHeaders($response->headers(), $sensitiveFields),
+                'body' => $this->traceSanitizer->sanitize($responseBody ?? $response->body(), $sensitiveFields),
+            ],
+            'http_status' => $response?->status(),
+            'retry_count' => $retryCount,
+        ];
+
+        $error = $this->edgeFor($execution, $node['id'], 'error');
+        if ($lastException !== null) {
+            $message = 'A Requisição HTTP falhou: '.$lastException->getMessage();
             if ($error !== null) {
-                return ['next' => $error];
+                return ['next' => $error, 'step_error' => $message, 'trace_data' => $traceData];
             }
 
-            throw new RuntimeException('A Requisição HTTP falhou.');
+            throw new TraceableFlowException($message, $traceData);
+        }
+        if ($response === null || $response->failed()) {
+            $message = $response === null ? 'A Requisição HTTP falhou.' : "A Requisição HTTP falhou com status {$response->status()}.";
+            if ($error !== null) {
+                return ['next' => $error, 'step_error' => $message, 'trace_data' => $traceData];
+            }
+
+            throw new TraceableFlowException($message, $traceData);
         }
 
         $variables = $execution->variables;
         foreach ((array) ($config['response_map'] ?? $config['map'] ?? []) as $name => $path) {
-            data_set($variables, (string) $name, data_get($response->json(), (string) $path));
+            if (is_array($path)) {
+                $name = $path['variable'] ?? $path['name'] ?? $name;
+                $path = $path['path'] ?? $path['json_path'] ?? null;
+            }
+            if (is_string($path) && is_string($name)) {
+                data_set($variables, $name, data_get($responseBody, $path));
+            }
         }
         $execution->variables = $variables;
         $execution->save();
 
-        return [];
+        return ['trace_data' => $traceData];
+    }
+
+    /** @param array<string, mixed> $config */
+    private function sensitiveFields(array $config): array
+    {
+        $fields = $config['sensitive_fields']
+            ?? $config['sensitiveFields']
+            ?? $config['sensitive']
+            ?? [];
+
+        return is_array($fields) ? array_values(array_filter($fields, 'is_string')) : [];
     }
 
     /**
@@ -773,7 +1089,7 @@ final class FlowEngine
             : null;
         $version = $flow?->publishedVersion();
         if ($flow === null || $version === null) {
-            return ['next' => $config['error'] ?? null];
+            return ['next' => $config['error'] ?? null, 'step_error' => 'subflow_unavailable'];
         }
 
         $inputs = [];
@@ -807,10 +1123,13 @@ final class FlowEngine
             return ['next' => $config['error'] ?? null];
         }
 
+        $traceData = [];
         try {
             $history = $execution->contact?->history($execution->channel) ?? new Collection;
+            $prompt = $this->interpolate((string) ($config['instruction'] ?? $config['prompt'] ?? ''), $execution);
             $response = (new WhatsAppAgent($agent, $history, $this->instructionTemplate, $this->knowledgeBaseSearch))
-                ->prompt($this->interpolate((string) ($config['instruction'] ?? $config['prompt'] ?? ''), $execution), provider: config('ai.playground.provider'), model: config('ai.playground.model'), timeout: (int) config('ai.playground.timeout', 60));
+                ->prompt($prompt, provider: config('ai.playground.provider'), model: config('ai.playground.model'), timeout: (int) config('ai.playground.timeout', 60));
+            $traceData = $this->aiTraceData($prompt, $response, $config, $execution->variables);
             $value = trim($response->text);
             if (($config['structured'] ?? false) === true) {
                 $value = json_decode($value, true, flags: JSON_THROW_ON_ERROR);
@@ -820,9 +1139,13 @@ final class FlowEngine
             $execution->variables = $variables;
             $execution->save();
 
-            return [];
-        } catch (Throwable) {
-            return ['next' => $config['error'] ?? null];
+            return ['trace_data' => $traceData];
+        } catch (Throwable $exception) {
+            return [
+                'next' => $config['error'] ?? null,
+                'step_error' => $exception->getMessage(),
+                'trace_data' => $traceData,
+            ];
         }
     }
 
@@ -838,11 +1161,13 @@ final class FlowEngine
             return ['next' => $config['none'] ?? $config['error'] ?? null];
         }
 
+        $traceData = [];
         try {
             $history = $execution->contact?->history($execution->channel) ?? new Collection;
             $prompt = $message !== null ? $message->content : (string) ($execution->variables['message'] ?? '');
             $response = (new WhatsAppAgent($agent, $history, $this->instructionTemplate, $this->knowledgeBaseSearch))
                 ->prompt($prompt, provider: config('ai.playground.provider'), model: config('ai.playground.model'), timeout: (int) config('ai.playground.timeout', 60));
+            $traceData = $this->aiTraceData($prompt, $response, $config, $execution->variables);
             $intent = trim($response->text);
             $variables = $execution->variables;
             data_set($variables, (string) ($config['variable'] ?? 'intent'), $intent);
@@ -851,14 +1176,18 @@ final class FlowEngine
 
             foreach ((array) ($config['options'] ?? []) as $option) {
                 if (is_array($option) && strcasecmp((string) ($option['name'] ?? ''), $intent) === 0) {
-                    return ['next' => $option['target'] ?? null];
+                    return ['next' => $option['target'] ?? null, 'trace_data' => $traceData];
                 }
             }
-        } catch (Throwable) {
-            return ['next' => $config['error'] ?? $config['none'] ?? null];
+        } catch (Throwable $exception) {
+            return [
+                'next' => $config['error'] ?? $config['none'] ?? null,
+                'step_error' => $exception->getMessage(),
+                'trace_data' => $traceData,
+            ];
         }
 
-        return ['next' => $config['none'] ?? null];
+        return ['next' => $config['none'] ?? null, 'trace_data' => $traceData];
     }
 
     /**
@@ -872,7 +1201,10 @@ final class FlowEngine
         $retryKey = '__retries.'.$node['id'];
         $retries = (int) data_get($execution->variables, $retryKey, 0);
         $first = is_array($steps) ? ($steps[$retries] ?? null) : null;
-        data_set($execution->variables, $retryKey, $retries + 1);
+        $variables = $execution->variables;
+        data_set($variables, $retryKey, $retries + 1);
+        data_set($variables, '__human_transfer_reason', $reason);
+        $execution->variables = $variables;
         $execution->save();
 
         if (is_array($first)) {
@@ -1002,6 +1334,21 @@ final class FlowEngine
         foreach ($this->edges($execution->flowVersion->dsl, $source) as $edge) {
             if (strtolower((string) ($edge['label'] ?? $edge['condition'] ?? '')) === strtolower($label)) {
                 return $edge['target'];
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * @param  array<string, mixed>  $dsl
+     * @return array<string, mixed>|null
+     */
+    private function edgeBetween(array $dsl, string $source, string $target): ?array
+    {
+        foreach ($this->edges($dsl, $source) as $edge) {
+            if ($edge['target'] === $target) {
+                return $edge;
             }
         }
 
@@ -1170,12 +1517,122 @@ final class FlowEngine
         $attach ? $execution->contact->tags()->syncWithoutDetaching([$tag->getKey()]) : $execution->contact->tags()->detach($tag->getKey());
     }
 
-    private function trace(FlowExecution $execution, string $nodeId, string $result, ?string $reason = null): void
+    /**
+     * @param  array<string, mixed>  $result
+     * @return array<string, mixed>
+     */
+    private function withStepError(array $result, string $error): array
     {
-        $trace = $execution->trace;
-        $trace[] = ['node_id' => $nodeId, 'result' => $result, 'reason' => $reason, 'at' => now()->toIso8601String()];
-        $execution->trace = $trace;
-        $execution->save();
+        $result['step_error'] = $error;
+
+        return $result;
+    }
+
+    /**
+     * @param  array<string, mixed>  $config
+     * @return array<string, mixed>
+     */
+    private function aiTraceData(string $prompt, AgentResponse $response, array $config, array $variables): array
+    {
+        $inputTokens = $response->usage->promptTokens;
+        $outputTokens = $response->usage->completionTokens;
+        $model = $response->meta->model ?? (string) config('ai.playground.model');
+        $pricing = config('flows.ai_trace_pricing', []);
+        $modelPricing = is_array($pricing['models'] ?? null) && is_array($pricing['models'][$model] ?? null)
+            ? $pricing['models'][$model]
+            : [];
+        $inputPrice = (float) ($modelPricing['input_per_million_brl'] ?? $pricing['default_input_per_million_brl'] ?? 0);
+        $outputPrice = (float) ($modelPricing['output_per_million_brl'] ?? $pricing['default_output_per_million_brl'] ?? 0);
+        $cost = (($inputTokens / 1_000_000) * $inputPrice) + (($outputTokens / 1_000_000) * $outputPrice);
+        $toolResults = $response->toolResults->keyBy('id');
+        $toolCalls = $response->toolCalls->map(function (mixed $toolCall) use ($toolResults, $config): array {
+            $call = method_exists($toolCall, 'toArray') ? $toolCall->toArray() : (array) $toolCall;
+            $result = $toolResults->get($call['id'] ?? null);
+
+            return [
+                'call' => $this->traceSanitizer->sanitize($call, $this->sensitiveFields($config)),
+                'result' => $result !== null && method_exists($result, 'toArray')
+                    ? $this->traceSanitizer->sanitize($result->toArray(), $this->sensitiveFields($config))
+                    : null,
+            ];
+        })->values()->all();
+
+        return [
+            'ai_prompt' => $this->traceSanitizer->sanitizeText($prompt, $this->sensitiveFields($config), $variables),
+            'ai_response' => $this->traceSanitizer->sanitizeText($response->text, $this->sensitiveFields($config), $variables),
+            'ai_input_tokens' => $inputTokens,
+            'ai_output_tokens' => $outputTokens,
+            'ai_cost_brl' => round($cost, 4),
+            'ai_tool_calls' => $toolCalls,
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>|null  $edge
+     * @param  array<string, mixed>  $traceData
+     * @param  array<string, mixed>  $nodeConfig
+     */
+    private function completeStep(
+        FlowExecutionStep $step,
+        FlowExecution $execution,
+        string $result,
+        int $startedAtNanoseconds,
+        ?string $error = null,
+        ?array $edge = null,
+        array $traceData = [],
+        array $nodeConfig = [],
+    ): void {
+        $source = is_string($edge['source'] ?? null) ? $edge['source'] : null;
+        $target = is_string($edge['target'] ?? null) ? $edge['target'] : null;
+        $edgeId = is_string($edge['id'] ?? null)
+            ? $edge['id']
+            : ($source !== null && $target !== null ? "{$source}->{$target}" : null);
+        $edgeLabel = $edge['label'] ?? $edge['condition'] ?? null;
+        $aiCost = is_numeric($traceData['ai_cost_brl'] ?? null) ? (float) $traceData['ai_cost_brl'] : null;
+        $sanitizedVariables = $this->traceSanitizer->sanitizeVariables($execution->variables, $nodeConfig);
+
+        $step->forceFill([
+            'result' => $result,
+            'duration_ms' => max(0, (int) round((hrtime(true) - $startedAtNanoseconds) / 1_000_000)),
+            'edge_id' => $edgeId,
+            'edge_source_node_id' => $source,
+            'edge_target_node_id' => $target,
+            'edge_label' => is_scalar($edgeLabel) ? (string) $edgeLabel : null,
+            'error' => $error,
+            'variables_snapshot' => $sanitizedVariables,
+            'http_request' => is_array($traceData['http_request'] ?? null) ? $traceData['http_request'] : null,
+            'http_response' => is_array($traceData['http_response'] ?? null) ? $traceData['http_response'] : null,
+            'http_status' => is_numeric($traceData['http_status'] ?? null) ? (int) $traceData['http_status'] : null,
+            'retry_count' => is_numeric($traceData['retry_count'] ?? null) ? (int) $traceData['retry_count'] : 0,
+            'ai_prompt' => is_string($traceData['ai_prompt'] ?? null) ? $traceData['ai_prompt'] : null,
+            'ai_response' => is_string($traceData['ai_response'] ?? null) ? $traceData['ai_response'] : null,
+            'ai_input_tokens' => is_numeric($traceData['ai_input_tokens'] ?? null) ? (int) $traceData['ai_input_tokens'] : null,
+            'ai_output_tokens' => is_numeric($traceData['ai_output_tokens'] ?? null) ? (int) $traceData['ai_output_tokens'] : null,
+            'ai_cost_brl' => $aiCost,
+            'ai_tool_calls' => is_array($traceData['ai_tool_calls'] ?? null) ? $traceData['ai_tool_calls'] : null,
+        ])->save();
+
+        if ($aiCost !== null) {
+            $execution->forceFill([
+                'ai_cost_brl' => (float) $execution->ai_cost_brl + $aiCost,
+            ])->save();
+        }
+        $this->aggregator->recordStep($execution, $step);
+    }
+
+    private function finishExecution(FlowExecution $execution, FlowExecutionStatus $status, string $reason): void
+    {
+        $execution->finish(
+            $status,
+            $this->traceSanitizer->sanitizeText($reason, [], $execution->variables),
+        );
+        $this->aggregator->recordFinished($execution, $status);
+    }
+
+    /** @param array<string, mixed> $node */
+    private function nodeConfig(array $node): array
+    {
+        return is_array($node['config'] ?? null) ? $node['config'] : [];
     }
 
     private function activeConversation(Channel $channel, Contact $contact): ?FlowExecution
@@ -1236,7 +1693,7 @@ final class FlowEngine
 
         $policy = $flow->collision_policy;
         if ($policy === FlowCollisionPolicy::Replace) {
-            $execution->finish(FlowExecutionStatus::Completed, 'replaced_by_new_trigger');
+            $this->finishExecution($execution, FlowExecutionStatus::Completed, 'replaced_by_new_trigger');
             $this->handleWebhook($flow, $execution->channel, $payload ?? ['message' => $message?->content], $execution->contact);
 
             return;

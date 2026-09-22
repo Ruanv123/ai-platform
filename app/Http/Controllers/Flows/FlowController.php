@@ -2,18 +2,26 @@
 
 namespace App\Http\Controllers\Flows;
 
+use App\Enums\FlowCategory;
+use App\Enums\FlowExecutionStatus;
 use App\Enums\FlowStatus;
 use App\Enums\FlowTriggerType;
+use App\Flows\FlowExecutionAnalytics;
 use App\Flows\FlowPublisher;
 use App\Flows\FlowValidationException;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Flows\SaveFlowRequest;
 use App\Models\Channel;
 use App\Models\Flow;
+use App\Models\FlowEvent;
+use App\Models\FlowExecution;
 use App\Models\FlowVersion;
+use App\Models\Integration;
+use App\Models\Team;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Validation\ValidationException;
@@ -26,17 +34,115 @@ class FlowController extends Controller
     {
         Gate::authorize('viewAny', Flow::class);
         $team = $request->user()->company();
+        $filters = $request->validate([
+            'channel' => ['nullable', 'uuid'],
+            'trigger' => ['nullable', 'in:message,webhook,manual'],
+            'status' => ['nullable', 'in:draft,published,paused'],
+            'per_page' => ['nullable', 'integer', 'min:5', 'max:100'],
+        ]);
+
+        $perPage = (int) ($filters['per_page'] ?? 20);
+        $flows = $team->flows()
+            ->with(['channel', 'versions'])
+            ->withCount('executions')
+            ->withCount([
+                'executions as executions_last_7_days_count' => fn ($query) => $query->where('flow_executions.created_at', '>=', now()->subDays(7)),
+                'executions as completed_executions_count' => fn ($query) => $query->where('flow_executions.status', 'completed'),
+            ])
+            ->withMax('executions', 'created_at')
+            ->when(isset($filters['channel']), fn ($query) => $query->where('channel_id', $filters['channel']))
+            ->when(isset($filters['trigger']), fn ($query) => $query->where('trigger_type', $filters['trigger']))
+            ->when(isset($filters['status']), fn ($query) => $query->where('status', $filters['status']))
+            ->latest('created_at')
+            ->latest('id')
+            ->paginate($perPage)
+            ->withQueryString();
 
         return Inertia::render('flows/index', [
-            'flows' => $team->flows()->with(['channel', 'versions'])->latest()->get()->map(fn (Flow $flow): array => $this->serialize($flow)),
+            'flows' => [
+                'data' => $flows->getCollection()
+                    ->map(fn (Flow $flow): array => $this->serialize($flow))
+                    ->values(),
+                'currentPage' => $flows->currentPage(),
+                'lastPage' => $flows->lastPage(),
+                'from' => $flows->firstItem(),
+                'to' => $flows->lastItem(),
+                'total' => $flows->total(),
+                'perPage' => $flows->perPage(),
+            ],
+            'filters' => [
+                'channel' => $filters['channel'] ?? null,
+                'trigger' => $filters['trigger'] ?? null,
+                'status' => $filters['status'] ?? null,
+            ],
+            'channels' => $team->channels()
+                ->orderBy('type')
+                ->get(['id', 'type'])
+                ->map(fn (Channel $channel): array => [
+                    'id' => $channel->getKey(),
+                    'label' => $channel->type->label(),
+                    'type' => $channel->type->value,
+                ])
+                ->values(),
+            'triggerTypes' => $this->triggerTypes(),
+            'statuses' => $this->statuses(),
+            'templates' => $this->templates($team),
+            'permissions' => $request->user()->toTeamPermissions($team),
         ]);
     }
 
-    public function show(Request $request, Flow $flow): Response
+    public function show(Request $request, Flow $flow, FlowExecutionAnalytics $analytics): Response
     {
         Gate::authorize('view', $flow);
+        $team = $request->user()->company();
+        $filters = $request->validate([
+            'tab' => ['nullable', 'in:design,executions'],
+            'period' => ['nullable', 'in:24h,7d,30d'],
+            'execution_status' => ['nullable', 'in:failed,stuck,all'],
+            'error' => ['nullable', 'string', 'max:255'],
+            'page' => ['nullable', 'integer', 'min:1'],
+            'per_page' => ['nullable', 'integer', 'min:5', 'max:50'],
+        ]);
+        $flow->load(['channel', 'versions']);
 
-        return Inertia::render('flows/show', ['flow' => $this->serialize($flow->load(['channel', 'versions']))]);
+        return Inertia::render('flows/show', [
+            'flow' => $this->serialize($flow),
+            'activeTab' => $filters['tab'] ?? 'design',
+            'observability' => $analytics->dashboard($flow, $filters['period'] ?? '7d'),
+            'executionFilters' => [
+                'status' => $filters['execution_status'] ?? 'failed',
+                'error' => $filters['error'] ?? null,
+            ],
+            'executions' => $this->executionList($flow, $filters),
+            'channels' => $team->channels()
+                ->orderBy('type')
+                ->get(['id', 'type'])
+                ->map(fn (Channel $channel): array => [
+                    'id' => $channel->getKey(),
+                    'label' => $channel->type->label(),
+                    'type' => $channel->type->value,
+                ])
+                ->values(),
+            'nodeCatalog' => config('flows.node_catalog'),
+            'integrations' => $team->integrations()->orderBy('name')->get()->map(fn (Integration $integration): array => [
+                'id' => $integration->getKey(),
+                'name' => $integration->name,
+                'type' => $integration->type,
+                'status' => $integration->status,
+                'statusLabel' => match ($integration->status) {
+                    'connected' => 'Conectada',
+                    'error' => 'Com erro',
+                    default => 'Nunca testada',
+                },
+            ])->values(),
+            'events' => $team->flowEvents()->orderBy('name')->get(['id', 'name', 'description'])->map(fn (FlowEvent $event): array => [
+                'id' => $event->getKey(),
+                'name' => $event->name,
+                'description' => $event->description,
+            ])->values(),
+            'templates' => $this->templates($team),
+            'permissions' => $request->user()->toTeamPermissions($team),
+        ]);
     }
 
     public function store(SaveFlowRequest $request): RedirectResponse|JsonResponse
@@ -46,6 +152,41 @@ class FlowController extends Controller
         $data = $request->validated();
         $this->assertChannelBelongsToTeam($data['channel_id'] ?? null, $team->getKey());
         $flow = $team->flows()->create($this->attributes($data, $team->getKey()));
+
+        if ($request->expectsJson()) {
+            return response()->json($this->serialize($flow), 201);
+        }
+
+        return to_route('flows.show', $flow);
+    }
+
+    public function cloneTemplate(Request $request, string $template): RedirectResponse|JsonResponse
+    {
+        Gate::authorize('create', Flow::class);
+        $team = $request->user()->company();
+        $templateData = null;
+        foreach ($this->configuredTemplates() as $candidate) {
+            if (($candidate['id'] ?? null) === $template) {
+                $templateData = $candidate;
+                break;
+            }
+        }
+        abort_if($templateData === null, 404);
+
+        $validated = $request->validate(['channel_id' => ['nullable', 'uuid']]);
+        $channelId = $validated['channel_id'] ?? null;
+        $this->assertChannelBelongsToTeam($channelId, $team->getKey());
+
+        $flow = $team->flows()->create([
+            'name' => $templateData['name'],
+            'channel_id' => $channelId,
+            'status' => FlowStatus::Draft,
+            'draft_dsl' => $templateData['dsl'],
+            'trigger_type' => FlowTriggerType::Message,
+            'trigger_event' => null,
+            'collision_policy' => 'ignore',
+            'allow_unknown_contact' => false,
+        ]);
 
         if ($request->expectsJson()) {
             return response()->json($this->serialize($flow), 201);
@@ -70,6 +211,26 @@ class FlowController extends Controller
         return to_route('flows.show', $flow);
     }
 
+    public function destroy(Flow $flow): RedirectResponse
+    {
+        Gate::authorize('delete', $flow);
+
+        if ($flow->executions()->exists()) {
+            throw ValidationException::withMessages([
+                'flow' => 'Este Fluxo possui Execuções e não pode ser excluído porque seu histórico precisa ser preservado.',
+            ]);
+        }
+
+        $flow->delete();
+
+        Inertia::flash('toast', [
+            'type' => 'success',
+            'message' => 'Fluxo excluído com sucesso.',
+        ]);
+
+        return to_route('flows.index');
+    }
+
     public function publish(Request $request, Flow $flow, FlowPublisher $publisher): RedirectResponse|JsonResponse
     {
         Gate::authorize('publish', $flow);
@@ -89,7 +250,7 @@ class FlowController extends Controller
         }
 
         Inertia::flash('toast', [
-            'type' => 'success',
+            'type' => count($result['warnings']) > 0 ? 'warning' : 'success',
             'message' => 'Fluxo publicado com sucesso.'.(count($result['warnings']) > 0 ? ' '.$result['warnings'][0] : ''),
         ]);
 
@@ -154,6 +315,85 @@ class FlowController extends Controller
         return to_route('flows.show', $flow);
     }
 
+    /**
+     * @param  array<string, mixed>  $filters
+     * @return array<string, mixed>
+     */
+    private function executionList(Flow $flow, array $filters): array
+    {
+        $status = (string) ($filters['execution_status'] ?? 'failed');
+        $perPage = (int) ($filters['per_page'] ?? 10);
+        $applyErrorFilter = function ($query) use ($filters): void {
+            if (! filled($filters['error'] ?? null)) {
+                return;
+            }
+
+            $query->where(function ($query) use ($filters): void {
+                $query->where('final_reason', $filters['error'])
+                    ->orWhereHas('steps', fn ($steps) => $steps->where('error', $filters['error']));
+            });
+        };
+        $baseQuery = $flow->executions();
+        $counts = [
+            'failed' => (clone $baseQuery)->where('flow_executions.status', FlowExecutionStatus::Failed)->tap($applyErrorFilter)->count(),
+            'stuck' => (clone $baseQuery)->stuck()->tap($applyErrorFilter)->count(),
+            'all' => (clone $baseQuery)->tap($applyErrorFilter)->count(),
+        ];
+
+        $executions = $flow->executions()
+            ->with(['contact', 'flowVersion', 'lastStep'])
+            ->when($status === 'failed', fn ($query) => $query->where('status', 'failed'))
+            ->when($status === 'stuck', fn ($query) => $query->stuck())
+            ->tap($applyErrorFilter)
+            ->latest('flow_executions.created_at')
+            ->latest('flow_executions.id')
+            ->paginate($perPage)
+            ->withQueryString();
+
+        return [
+            'data' => $executions->getCollection()->map(fn (FlowExecution $execution): array => $this->serializeExecution($execution))->values(),
+            'currentPage' => $executions->currentPage(),
+            'lastPage' => $executions->lastPage(),
+            'from' => $executions->firstItem(),
+            'to' => $executions->lastItem(),
+            'total' => $executions->total(),
+            'perPage' => $executions->perPage(),
+            'counts' => $counts,
+        ];
+    }
+
+    /** @return array<string, mixed> */
+    private function serializeExecution(FlowExecution $execution): array
+    {
+        $isStuck = $execution->status->value === 'stuck' || $execution->isActive() && $execution->wake_at?->isPast() && $execution->wake_at?->lte(now()->subMinutes(5));
+        $nodeId = $execution->lastStep?->node_id ?? $execution->current_node_id;
+        $node = collect($execution->flowVersion->dsl['nodes'] ?? [])->firstWhere('id', $nodeId);
+        $reason = $execution->lastStep?->error ?? $execution->final_reason;
+
+        return [
+            'id' => $execution->getKey(),
+            'contact' => $execution->contact === null ? null : [
+                'name' => $execution->contact->name,
+                'phone' => $execution->contact->phone,
+            ],
+            'status' => $isStuck ? 'stuck' : $execution->status->value,
+            'statusLabel' => $isStuck ? 'Presa' : match ($execution->status) {
+                FlowExecutionStatus::Completed => 'Concluída',
+                FlowExecutionStatus::Failed => 'Falhou',
+                FlowExecutionStatus::Abandoned => 'Abandonada',
+                FlowExecutionStatus::Waiting => 'Aguardando',
+                FlowExecutionStatus::Paused => 'Pausada',
+                default => 'Em execução',
+            },
+            'nodeId' => $nodeId,
+            'nodeLabel' => is_array($node) ? ($node['label'] ?? data_get($node, 'config.label') ?? data_get($node, 'config.title') ?? 'Nó') : null,
+            'reason' => $reason,
+            'version' => $execution->flowVersion->number,
+            'createdAt' => $execution->created_at?->toIso8601String(),
+            'traceUrl' => route('flows.executions.show', [$execution->flowVersion->flow_id, $execution]),
+        ];
+    }
+
     private function assertChannelBelongsToTeam(?string $channelId, int $teamId): void
     {
         if ($channelId !== null && ! Channel::withoutGlobalScopes()->where('team_id', $teamId)->whereKey($channelId)->exists()) {
@@ -191,26 +431,109 @@ class FlowController extends Controller
         return $attributes;
     }
 
+    /** @return list<array{value: string, label: string}> */
+    private function triggerTypes(): array
+    {
+        return [
+            ['value' => FlowTriggerType::Message->value, 'label' => 'Mensagem recebida'],
+            ['value' => FlowTriggerType::Webhook->value, 'label' => 'Webhook'],
+            ['value' => FlowTriggerType::Manual->value, 'label' => 'Manual'],
+        ];
+    }
+
+    /** @return list<array{value: string, label: string}> */
+    private function statuses(): array
+    {
+        return [
+            ['value' => FlowStatus::Draft->value, 'label' => 'Rascunho'],
+            ['value' => FlowStatus::Published->value, 'label' => 'Publicado'],
+            ['value' => FlowStatus::Paused->value, 'label' => 'Pausado'],
+        ];
+    }
+
+    /** @return list<array<string, mixed>> */
+    private function templates(Team $team): array
+    {
+        $channelTypes = $team->channels()->pluck('type')->map(fn ($type): string => $type->value)->all();
+        $templates = [];
+
+        foreach ($this->configuredTemplates() as $template) {
+            $requiredChannelTypes = is_array($template['required_channel_types'] ?? null)
+                ? array_values(array_filter($template['required_channel_types'], 'is_string'))
+                : [];
+            $templates[] = [
+                'id' => $template['id'] ?? null,
+                'name' => $template['name'] ?? null,
+                'description' => $template['description'] ?? null,
+                'category' => $template['category'] ?? null,
+                'requiredChannelTypes' => $requiredChannelTypes,
+                'hasRequiredChannel' => count(array_intersect($requiredChannelTypes, $channelTypes)) > 0,
+            ];
+        }
+
+        return $templates;
+    }
+
+    /** @return list<array<string, mixed>> */
+    private function configuredTemplates(): array
+    {
+        $configuredTemplates = config('flows.templates', []);
+        if (! is_array($configuredTemplates)) {
+            return [];
+        }
+
+        $templates = [];
+        foreach ($configuredTemplates as $template) {
+            if (is_array($template)) {
+                $templates[] = $template;
+            }
+        }
+
+        return $templates;
+    }
+
     /** @return array<string, mixed> */
     private function serialize(Flow $flow): array
     {
+        $publishedVersion = $flow->relationLoaded('versions')
+            ? $flow->versions->sortByDesc('number')->first()
+            : $flow->publishedVersion();
+        $executionCount = (int) ($flow->executions_count ?? 0);
+        $completedCount = (int) ($flow->completed_executions_count ?? 0);
+        $lastExecutionAt = $flow->getAttribute('executions_max_created_at');
+
         return [
             'id' => $flow->getKey(),
             'name' => $flow->name,
             'status' => $flow->status->value,
+            'statusLabel' => match ($flow->status) {
+                FlowStatus::Draft => 'Rascunho',
+                FlowStatus::Published => 'Publicado',
+                FlowStatus::Paused => 'Pausado',
+            },
             'draft' => $flow->draft_dsl,
+            'publishedDsl' => $publishedVersion?->dsl,
             'hasUnpublishedChanges' => $flow->hasUnpublishedChanges(),
             'channelId' => $flow->channel_id,
+            'channelLabel' => $flow->channel?->type->label(),
             'triggerType' => $flow->trigger_type->value,
             'triggerEvent' => $flow->trigger_event,
             'collisionPolicy' => $flow->collision_policy->value,
+            'category' => $publishedVersion?->category->value,
+            'categoryLabel' => $publishedVersion?->category === FlowCategory::Conversation ? 'Conversa' : ($publishedVersion?->category === FlowCategory::Reaction ? 'Reação' : null),
+            'executionCount' => $executionCount,
+            'executionsLast7Days' => (int) ($flow->executions_last_7_days_count ?? 0),
+            'completionRate' => $executionCount > 0 ? round(($completedCount / $executionCount) * 100) : null,
+            'lastExecutionAt' => is_string($lastExecutionAt)
+                ? Carbon::parse($lastExecutionAt)->toIso8601String()
+                : null,
             'versions' => $flow->relationLoaded('versions')
-                ? $flow->versions->map(fn ($version): array => [
+                ? $flow->versions->sortByDesc('number')->values()->map(fn (FlowVersion $version): array => [
                     'id' => $version->getKey(),
                     'number' => $version->number,
                     'category' => $version->category->value,
                     'publishedAt' => $version->published_at?->toIso8601String(),
-                ])->values()->all()
+                ])->all()
                 : [],
         ];
     }

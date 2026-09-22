@@ -10,4 +10,5 @@ enum FlowExecutionStatus: string
     case Completed = 'completed';
     case Failed = 'failed';
     case Stuck = 'stuck';
+    case Abandoned = 'abandoned';
 }

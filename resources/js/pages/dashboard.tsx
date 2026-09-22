@@ -1,6 +1,7 @@
 import { Head, Link } from '@inertiajs/react';
 import {
     AlertCircle,
+    AlertTriangle,
     ArrowRight,
     Bot,
     Check,
@@ -47,6 +48,15 @@ type Summary = {
     whatsapp: {
         status: 'unverified' | 'connected' | 'error' | null;
         statusLabel: string;
+    };
+    flowHealth: {
+        failed: number;
+        stuck: number;
+        href: string;
+    };
+    webhookFailures: {
+        count: number;
+        href: string;
     };
 };
 
@@ -253,6 +263,52 @@ export default function Dashboard({ checklist, summary }: Props) {
                         </CardContent>
                     </Card>
                 </div>
+
+                {summary.webhookFailures.count > 0 && (
+                    <Link
+                        href={summary.webhookFailures.href}
+                        prefetch
+                        className="border-destructive/20 bg-destructive/5 hover:bg-destructive/10 focus-visible:ring-ring flex items-center gap-4 rounded-xl border px-5 py-4 transition-colors focus-visible:ring-2 focus-visible:outline-none"
+                    >
+                        <span className="bg-destructive/10 text-destructive flex size-10 shrink-0 items-center justify-center rounded-lg">
+                            <AlertTriangle className="size-5" />
+                        </span>
+                        <span className="min-w-0 flex-1">
+                            <span className="block text-sm font-semibold">
+                                Webhooks de saída
+                            </span>
+                            <span className="text-muted-foreground mt-0.5 block text-xs">
+                                {summary.webhookFailures.count} entrega
+                                {summary.webhookFailures.count === 1
+                                    ? ''
+                                    : 's'}{' '}
+                                falhou. Abra a fila para reenviar.
+                            </span>
+                        </span>
+                        <ArrowRight className="text-muted-foreground size-4 shrink-0" />
+                    </Link>
+                )}
+
+                <Link
+                    href={summary.flowHealth.href}
+                    prefetch
+                    className="group border-destructive/20 bg-destructive/5 hover:bg-destructive/10 focus-visible:ring-ring flex items-center gap-4 rounded-xl border px-5 py-4 transition-colors focus-visible:ring-2 focus-visible:outline-none"
+                >
+                    <span className="bg-destructive/10 text-destructive flex size-10 shrink-0 items-center justify-center rounded-lg">
+                        <AlertTriangle className="size-5" />
+                    </span>
+                    <span className="min-w-0 flex-1">
+                        <span className="block text-sm font-semibold">
+                            Saúde dos Fluxos
+                        </span>
+                        <span className="text-muted-foreground mt-0.5 block text-xs">
+                            {summary.flowHealth.failed} com falha ·{' '}
+                            {summary.flowHealth.stuck} presas. Abra Execuções
+                            para investigar.
+                        </span>
+                    </span>
+                    <ArrowRight className="text-muted-foreground size-4 shrink-0 transition-transform group-hover:translate-x-0.5" />
+                </Link>
 
                 <section
                     aria-labelledby="future-metrics-title"
