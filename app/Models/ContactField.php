@@ -19,10 +19,11 @@ use Illuminate\Database\Eloquent\Relations\Pivot;
  * @property string $name
  * @property string $type
  * @property array<int, string>|null $options
+ * @property bool $is_sensitive
  * @property-read Team $team
  * @property-read Collection<int, ContactFieldValue> $values
  */
-#[Fillable(['team_id', 'name', 'type', 'options'])]
+#[Fillable(['team_id', 'name', 'type', 'options', 'is_sensitive'])]
 class ContactField extends Model
 {
     /** @use HasFactory<ContactFieldFactory> */
@@ -43,6 +44,9 @@ class ContactField extends Model
 
     protected function casts(): array
     {
-        return ['options' => 'array'];
+        return [
+            'options' => 'array',
+            'is_sensitive' => 'boolean',
+        ];
     }
 }

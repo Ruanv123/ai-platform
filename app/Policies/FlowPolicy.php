@@ -3,6 +3,7 @@
 namespace App\Policies;
 
 use App\Enums\TeamPermission;
+use App\Enums\TeamRole;
 use App\Models\Flow;
 use App\Models\User;
 
@@ -16,6 +17,13 @@ class FlowPolicy
     public function view(User $user, Flow $flow): bool
     {
         return $flow->team_id === $user->company()?->getKey();
+    }
+
+    public function viewSensitiveTrace(User $user, Flow $flow): bool
+    {
+        $role = $user->teamRole($flow->team);
+
+        return $this->view($user, $flow) && $role !== null && $role->isAtLeast(TeamRole::Admin);
     }
 
     public function create(User $user): bool

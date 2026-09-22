@@ -1,4 +1,16 @@
-export async function postJson<T>(url: string, body: unknown): Promise<T> {
+export function postJson<T>(url: string, body: unknown): Promise<T> {
+    return requestJson<T>(url, 'POST', body);
+}
+
+export function patchJson<T>(url: string, body: unknown): Promise<T> {
+    return requestJson<T>(url, 'PATCH', body);
+}
+
+async function requestJson<T>(
+    url: string,
+    method: 'PATCH' | 'POST',
+    body: unknown,
+): Promise<T> {
     const xsrfCookie = document.cookie
         .split('; ')
         .find((cookie) => cookie.startsWith('XSRF-TOKEN='));
@@ -6,7 +18,7 @@ export async function postJson<T>(url: string, body: unknown): Promise<T> {
         ? decodeURIComponent(xsrfCookie.substring('XSRF-TOKEN='.length))
         : undefined;
     const response = await fetch(url, {
-        method: 'POST',
+        method,
         credentials: 'same-origin',
         headers: {
             Accept: 'application/json',

@@ -8,6 +8,7 @@ import {
     GitBranch,
     Hash,
     Radio,
+    Sparkles,
     UserRound,
     X,
 } from 'lucide-react';
@@ -21,6 +22,7 @@ type ExecutionStatus =
     | 'paused'
     | 'completed'
     | 'failed'
+    | 'abandoned'
     | 'stuck';
 
 type FollowedEdge = {
@@ -45,6 +47,16 @@ type TraceStep = {
     startedAt: string;
     followedEdge: FollowedEdge | null;
     highlighted: boolean;
+    httpRequest?: Record<string, unknown> | null;
+    httpResponse?: Record<string, unknown> | null;
+    httpStatus?: number | null;
+    retryCount?: number;
+    aiPrompt?: string | null;
+    aiResponse?: string | null;
+    aiInputTokens?: number | null;
+    aiOutputTokens?: number | null;
+    aiCostBrl?: number | null;
+    aiToolCalls?: Array<Record<string, unknown>> | null;
 };
 
 type UnreachedNode = {
@@ -69,7 +81,9 @@ type Props = {
         durationMs: number;
         startedAt: string;
         finishedAt: string | null;
+        aiCostBrl?: number;
     };
+    canViewSensitiveTrace: boolean;
     steps: TraceStep[];
     unreachedNodes: UnreachedNode[];
 };
@@ -166,6 +180,13 @@ export default function FlowExecutionShow({
                                 label="Duração"
                                 value={formatDuration(execution.durationMs)}
                             />
+                            {execution.aiCostBrl !== undefined && (
+                                <HeaderDatum
+                                    icon={Sparkles}
+                                    label="Custo de IA"
+                                    value={formatCurrency(execution.aiCostBrl)}
+                                />
+                            )}
                         </dl>
                     </section>
                 </header>
@@ -346,6 +367,68 @@ function TraceStepItem({ step, isLast }: { step: TraceStep; isLast: boolean }) {
                     </div>
                 )}
 
+                {(step.httpRequest !== null &&
+                    step.httpRequest !== undefined) ||
+                (step.aiPrompt !== null && step.aiPrompt !== undefined) ? (
+                    <details className="border-border/60 border-t">
+                        <summary className="hover:bg-muted/45 focus-visible:ring-ring flex min-h-11 cursor-pointer list-none items-center justify-between gap-3 px-4 py-3 text-xs font-medium transition-colors focus-visible:ring-2 focus-visible:outline-none">
+                            <span>
+                                {step.httpRequest !== null &&
+                                step.httpRequest !== undefined
+                                    ? 'Payload HTTP'
+                                    : 'Prompt e resposta da IA'}
+                            </span>
+                            <span className="text-muted-foreground">
+                                Somente Owner e Admin
+                            </span>
+                        </summary>
+                        {step.httpRequest !== null &&
+                        step.httpRequest !== undefined ? (
+                            <div className="grid gap-3 border-t p-4 lg:grid-cols-2">
+                                <TracePayload
+                                    label={`Request${step.httpStatus ? ` · HTTP ${step.httpStatus}` : ''}`}
+                                    value={step.httpRequest}
+                                />
+                                <TracePayload
+                                    label={`Response${step.retryCount ? ` · ${step.retryCount} retries` : ''}`}
+                                    value={step.httpResponse}
+                                />
+                            </div>
+                        ) : (
+                            <div className="grid gap-3 border-t p-4">
+                                <TextPayload
+                                    label="Prompt"
+                                    value={step.aiPrompt}
+                                />
+                                <TextPayload
+                                    label="Resposta"
+                                    value={step.aiResponse}
+                                />
+                                <div className="text-muted-foreground flex flex-wrap gap-3 text-xs tabular-nums">
+                                    <span>
+                                        Entrada: {step.aiInputTokens ?? 0}{' '}
+                                        tokens
+                                    </span>
+                                    <span>
+                                        Saída: {step.aiOutputTokens ?? 0} tokens
+                                    </span>
+                                    <span>
+                                        Custo:{' '}
+                                        {formatCurrency(step.aiCostBrl ?? 0)}
+                                    </span>
+                                </div>
+                                {step.aiToolCalls &&
+                                    step.aiToolCalls.length > 0 && (
+                                        <TracePayload
+                                            label="Ferramentas chamadas"
+                                            value={step.aiToolCalls}
+                                        />
+                                    )}
+                            </div>
+                        )}
+                    </details>
+                ) : null}
+
                 <details className="border-border/60 border-t">
                     <summary className="hover:bg-muted/45 focus-visible:ring-ring flex min-h-11 cursor-pointer list-none items-center justify-between gap-3 px-4 py-3 text-xs font-medium transition-colors focus-visible:ring-2 focus-visible:outline-none">
                         <span>Variáveis após este passo</span>
@@ -362,6 +445,38 @@ function TraceStepItem({ step, isLast }: { step: TraceStep; isLast: boolean }) {
                 </details>
             </article>
         </li>
+    );
+}
+
+function TracePayload({ label, value }: { label: string; value: unknown }) {
+    return (
+        <div className="min-w-0 overflow-hidden rounded-md border">
+            <p className="bg-muted/50 text-muted-foreground border-b px-3 py-2 text-xs font-medium">
+                {label}
+            </p>
+            <pre className="bg-muted/20 max-h-72 overflow-auto p-3 font-mono text-xs leading-5">
+                {JSON.stringify(value, null, 2)}
+            </pre>
+        </div>
+    );
+}
+
+function TextPayload({
+    label,
+    value,
+}: {
+    label: string;
+    value?: string | null;
+}) {
+    return (
+        <div className="overflow-hidden rounded-md border">
+            <p className="bg-muted/50 text-muted-foreground border-b px-3 py-2 text-xs font-medium">
+                {label}
+            </p>
+            <pre className="bg-muted/20 max-h-72 overflow-auto p-3 font-mono text-xs leading-5 whitespace-pre-wrap">
+                {value ?? 'Sem conteúdo.'}
+            </pre>
+        </div>
     );
 }
 
@@ -436,7 +551,7 @@ function ExecutionStatusBadge({
     label: string;
 }) {
     const className =
-        status === 'failed' || status === 'stuck'
+        status === 'failed' || status === 'abandoned' || status === 'stuck'
             ? 'border-destructive/30 bg-destructive/10 text-destructive'
             : status === 'completed'
               ? 'border-signal-live/35 bg-signal-live/12 text-foreground'
@@ -485,6 +600,7 @@ function activeReason(status: ExecutionStatus): string {
         waiting: 'Aguardando o próximo passo',
         paused: 'Execução pausada',
         stuck: 'Execução sem atividade recente',
+        abandoned: 'O Contato não respondeu a tempo',
     };
 
     return labels[status] ?? 'Sem motivo registrado';
@@ -526,6 +642,13 @@ function formatDuration(durationMs: number): string {
     const seconds = Math.floor((durationMs % 60_000) / 1000);
 
     return `${minutes} min ${seconds.toString().padStart(2, '0')} s`;
+}
+
+function formatCurrency(value: number): string {
+    return new Intl.NumberFormat('pt-BR', {
+        style: 'currency',
+        currency: 'BRL',
+    }).format(value);
 }
 
 function formatDateTime(value: string): string {

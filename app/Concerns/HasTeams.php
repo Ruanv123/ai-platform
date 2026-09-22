@@ -173,6 +173,7 @@ trait HasTeams
             canManageAgents: $role?->hasPermission(TeamPermission::ManageAgents) ?? false,
             canManageChannels: $role?->hasPermission(TeamPermission::ManageChannels) ?? false,
             canManageFlows: $role?->hasPermission(TeamPermission::ManageFlows) ?? false,
+            canManageIntegrations: $role?->hasPermission(TeamPermission::ManageIntegrations) ?? false,
         );
     }
 

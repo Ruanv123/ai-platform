@@ -7,6 +7,17 @@ return [
     'max_active_executions_per_team' => (int) env('FLOW_MAX_ACTIVE_EXECUTIONS', 100),
     'wait_reconciliation_minutes' => (int) env('FLOW_WAIT_RECONCILIATION_MINUTES', 1),
     'http_retry_times' => (int) env('FLOW_HTTP_RETRY_TIMES', 2),
+    'trace_retention_days' => (int) env('FLOW_TRACE_RETENTION_DAYS', 30),
+    'trace_prune_batch_size' => (int) env('FLOW_TRACE_PRUNE_BATCH_SIZE', 500),
+    'human_return_after_seconds' => (int) env('FLOW_HUMAN_RETURN_AFTER_SECONDS', 86400),
+    'human_assignment_idle_seconds' => (int) env('FLOW_HUMAN_ASSIGNMENT_IDLE_SECONDS', 900),
+    'event_delivery_retention_days' => (int) env('FLOW_EVENT_DELIVERY_RETENTION_DAYS', 90),
+
+    'ai_trace_pricing' => [
+        'default_input_per_million_brl' => (float) env('FLOW_AI_INPUT_PRICE_BRL', 2.50),
+        'default_output_per_million_brl' => (float) env('FLOW_AI_OUTPUT_PRICE_BRL', 10.00),
+        'models' => [],
+    ],
 
     'node_catalog' => [
         [
@@ -71,7 +82,7 @@ return [
             'description' => 'Pausa o Fluxo e avisa a Equipe.',
             'category' => 'Conversa',
             'icon' => 'UserRoundCheck',
-            'fields' => ['message'],
+            'fields' => ['reason', 'return_after_seconds'],
         ],
         [
             'type' => 'emit_event',
@@ -87,9 +98,24 @@ return [
             'description' => 'Chama uma API externa com os dados do fluxo.',
             'category' => 'Integrações',
             'icon' => 'Globe2',
-            'fields' => ['method', 'url', 'body'],
+            'fields' => ['integration_id', 'method', 'url', 'headers', 'body', 'response_map'],
         ],
         [
+            'type' => 'agenda_availability',
+            'label' => 'Consultar disponibilidade',
+            'description' => 'Busca horários livres na Agenda conectada.',
+            'category' => 'Integrações',
+            'icon' => 'CalendarDays',
+            'fields' => ['integration_id', 'start', 'end', 'output_variable'],
+        ],
+        [
+            'type' => 'agenda_create_event',
+            'label' => 'Criar compromisso',
+            'description' => 'Marca um compromisso na Agenda conectada.',
+            'category' => 'Integrações',
+            'icon' => 'CalendarCheck',
+            'fields' => ['integration_id', 'title', 'start', 'end', 'output_variable'],
+        ],        [
             'type' => 'send_template',
             'label' => 'Enviar Template',
             'description' => 'Envia um Template aprovado pelo Canal.',

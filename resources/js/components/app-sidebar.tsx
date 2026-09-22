@@ -1,4 +1,4 @@
-import { Link } from '@inertiajs/react';
+import { Link, usePage } from '@inertiajs/react';
 import {
     Bot,
     Brain,
@@ -27,10 +27,18 @@ import { index as channels } from '@/routes/channels';
 import { index as integrations } from '@/routes/integrations';
 import { index as flows } from '@/routes/flows';
 import { edit as profile } from '@/routes/profile';
+import { index as inbox } from '@/routes/inbox';
+import { useInboxRealtime } from '@/hooks/use-inbox-realtime';
 import type { NavItem } from '@/types';
 
 export function AppSidebar() {
     const dashboardUrl = dashboard();
+    const { props } = usePage<{
+        currentTeam?: { id: number } | null;
+        pendingHumanCount?: number;
+    }>();
+    const teamId = props.currentTeam?.id ?? null;
+    useInboxRealtime(teamId, ['pendingHumanCount']);
 
     const mainNavItems: NavItem[] = [
         {
@@ -42,6 +50,12 @@ export function AppSidebar() {
             title: 'Agentes',
             href: agents(),
             icon: Bot,
+        },
+        {
+            title: 'Atendimento',
+            href: inbox(),
+            icon: MessageSquare,
+            badge: props.pendingHumanCount,
         },
         {
             title: 'Fluxos',

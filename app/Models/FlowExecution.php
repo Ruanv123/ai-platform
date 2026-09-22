@@ -13,6 +13,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Support\Carbon;
 
 /**
@@ -28,17 +29,25 @@ use Illuminate\Support\Carbon;
  * @property array<int, array<string, mixed>> $queued_triggers
  * @property FlowExecutionStatus $status
  * @property string|null $waiting_for
+ * @property int|null $human_assigned_user_id
+ * @property Carbon|null $human_assigned_at
+ * @property Carbon|null $human_last_activity_at
+ * @property string|null $human_transfer_reason
  * @property Carbon|null $wake_at
  * @property Carbon $expires_at
  * @property int $attempts
  * @property int $depth
  * @property Carbon|null $last_activity_at
  * @property string|null $final_reason
+ * @property string $ai_cost_brl
+ * @property Carbon|null $metrics_finalized_at
+ * @property Carbon|null $trace_pruned_at
  * @property-read Team $team
  * @property-read FlowVersion $flowVersion
  * @property-read Contact|null $contact
  * @property-read Channel|null $channel
  * @property-read Collection<int, FlowExecutionStep> $steps
+ * @property-read User|null $humanAssignee
  */
 #[Fillable([
     'team_id',
@@ -52,12 +61,19 @@ use Illuminate\Support\Carbon;
     'queued_triggers',
     'status',
     'waiting_for',
+    'human_assigned_user_id',
+    'human_assigned_at',
+    'human_last_activity_at',
+    'human_transfer_reason',
     'wake_at',
     'expires_at',
     'attempts',
     'depth',
     'last_activity_at',
     'final_reason',
+    'ai_cost_brl',
+    'metrics_finalized_at',
+    'trace_pruned_at',
 ])]
 class FlowExecution extends Model
 {
@@ -82,10 +98,22 @@ class FlowExecution extends Model
         return $this->belongsTo(Channel::class);
     }
 
+    /** @return BelongsTo<User, $this> */
+    public function humanAssignee(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'human_assigned_user_id');
+    }
+
     /** @return HasMany<FlowExecutionStep, $this> */
     public function steps(): HasMany
     {
         return $this->hasMany(FlowExecutionStep::class)->orderBy('sequence');
+    }
+
+    /** @return HasOne<FlowExecutionStep, $this> */
+    public function lastStep(): HasOne
+    {
+        return $this->hasOne(FlowExecutionStep::class)->latestOfMany('sequence');
     }
 
     /**
@@ -96,10 +124,16 @@ class FlowExecution extends Model
      */
     public function scopeStuck(Builder $query): Builder
     {
-        return $query
-            ->whereIn('status', [FlowExecutionStatus::Waiting, FlowExecutionStatus::Paused])
-            ->whereNotNull('wake_at')
-            ->where('wake_at', '<', now()->subMinutes(5));
+        $executionTable = $query->getModel()->getTable();
+
+        return $query->where(function (Builder $query) use ($executionTable): void {
+            $query->where($executionTable.'.status', FlowExecutionStatus::Stuck)
+                ->orWhere(function (Builder $query) use ($executionTable): void {
+                    $query->whereIn($executionTable.'.status', [FlowExecutionStatus::Waiting, FlowExecutionStatus::Paused])
+                        ->whereNotNull($executionTable.'.wake_at')
+                        ->where($executionTable.'.wake_at', '<', now()->subMinutes(5));
+                });
+        });
     }
 
     public function isActive(): bool
@@ -130,9 +164,14 @@ class FlowExecution extends Model
             'emitted_events' => 'array',
             'queued_triggers' => 'array',
             'status' => FlowExecutionStatus::class,
+            'human_assigned_at' => 'immutable_datetime',
+            'human_last_activity_at' => 'immutable_datetime',
             'wake_at' => 'immutable_datetime',
             'expires_at' => 'immutable_datetime',
             'last_activity_at' => 'immutable_datetime',
+            'ai_cost_brl' => 'decimal:4',
+            'metrics_finalized_at' => 'immutable_datetime',
+            'trace_pruned_at' => 'immutable_datetime',
         ];
     }
 }

@@ -10,6 +10,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\Relations\Pivot;
 use Illuminate\Support\Carbon;
 
@@ -24,6 +25,7 @@ use Illuminate\Support\Carbon;
  * @property Carbon|null $updated_at
  * @property-read Team $team
  * @property-read Collection<int, Message> $messages
+ * @property-read Message|null $latestMessage
  * @property-read Collection<int, ContactFieldValue> $fieldValues
  * @property-read Collection<int, Tag> $tags
  * @property-read Collection<int, FlowExecution> $flowExecutions
@@ -44,6 +46,12 @@ class Contact extends Model
     public function messages(): HasMany
     {
         return $this->hasMany(Message::class);
+    }
+
+    /** @return HasOne<Message, $this> */
+    public function latestMessage(): HasOne
+    {
+        return $this->hasOne(Message::class)->latestOfMany();
     }
 
     /** @return HasMany<ContactFieldValue, $this> */

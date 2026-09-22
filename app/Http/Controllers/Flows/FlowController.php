@@ -3,15 +3,20 @@
 namespace App\Http\Controllers\Flows;
 
 use App\Enums\FlowCategory;
+use App\Enums\FlowExecutionStatus;
 use App\Enums\FlowStatus;
 use App\Enums\FlowTriggerType;
+use App\Flows\FlowExecutionAnalytics;
 use App\Flows\FlowPublisher;
 use App\Flows\FlowValidationException;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Flows\SaveFlowRequest;
 use App\Models\Channel;
 use App\Models\Flow;
+use App\Models\FlowEvent;
+use App\Models\FlowExecution;
 use App\Models\FlowVersion;
+use App\Models\Integration;
 use App\Models\Team;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
@@ -86,13 +91,29 @@ class FlowController extends Controller
         ]);
     }
 
-    public function show(Request $request, Flow $flow): Response
+    public function show(Request $request, Flow $flow, FlowExecutionAnalytics $analytics): Response
     {
         Gate::authorize('view', $flow);
         $team = $request->user()->company();
+        $filters = $request->validate([
+            'tab' => ['nullable', 'in:design,executions'],
+            'period' => ['nullable', 'in:24h,7d,30d'],
+            'execution_status' => ['nullable', 'in:failed,stuck,all'],
+            'error' => ['nullable', 'string', 'max:255'],
+            'page' => ['nullable', 'integer', 'min:1'],
+            'per_page' => ['nullable', 'integer', 'min:5', 'max:50'],
+        ]);
+        $flow->load(['channel', 'versions']);
 
         return Inertia::render('flows/show', [
-            'flow' => $this->serialize($flow->load(['channel', 'versions'])),
+            'flow' => $this->serialize($flow),
+            'activeTab' => $filters['tab'] ?? 'design',
+            'observability' => $analytics->dashboard($flow, $filters['period'] ?? '7d'),
+            'executionFilters' => [
+                'status' => $filters['execution_status'] ?? 'failed',
+                'error' => $filters['error'] ?? null,
+            ],
+            'executions' => $this->executionList($flow, $filters),
             'channels' => $team->channels()
                 ->orderBy('type')
                 ->get(['id', 'type'])
@@ -103,6 +124,22 @@ class FlowController extends Controller
                 ])
                 ->values(),
             'nodeCatalog' => config('flows.node_catalog'),
+            'integrations' => $team->integrations()->orderBy('name')->get()->map(fn (Integration $integration): array => [
+                'id' => $integration->getKey(),
+                'name' => $integration->name,
+                'type' => $integration->type,
+                'status' => $integration->status,
+                'statusLabel' => match ($integration->status) {
+                    'connected' => 'Conectada',
+                    'error' => 'Com erro',
+                    default => 'Nunca testada',
+                },
+            ])->values(),
+            'events' => $team->flowEvents()->orderBy('name')->get(['id', 'name', 'description'])->map(fn (FlowEvent $event): array => [
+                'id' => $event->getKey(),
+                'name' => $event->name,
+                'description' => $event->description,
+            ])->values(),
             'templates' => $this->templates($team),
             'permissions' => $request->user()->toTeamPermissions($team),
         ]);
@@ -172,6 +209,26 @@ class FlowController extends Controller
         }
 
         return to_route('flows.show', $flow);
+    }
+
+    public function destroy(Flow $flow): RedirectResponse
+    {
+        Gate::authorize('delete', $flow);
+
+        if ($flow->executions()->exists()) {
+            throw ValidationException::withMessages([
+                'flow' => 'Este Fluxo possui Execuções e não pode ser excluído porque seu histórico precisa ser preservado.',
+            ]);
+        }
+
+        $flow->delete();
+
+        Inertia::flash('toast', [
+            'type' => 'success',
+            'message' => 'Fluxo excluído com sucesso.',
+        ]);
+
+        return to_route('flows.index');
     }
 
     public function publish(Request $request, Flow $flow, FlowPublisher $publisher): RedirectResponse|JsonResponse
@@ -256,6 +313,85 @@ class FlowController extends Controller
         }
 
         return to_route('flows.show', $flow);
+    }
+
+    /**
+     * @param  array<string, mixed>  $filters
+     * @return array<string, mixed>
+     */
+    private function executionList(Flow $flow, array $filters): array
+    {
+        $status = (string) ($filters['execution_status'] ?? 'failed');
+        $perPage = (int) ($filters['per_page'] ?? 10);
+        $applyErrorFilter = function ($query) use ($filters): void {
+            if (! filled($filters['error'] ?? null)) {
+                return;
+            }
+
+            $query->where(function ($query) use ($filters): void {
+                $query->where('final_reason', $filters['error'])
+                    ->orWhereHas('steps', fn ($steps) => $steps->where('error', $filters['error']));
+            });
+        };
+        $baseQuery = $flow->executions();
+        $counts = [
+            'failed' => (clone $baseQuery)->where('flow_executions.status', FlowExecutionStatus::Failed)->tap($applyErrorFilter)->count(),
+            'stuck' => (clone $baseQuery)->stuck()->tap($applyErrorFilter)->count(),
+            'all' => (clone $baseQuery)->tap($applyErrorFilter)->count(),
+        ];
+
+        $executions = $flow->executions()
+            ->with(['contact', 'flowVersion', 'lastStep'])
+            ->when($status === 'failed', fn ($query) => $query->where('status', 'failed'))
+            ->when($status === 'stuck', fn ($query) => $query->stuck())
+            ->tap($applyErrorFilter)
+            ->latest('flow_executions.created_at')
+            ->latest('flow_executions.id')
+            ->paginate($perPage)
+            ->withQueryString();
+
+        return [
+            'data' => $executions->getCollection()->map(fn (FlowExecution $execution): array => $this->serializeExecution($execution))->values(),
+            'currentPage' => $executions->currentPage(),
+            'lastPage' => $executions->lastPage(),
+            'from' => $executions->firstItem(),
+            'to' => $executions->lastItem(),
+            'total' => $executions->total(),
+            'perPage' => $executions->perPage(),
+            'counts' => $counts,
+        ];
+    }
+
+    /** @return array<string, mixed> */
+    private function serializeExecution(FlowExecution $execution): array
+    {
+        $isStuck = $execution->status->value === 'stuck' || $execution->isActive() && $execution->wake_at?->isPast() && $execution->wake_at?->lte(now()->subMinutes(5));
+        $nodeId = $execution->lastStep?->node_id ?? $execution->current_node_id;
+        $node = collect($execution->flowVersion->dsl['nodes'] ?? [])->firstWhere('id', $nodeId);
+        $reason = $execution->lastStep?->error ?? $execution->final_reason;
+
+        return [
+            'id' => $execution->getKey(),
+            'contact' => $execution->contact === null ? null : [
+                'name' => $execution->contact->name,
+                'phone' => $execution->contact->phone,
+            ],
+            'status' => $isStuck ? 'stuck' : $execution->status->value,
+            'statusLabel' => $isStuck ? 'Presa' : match ($execution->status) {
+                FlowExecutionStatus::Completed => 'Concluída',
+                FlowExecutionStatus::Failed => 'Falhou',
+                FlowExecutionStatus::Abandoned => 'Abandonada',
+                FlowExecutionStatus::Waiting => 'Aguardando',
+                FlowExecutionStatus::Paused => 'Pausada',
+                default => 'Em execução',
+            },
+            'nodeId' => $nodeId,
+            'nodeLabel' => is_array($node) ? ($node['label'] ?? data_get($node, 'config.label') ?? data_get($node, 'config.title') ?? 'Nó') : null,
+            'reason' => $reason,
+            'version' => $execution->flowVersion->number,
+            'createdAt' => $execution->created_at?->toIso8601String(),
+            'traceUrl' => route('flows.executions.show', [$execution->flowVersion->flow_id, $execution]),
+        ];
     }
 
     private function assertChannelBelongsToTeam(?string $channelId, int $teamId): void
@@ -385,6 +521,7 @@ class FlowController extends Controller
             'collisionPolicy' => $flow->collision_policy->value,
             'category' => $publishedVersion?->category->value,
             'categoryLabel' => $publishedVersion?->category === FlowCategory::Conversation ? 'Conversa' : ($publishedVersion?->category === FlowCategory::Reaction ? 'Reação' : null),
+            'executionCount' => $executionCount,
             'executionsLast7Days' => (int) ($flow->executions_last_7_days_count ?? 0),
             'completionRate' => $executionCount > 0 ? round(($completedCount / $executionCount) * 100) : null,
             'lastExecutionAt' => is_string($lastExecutionAt)

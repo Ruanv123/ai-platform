@@ -25,6 +25,16 @@ use Illuminate\Support\Carbon;
  * @property string|null $edge_label
  * @property string|null $error
  * @property array<string, mixed> $variables_snapshot
+ * @property array<string, mixed>|null $http_request
+ * @property array<string, mixed>|null $http_response
+ * @property int|null $http_status
+ * @property int $retry_count
+ * @property string|null $ai_prompt
+ * @property string|null $ai_response
+ * @property int|null $ai_input_tokens
+ * @property int|null $ai_output_tokens
+ * @property string|null $ai_cost_brl
+ * @property array<int, array<string, mixed>>|null $ai_tool_calls
  * @property Carbon $started_at
  * @property-read Team $team
  * @property-read FlowExecution $execution
@@ -42,6 +52,16 @@ use Illuminate\Support\Carbon;
     'edge_label',
     'error',
     'variables_snapshot',
+    'http_request',
+    'http_response',
+    'http_status',
+    'retry_count',
+    'ai_prompt',
+    'ai_response',
+    'ai_input_tokens',
+    'ai_output_tokens',
+    'ai_cost_brl',
+    'ai_tool_calls',
     'started_at',
 ])]
 class FlowExecutionStep extends Model
@@ -59,6 +79,10 @@ class FlowExecutionStep extends Model
     {
         return [
             'variables_snapshot' => 'array',
+            'http_request' => 'array',
+            'http_response' => 'array',
+            'ai_tool_calls' => 'array',
+            'ai_cost_brl' => 'decimal:4',
             'started_at' => 'immutable_datetime',
         ];
     }

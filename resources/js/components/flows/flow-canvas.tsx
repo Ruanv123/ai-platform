@@ -18,6 +18,8 @@ import {
 import '@xyflow/react/dist/style.css';
 import {
     Bot,
+    CalendarCheck,
+    CalendarDays,
     CircleStop,
     Clock3,
     GitBranch,
@@ -85,6 +87,8 @@ type FlowReactEdge = Edge<FlowEdgeData, 'flowEdge'>;
 
 const icons: Record<string, LucideIcon> = {
     Bot,
+    CalendarCheck,
+    CalendarDays,
     CircleStop,
     Clock3,
     GitBranch,

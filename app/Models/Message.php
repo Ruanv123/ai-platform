@@ -5,6 +5,7 @@ namespace App\Models;
 use App\Concerns\BelongsToTeam;
 use App\Enums\MessageDeliveryStatus;
 use App\Enums\MessageDirection;
+use App\Events\InboxMessageCreated;
 use Database\Factories\MessageFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -20,6 +21,7 @@ use Illuminate\Support\Carbon;
  * @property MessageDirection $direction
  * @property string $payload_type
  * @property string|null $provider_message_id
+ * @property int|null $sent_by_user_id
  * @property string|null $content
  * @property MessageDeliveryStatus|null $delivery_status
  * @property bool $is_responded
@@ -28,6 +30,7 @@ use Illuminate\Support\Carbon;
  * @property-read Team $team
  * @property-read Contact $contact
  * @property-read Channel $channel
+ * @property-read User|null $sentBy
  */
 #[Fillable([
     'team_id',
@@ -36,6 +39,7 @@ use Illuminate\Support\Carbon;
     'direction',
     'payload_type',
     'provider_message_id',
+    'sent_by_user_id',
     'content',
     'delivery_status',
     'is_responded',
@@ -63,6 +67,17 @@ class Message extends Model
                 Contact::withoutGlobalScopes()->whereKey($contactId)->value('team_id'),
             );
         });
+
+        static::created(function (Message $message): void {
+            $isHumanWaiting = Contact::withoutGlobalScopes()
+                ->whereKey($message->contact_id)
+                ->where('human_waiting', true)
+                ->exists();
+
+            if ($isHumanWaiting) {
+                InboxMessageCreated::dispatch($message->team_id, $message->contact_id, $message->getKey());
+            }
+        });
     }
 
     /**
@@ -73,6 +88,12 @@ class Message extends Model
     public function contact(): BelongsTo
     {
         return $this->belongsTo(Contact::class);
+    }
+
+    /** @return BelongsTo<User, $this> */
+    public function sentBy(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'sent_by_user_id');
     }
 
     /**

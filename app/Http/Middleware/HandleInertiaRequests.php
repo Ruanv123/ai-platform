@@ -3,6 +3,8 @@
 namespace App\Http\Middleware;
 
 use App\Data\UserTeam;
+use App\Enums\FlowExecutionStatus;
+use App\Models\FlowExecution;
 use Illuminate\Http\Request;
 use Inertia\Middleware;
 
@@ -50,6 +52,12 @@ class HandleInertiaRequests extends Middleware
 
                 return $team ? $user->toUserTeam($team) : null;
             },
+            'pendingHumanCount' => fn (): int => $user === null
+                ? 0
+                : FlowExecution::query()
+                    ->where('status', FlowExecutionStatus::Paused)
+                    ->where('waiting_for', 'human')
+                    ->count(),
         ];
     }
 }

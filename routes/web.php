@@ -9,12 +9,16 @@ use App\Http\Controllers\Channels\WhatsAppTestController;
 use App\Http\Controllers\Channels\WhatsAppTestWebhookController;
 use App\Http\Controllers\Channels\WhatsAppWebhookController;
 use App\Http\Controllers\DashboardController;
+use App\Http\Controllers\Events\FlowEventController;
+use App\Http\Controllers\Events\FlowEventWebhookController;
 use App\Http\Controllers\Flows\FlowAiController;
 use App\Http\Controllers\Flows\FlowController;
 use App\Http\Controllers\Flows\FlowExecutionController;
 use App\Http\Controllers\Flows\FlowPlaygroundController;
 use App\Http\Controllers\Flows\FlowWebhookController;
+use App\Http\Controllers\InboxController;
 use App\Http\Controllers\Integrations\IntegrationController;
+use App\Http\Controllers\Integrations\IntegrationWebhookFailureController;
 use App\Http\Controllers\Knowledge\CollectionController;
 use App\Http\Controllers\Knowledge\DocumentController;
 use App\Http\Controllers\Onboarding\CompanyController;
@@ -61,6 +65,12 @@ Route::get('dashboard', DashboardController::class)
     ->name('dashboard');
 
 Route::middleware(['auth', EnsureUserHasTeam::class])->group(function () {
+    Route::get('atendimento', [InboxController::class, 'index'])->name('inbox.index');
+    Route::get('atendimento/{contact}', [InboxController::class, 'show'])->name('inbox.show');
+    Route::post('atendimento/{contact}/take', [InboxController::class, 'take'])->name('inbox.take');
+    Route::post('atendimento/{contact}/messages', [InboxController::class, 'storeMessage'])->name('inbox.messages.store');
+    Route::post('atendimento/{contact}/return', [InboxController::class, 'returnToBot'])->name('inbox.return');
+
     Route::resource('agents', AgentController::class)
         ->only(['index', 'store', 'edit', 'update', 'destroy'])
         ->names('agents');
@@ -68,7 +78,7 @@ Route::middleware(['auth', EnsureUserHasTeam::class])->group(function () {
     Route::get('flows/{flow}/executions/{execution}', [FlowExecutionController::class, 'show'])
         ->name('flows.executions.show');
     Route::resource('flows', FlowController::class)
-        ->only(['index', 'show', 'store', 'update'])
+        ->only(['index', 'show', 'store', 'update', 'destroy'])
         ->names('flows');
     Route::post('flows/{flow}/ai/propose', [FlowAiController::class, 'propose'])->middleware('throttle:playground')->name('flows.ai.propose');
     Route::post('flows/{flow}/ai/apply', [FlowAiController::class, 'apply'])->name('flows.ai.apply');
@@ -91,6 +101,30 @@ Route::middleware(['auth', EnsureUserHasTeam::class])->group(function () {
         ->name('channels.whatsapp-test.edit');
     Route::get('integrations', [IntegrationController::class, 'index'])
         ->name('integrations.index');
+    Route::post('integrations', [IntegrationController::class, 'store'])
+        ->name('integrations.store');
+    Route::patch('integrations/{integration}', [IntegrationController::class, 'update'])
+        ->name('integrations.update');
+    Route::post('integrations/{integration}/test', [IntegrationController::class, 'test'])
+        ->name('integrations.test');
+    Route::delete('integrations/{integration}', [IntegrationController::class, 'destroy'])
+        ->name('integrations.destroy');
+    Route::get('integrations/webhook-failures', [IntegrationWebhookFailureController::class, 'index'])
+        ->name('integrations.webhook-failures.index');
+    Route::post('integrations/webhook-failures/{delivery}/retry', [IntegrationWebhookFailureController::class, 'retry'])
+        ->name('integrations.webhook-failures.retry');
+    Route::get('events', [FlowEventController::class, 'index'])
+        ->name('events.index');
+    Route::post('events', [FlowEventController::class, 'store'])
+        ->name('events.store');
+    Route::patch('events/{flowEvent}', [FlowEventController::class, 'update'])
+        ->name('events.update');
+    Route::delete('events/{flowEvent}', [FlowEventController::class, 'destroy'])
+        ->name('events.destroy');
+    Route::post('events/{flowEvent}/webhooks', [FlowEventWebhookController::class, 'store'])
+        ->name('events.webhooks.store');
+    Route::delete('events/{flowEvent}/webhooks/{webhook}', [FlowEventWebhookController::class, 'destroy'])
+        ->name('events.webhooks.destroy');
     Route::post('channels/whatsapp', [WhatsAppController::class, 'store'])
         ->name('channels.whatsapp.store');
     Route::post('channels/whatsapp-test', [WhatsAppTestController::class, 'store'])

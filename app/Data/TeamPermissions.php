@@ -16,6 +16,7 @@ readonly class TeamPermissions
         public bool $canManageAgents,
         public bool $canManageChannels,
         public bool $canManageFlows = false,
+        public bool $canManageIntegrations = false,
     ) {
         //
     }

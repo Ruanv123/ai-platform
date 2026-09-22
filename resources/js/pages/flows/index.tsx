@@ -4,7 +4,9 @@ import {
     ChevronRight,
     Copy,
     Filter,
+    MoreHorizontal,
     Plus,
+    Trash2,
     Workflow,
 } from 'lucide-react';
 import { useState } from 'react';
@@ -20,6 +22,12 @@ import {
     DialogHeader,
     DialogTitle,
 } from '@/components/ui/dialog';
+import {
+    DropdownMenu,
+    DropdownMenuContent,
+    DropdownMenuItem,
+    DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import {
@@ -31,7 +39,7 @@ import {
     TableRow,
 } from '@/components/ui/table';
 import { postJson } from '@/lib/flow-http';
-import { index, pause, resume, show, store } from '@/routes/flows';
+import { destroy, index, pause, resume, show, store } from '@/routes/flows';
 import { clone } from '@/routes/flows/templates';
 import type { TeamPermissions } from '@/types';
 
@@ -45,6 +53,7 @@ type Flow = {
     triggerType: string;
     triggerEvent: string | null;
     categoryLabel: string | null;
+    executionCount: number;
     executionsLast7Days: number;
     completionRate: number | null;
     lastExecutionAt: string | null;
@@ -90,11 +99,27 @@ export default function FlowsIndex({
     const [createOpen, setCreateOpen] = useState(false);
     const [templatesOpen, setTemplatesOpen] = useState(false);
     const [cloning, setCloning] = useState<string | null>(null);
+    const [flowToDelete, setFlowToDelete] = useState<Flow | null>(null);
 
     const applyFilters = (changes: Partial<typeof filters>) => {
-        const query = { ...filters, ...changes, page: 1 };
+        const query = {
+            ...filters,
+            ...changes,
+            page: 1,
+            per_page: flows.perPage,
+        };
         router.get(
             index.url({ query }),
+            {},
+            { preserveState: true, preserveScroll: true },
+        );
+    };
+
+    const changePage = (page: number) => {
+        router.get(
+            index.url({
+                query: { ...filters, page, per_page: flows.perPage },
+            }),
             {},
             { preserveState: true, preserveScroll: true },
         );
@@ -221,6 +246,13 @@ export default function FlowsIndex({
                                     </TableHead>
                                     <TableHead>Conclusão</TableHead>
                                     <TableHead>Última execução</TableHead>
+                                    {permissions.canManageFlows && (
+                                        <TableHead className="w-12">
+                                            <span className="sr-only">
+                                                Ações
+                                            </span>
+                                        </TableHead>
+                                    )}
                                 </TableRow>
                             </TableHeader>
                             <TableBody>
@@ -318,49 +350,58 @@ export default function FlowsIndex({
                                                       flow.lastExecutionAt,
                                                   )}
                                         </TableCell>
+                                        {permissions.canManageFlows && (
+                                            <TableCell>
+                                                <DropdownMenu>
+                                                    <DropdownMenuTrigger
+                                                        asChild
+                                                    >
+                                                        <Button
+                                                            variant="ghost"
+                                                            size="icon"
+                                                            aria-label={`Ações para ${flow.name}`}
+                                                        >
+                                                            <MoreHorizontal />
+                                                        </Button>
+                                                    </DropdownMenuTrigger>
+                                                    <DropdownMenuContent align="end">
+                                                        <DropdownMenuItem
+                                                            variant="destructive"
+                                                            onSelect={() =>
+                                                                setFlowToDelete(
+                                                                    flow,
+                                                                )
+                                                            }
+                                                        >
+                                                            <Trash2 />
+                                                            Excluir
+                                                        </DropdownMenuItem>
+                                                    </DropdownMenuContent>
+                                                </DropdownMenu>
+                                            </TableCell>
+                                        )}
                                     </TableRow>
                                 ))}
                             </TableBody>
                         </Table>
-                    </div>
-                )}
-
-                {flows.total > 0 && (
-                    <div className="text-muted-foreground flex flex-col gap-3 text-sm sm:flex-row sm:items-center sm:justify-between">
-                        <span className="tabular-nums">
-                            Mostrando {flows.from}–{flows.to} de {flows.total}
-                        </span>
-                        <div className="flex items-center gap-1">
-                            <PaginationButton
-                                disabled={flows.currentPage <= 1}
-                                href={index.url({
-                                    query: {
-                                        ...filters,
-                                        page: flows.currentPage - 1,
-                                    },
-                                })}
-                            >
-                                <ChevronLeft />
-                            </PaginationButton>
-                            <span className="px-3 text-xs tabular-nums">
-                                Página {flows.currentPage} de {flows.lastPage}
-                            </span>
-                            <PaginationButton
-                                disabled={flows.currentPage >= flows.lastPage}
-                                href={index.url({
-                                    query: {
-                                        ...filters,
-                                        page: flows.currentPage + 1,
-                                    },
-                                })}
-                            >
-                                <ChevronRight />
-                            </PaginationButton>
-                        </div>
+                        <FlowPagination
+                            flows={flows}
+                            onPageChange={changePage}
+                        />
                     </div>
                 )}
             </div>
 
+            <DeleteFlowDialog
+                key={flowToDelete?.id ?? 'no-flow'}
+                flow={flowToDelete}
+                open={flowToDelete !== null}
+                onOpenChange={(open) => {
+                    if (!open) {
+                        setFlowToDelete(null);
+                    }
+                }}
+            />
             <CreateFlowDialog open={createOpen} onOpenChange={setCreateOpen} />
             <TemplateDialog
                 open={templatesOpen}
@@ -404,30 +445,140 @@ function FilterSelect({
     );
 }
 
-function PaginationButton({
-    href,
-    disabled,
-    children,
+function FlowPagination({
+    flows,
+    onPageChange,
 }: {
-    href: string;
-    disabled: boolean;
-    children: React.ReactNode;
+    flows: Props['flows'];
+    onPageChange: (page: number) => void;
 }) {
+    const hasPreviousPage = flows.currentPage > 1;
+    const hasNextPage = flows.currentPage < flows.lastPage;
+
     return (
-        <Button
-            variant="outline"
-            size="icon"
-            disabled={disabled}
-            asChild={!disabled}
-        >
-            {disabled ? (
-                <span>{children}</span>
-            ) : (
-                <Link href={href} preserveScroll preserveState>
-                    {children}
-                </Link>
-            )}
-        </Button>
+        <div className="flex flex-col gap-3 border-t px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+            <p className="text-muted-foreground text-sm">
+                Mostrando{' '}
+                <span className="text-foreground font-medium">
+                    {flows.from ?? 0}–{flows.to ?? 0}
+                </span>{' '}
+                de{' '}
+                <span className="text-foreground font-medium">
+                    {flows.total}
+                </span>
+            </p>
+            <div className="flex items-center gap-1">
+                <Button
+                    type="button"
+                    variant="outline"
+                    size="icon"
+                    onClick={() => onPageChange(flows.currentPage - 1)}
+                    disabled={!hasPreviousPage}
+                    aria-label="Página anterior"
+                >
+                    <ChevronLeft />
+                </Button>
+                <span className="text-muted-foreground min-w-24 text-center text-sm tabular-nums">
+                    Página {flows.currentPage} de {flows.lastPage}
+                </span>
+                <Button
+                    type="button"
+                    variant="outline"
+                    size="icon"
+                    onClick={() => onPageChange(flows.currentPage + 1)}
+                    disabled={!hasNextPage}
+                    aria-label="Próxima página"
+                >
+                    <ChevronRight />
+                </Button>
+            </div>
+        </div>
+    );
+}
+
+function DeleteFlowDialog({
+    flow,
+    open,
+    onOpenChange,
+}: {
+    flow: Flow | null;
+    open: boolean;
+    onOpenChange: (open: boolean) => void;
+}) {
+    const [processing, setProcessing] = useState(false);
+    const [error, setError] = useState<string | null>(null);
+
+    if (flow === null) {
+        return null;
+    }
+
+    const hasExecutionHistory = flow.executionCount > 0;
+    const handleDelete = () => {
+        if (hasExecutionHistory || processing) {
+            return;
+        }
+
+        setProcessing(true);
+        setError(null);
+        router.delete(destroy(flow.id).url, {
+            preserveScroll: true,
+            onSuccess: () => onOpenChange(false),
+            onError: (errors) =>
+                setError(
+                    typeof errors.flow === 'string'
+                        ? errors.flow
+                        : 'Não foi possível excluir o Fluxo.',
+                ),
+            onFinish: () => setProcessing(false),
+        });
+    };
+
+    return (
+        <Dialog open={open} onOpenChange={onOpenChange}>
+            <DialogContent>
+                <DialogHeader>
+                    <DialogTitle>Excluir Fluxo?</DialogTitle>
+                    <DialogDescription>
+                        {hasExecutionHistory ? (
+                            <>
+                                O Fluxo <strong>{flow.name}</strong> possui{' '}
+                                {flow.executionCount}{' '}
+                                {flow.executionCount === 1
+                                    ? 'Execução registrada'
+                                    : 'Execuções registradas'}{' '}
+                                e não pode ser excluído porque esse histórico
+                                precisa ser preservado.
+                            </>
+                        ) : (
+                            <>
+                                O Fluxo <strong>{flow.name}</strong> e suas
+                                Versões serão excluídos permanentemente. Essa
+                                ação não pode ser desfeita.
+                            </>
+                        )}
+                    </DialogDescription>
+                    {error !== null && (
+                        <p className="text-destructive text-sm">{error}</p>
+                    )}
+                </DialogHeader>
+                <DialogFooter>
+                    <DialogClose asChild>
+                        <Button type="button" variant="outline">
+                            {hasExecutionHistory ? 'Fechar' : 'Cancelar'}
+                        </Button>
+                    </DialogClose>
+                    {!hasExecutionHistory && (
+                        <Button
+                            variant="destructive"
+                            disabled={processing}
+                            onClick={handleDelete}
+                        >
+                            {processing ? 'Excluindo...' : 'Excluir Fluxo'}
+                        </Button>
+                    )}
+                </DialogFooter>
+            </DialogContent>
+        </Dialog>
     );
 }
 

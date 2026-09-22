@@ -12,10 +12,26 @@ type ChannelOption = {
     label: string;
 };
 
+type IntegrationOption = {
+    id: string;
+    name: string;
+    type: string;
+    status: string;
+    statusLabel: string;
+};
+
+type EventOption = {
+    id: string;
+    name: string;
+    description: string | null;
+};
+
 type FlowNodePropertiesProps = {
     node: FlowNode;
     catalog: NodeCatalogItem[];
     channels: ChannelOption[];
+    integrations: IntegrationOption[];
+    events: EventOption[];
     triggerType: string;
     triggerEvent: string | null;
     channelId: string | null;
@@ -28,6 +44,8 @@ export function FlowNodeProperties({
     node,
     catalog,
     channels,
+    integrations,
+    events,
     triggerType,
     triggerEvent,
     channelId,
@@ -38,7 +56,7 @@ export function FlowNodeProperties({
     const [fullEditorOpen, setFullEditorOpen] = useState(false);
     const label =
         catalog.find((item) => item.type === node.type)?.label ?? node.type;
-    const setConfig = (key: string, value: string | number | boolean) => {
+    const setConfig = (key: string, value: unknown) => {
         onChangeConfig(node.id, { ...node.config, [key]: value });
     };
 
@@ -216,10 +234,17 @@ export function FlowNodeProperties({
                 )}
                 {node.type === 'http_request' && (
                     <>
+                        <IntegrationSelect
+                            value={node.config.integration_id}
+                            integrations={integrations}
+                            onChange={(value) =>
+                                setConfig('integration_id', value)
+                            }
+                        />
                         <Field label="URL">
                             <Input
                                 value={stringValue(node.config.url)}
-                                placeholder="https://api.exemplo.com/..."
+                                placeholder="/v1/contatos ou https://api.exemplo.com/..."
                                 onChange={(event) =>
                                     setConfig('url', event.target.value)
                                 }
@@ -242,6 +267,18 @@ export function FlowNodeProperties({
                                 )}
                             </select>
                         </Field>
+                        <JsonConfigField
+                            label="Headers"
+                            value={node.config.headers ?? {}}
+                            onChange={(value) => setConfig('headers', value)}
+                        />
+                        <JsonConfigField
+                            label="Mapear resposta (Variável → caminho JSON)"
+                            value={node.config.response_map ?? {}}
+                            onChange={(value) =>
+                                setConfig('response_map', value)
+                            }
+                        />
                         <Button
                             variant="outline"
                             className="w-full"
@@ -251,7 +288,53 @@ export function FlowNodeProperties({
                         </Button>
                     </>
                 )}
+                {(node.type === 'agenda_availability' ||
+                    node.type === 'calendar_availability') && (
+                    <IntegrationSelect
+                        value={node.config.integration_id}
+                        integrations={integrations.filter(
+                            (integration) => integration.type === 'agenda',
+                        )}
+                        onChange={(value) => setConfig('integration_id', value)}
+                    />
+                )}
+                {(node.type === 'agenda_create_event' ||
+                    node.type === 'calendar_create_event') && (
+                    <IntegrationSelect
+                        value={node.config.integration_id}
+                        integrations={integrations.filter(
+                            (integration) => integration.type === 'agenda',
+                        )}
+                        onChange={(value) => setConfig('integration_id', value)}
+                    />
+                )}
+                {node.type === 'emit_event' && (
+                    <Field label="Evento declarado">
+                        <select
+                            className="border-input bg-background h-9 w-full rounded-md border px-3 text-sm"
+                            value={stringValue(node.config.event_id)}
+                            onChange={(event) =>
+                                setConfig('event_id', event.target.value)
+                            }
+                        >
+                            <option value="">Escolha um Evento</option>
+                            {events.map((event) => (
+                                <option key={event.id} value={event.id}>
+                                    {event.name}
+                                </option>
+                            ))}
+                        </select>
+                    </Field>
+                )}
                 <NodeConfigFields node={node} onChange={setConfig} />
+                {traceableNodeTypes.some((type) => type === node.type) && (
+                    <SensitiveFieldsField
+                        value={node.config.sensitive_fields}
+                        onChange={(fields) =>
+                            setConfig('sensitive_fields', fields)
+                        }
+                    />
+                )}
                 {![
                     'trigger',
                     'message',
@@ -293,8 +376,22 @@ export function FlowNodeProperties({
     );
 }
 
+const traceableNodeTypes = [
+    'http_request',
+    'capture_response',
+    'set_variable_or_tag',
+    'define_variable',
+    'deliver_agent',
+    'ai_task',
+    'intent_router',
+] as const;
+
 const dedicatedNodeTypes = [
     'set_variable_or_tag',
+    'agenda_availability',
+    'calendar_availability',
+    'agenda_create_event',
+    'calendar_create_event',
     'deliver_agent',
     'transfer_human',
     'emit_event',
@@ -328,14 +425,37 @@ function NodeConfigFields({
         ],
         transfer_human: [
             {
-                key: 'message',
-                label: 'Mensagem para o Contato',
+                key: 'reason',
+                label: 'Motivo exibido na caixa de entrada',
                 multiline: true,
             },
+            {
+                key: 'return_after_seconds',
+                label: 'Voltar ao bot depois de (segundos)',
+            },
         ],
-        emit_event: [
-            { key: 'event', label: 'Nome do Evento' },
-            { key: 'payload', label: 'Payload', multiline: true },
+        emit_event: [{ key: 'payload', label: 'Payload', multiline: true }],
+        agenda_availability: [
+            { key: 'start', label: 'Começa em' },
+            { key: 'end', label: 'Termina em' },
+            { key: 'output_variable', label: 'Guardar horários em' },
+        ],
+        calendar_availability: [
+            { key: 'start', label: 'Começa em' },
+            { key: 'end', label: 'Termina em' },
+            { key: 'output_variable', label: 'Guardar horários em' },
+        ],
+        agenda_create_event: [
+            { key: 'title', label: 'Título' },
+            { key: 'start', label: 'Começa em' },
+            { key: 'end', label: 'Termina em' },
+            { key: 'output_variable', label: 'Guardar identificador em' },
+        ],
+        calendar_create_event: [
+            { key: 'title', label: 'Título' },
+            { key: 'start', label: 'Começa em' },
+            { key: 'end', label: 'Termina em' },
+            { key: 'output_variable', label: 'Guardar identificador em' },
         ],
         send_template: [
             { key: 'template', label: 'Template aprovado' },
@@ -414,7 +534,7 @@ function FullConfigEditor({
     const [error, setError] = useState<string | null>(null);
 
     return (
-        <div className="bg-background absolute inset-0 z-40 flex flex-col">
+        <div className="bg-background fixed inset-0 z-50 flex flex-col">
             <div className="flex items-start justify-between border-b p-5">
                 <div>
                     <p className="text-muted-foreground text-[11px] font-medium tracking-[0.16em] uppercase">
@@ -465,6 +585,34 @@ function FullConfigEditor({
     );
 }
 
+function SensitiveFieldsField({
+    value,
+    onChange,
+}: {
+    value: unknown;
+    onChange: (fields: string[]) => void;
+}) {
+    return (
+        <Field label="Campos sensíveis">
+            <Input
+                value={sensitiveFieldsValue(value)}
+                placeholder="cpf, cartão, api_key"
+                onChange={(event) =>
+                    onChange(
+                        event.target.value
+                            .split(',')
+                            .map((field) => field.trim())
+                            .filter(Boolean),
+                    )
+                }
+            />
+            <p className="text-muted-foreground text-xs leading-5">
+                Esses campos aparecem como *** no traço e no payload.
+            </p>
+        </Field>
+    );
+}
+
 function Field({ label, children }: { label: string; children: ReactNode }) {
     return (
         <div className="grid gap-2">
@@ -472,6 +620,79 @@ function Field({ label, children }: { label: string; children: ReactNode }) {
             {children}
         </div>
     );
+}
+
+function IntegrationSelect({
+    value,
+    integrations,
+    onChange,
+}: {
+    value: unknown;
+    integrations: IntegrationOption[];
+    onChange: (value: string) => void;
+}) {
+    return (
+        <Field label="Integração">
+            <select
+                className="border-input bg-background h-9 w-full rounded-md border px-3 text-sm"
+                value={stringValue(value)}
+                onChange={(event) => onChange(event.target.value)}
+            >
+                <option value="">Escolha uma Integração</option>
+                {integrations.map((integration) => (
+                    <option key={integration.id} value={integration.id}>
+                        {integration.name} · {integration.statusLabel}
+                    </option>
+                ))}
+            </select>
+            {integrations.length === 0 && (
+                <p className="text-muted-foreground text-xs leading-5">
+                    Cadastre uma Integração do tipo correto antes de usar este
+                    Nó.
+                </p>
+            )}
+        </Field>
+    );
+}
+
+function JsonConfigField({
+    label,
+    value,
+    onChange,
+}: {
+    label: string;
+    value: unknown;
+    onChange: (value: Record<string, unknown>) => void;
+}) {
+    const text = JSON.stringify(value ?? {}, null, 2);
+
+    return (
+        <Field label={label}>
+            <textarea
+                className={`${textareaClassName} min-h-24 font-mono text-xs`}
+                value={text}
+                onChange={(event) => {
+                    try {
+                        const parsed = JSON.parse(event.target.value) as Record<
+                            string,
+                            unknown
+                        >;
+                        onChange(parsed);
+                    } catch {
+                        // Keep the last valid JSON while the user types.
+                    }
+                }}
+            />
+        </Field>
+    );
+}
+
+function sensitiveFieldsValue(value: unknown): string {
+    return Array.isArray(value)
+        ? value
+              .filter((field): field is string => typeof field === 'string')
+              .join(', ')
+        : stringValue(value);
 }
 
 function stringValue(value: unknown): string {

@@ -4,6 +4,7 @@ use App\Enums\ChannelType;
 use App\Enums\FlowTriggerType;
 use App\Models\Channel;
 use App\Models\Flow;
+use App\Models\FlowExecution;
 use App\Models\User;
 use Inertia\Testing\AssertableInertia as Assert;
 
@@ -20,6 +21,9 @@ it('paginates and filters the company flow listing', function () {
     $response->assertOk()->assertInertia(fn (Assert $page) => $page
         ->component('flows/index')
         ->has('flows.data', 5)
+        ->where('flows.currentPage', 1)
+        ->where('flows.lastPage', 2)
+        ->where('flows.perPage', 5)
         ->where('flows.total', 6)
         ->where('filters.channel', $channel->getKey())
         ->where('permissions.canManageFlows', true),
@@ -93,6 +97,53 @@ it('rejects an invalid AI proposal without changing the draft', function () {
         ->assertUnprocessable();
 
     expect($flow->fresh()->draft_dsl)->toBe($originalDraft);
+});
+
+it('deletes a flow without execution history', function () {
+    $user = User::factory()->withTeam()->create();
+    $flow = Flow::factory()->for($user->company())->create();
+
+    $this->actingAs($user)
+        ->delete(route('flows.destroy', $flow))
+        ->assertRedirect(route('flows.index'));
+
+    $this->assertModelMissing($flow);
+});
+
+it('prevents deleting a flow that has execution history', function () {
+    $user = User::factory()->withTeam()->create();
+    $flow = Flow::factory()->for($user->company())->create();
+    $version = $flow->versions()->create([
+        'team_id' => $user->company()->getKey(),
+        'number' => 1,
+        'dsl' => $flow->draft_dsl,
+        'category' => 'reaction',
+        'published_at' => now(),
+    ]);
+    $execution = FlowExecution::factory()->create([
+        'flow_version_id' => $version->getKey(),
+    ]);
+
+    $this->actingAs($user)
+        ->delete(route('flows.destroy', $flow))
+        ->assertSessionHasErrors('flow');
+
+    $this->assertModelExists($flow);
+    $this->assertModelExists($execution);
+});
+
+it('forbids a member from deleting a flow', function () {
+    $owner = User::factory()->withTeam()->create();
+    $flow = Flow::factory()->for($owner->company())->create();
+    $member = User::factory()->create();
+    $flow->team->members()->attach($member, ['role' => 'member']);
+    $member->switchTeam($flow->team);
+
+    $this->actingAs($member)
+        ->delete(route('flows.destroy', $flow))
+        ->assertForbidden();
+
+    $this->assertModelExists($flow);
 });
 
 it('runs the draft in the playground without creating a metric execution', function () {

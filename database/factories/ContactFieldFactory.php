@@ -19,6 +19,7 @@ class ContactFieldFactory extends Factory
             'name' => fake()->unique()->word(),
             'type' => 'text',
             'options' => null,
+            'is_sensitive' => false,
         ];
     }
 }

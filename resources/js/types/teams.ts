@@ -65,6 +65,7 @@ export type TeamPermissions = {
     canManageAgents: boolean;
     canManageChannels: boolean;
     canManageFlows: boolean;
+    canManageIntegrations: boolean;
 };
 
 export type RoleOption = {

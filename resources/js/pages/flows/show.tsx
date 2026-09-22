@@ -5,8 +5,10 @@ import {
     Eye,
     GitBranch,
     History,
+    LoaderCircle,
     Plus,
     Redo2,
+    Save,
     Sparkles,
     Undo2,
     Upload,
@@ -21,9 +23,16 @@ import {
 } from '@/components/flows/flow-canvas';
 import { FlowNodeProperties } from '@/components/flows/flow-node-properties';
 import { FlowPlaygroundPanel } from '@/components/flows/flow-playground-panel';
+import {
+    FlowExecutionsDashboard,
+    type FlowObservability,
+    type PaginatedExecutions,
+} from '@/components/flows/flow-executions-dashboard';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { SidebarTrigger } from '@/components/ui/sidebar';
+import { patchJson } from '@/lib/flow-http';
 import { index, pause, publish, resume, update } from '@/routes/flows';
 import type { TeamPermissions } from '@/types';
 
@@ -52,22 +61,64 @@ type Channel = {
     label: string;
 };
 
+type Integration = {
+    id: string;
+    name: string;
+    type: string;
+    status: string;
+    statusLabel: string;
+};
+
+type FlowEvent = {
+    id: string;
+    name: string;
+    description: string | null;
+};
+
 type Props = {
     flow: Flow;
     channels: Channel[];
+    integrations: Integration[];
+    events: FlowEvent[];
     nodeCatalog: NodeCatalogItem[];
     permissions: TeamPermissions;
+    activeTab: 'design' | 'executions';
+    observability: FlowObservability;
+    executionFilters: {
+        status: 'failed' | 'stuck' | 'all';
+        error: string | null;
+    };
+    executions: PaginatedExecutions;
 };
 
 type PanelMode = 'palette' | 'properties' | null;
 
+type FlowMeta = {
+    name: string;
+    triggerType: string;
+    triggerEvent: string | null;
+    channelId: string | null;
+};
+
 export default function FlowShow({
     flow,
     channels,
+    integrations,
+    events,
     nodeCatalog,
     permissions,
+    activeTab: initialActiveTab,
+    observability,
+    executionFilters,
+    executions,
 }: Props) {
     const canEdit = permissions.canManageFlows;
+    const [flowMeta, setFlowMeta] = useState<FlowMeta>(() => ({
+        name: flow.name,
+        triggerType: flow.triggerType,
+        triggerEvent: flow.triggerEvent,
+        channelId: flow.channelId,
+    }));
     const [nodes, setNodes] = useState<FlowNode[]>(flow.draft.nodes ?? []);
     const [edges, setEdges] = useState<FlowEdge[]>(flow.draft.edges ?? []);
     const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
@@ -80,29 +131,75 @@ export default function FlowShow({
         Array<{ nodes: FlowNode[]; edges: FlowEdge[] }>
     >([]);
     const [activeTab, setActiveTab] = useState<'design' | 'executions'>(
-        'design',
+        initialActiveTab,
     );
     const [aiOpen, setAiOpen] = useState(false);
     const [playgroundOpen, setPlaygroundOpen] = useState(false);
     const [traceNodeIds, setTraceNodeIds] = useState<string[]>([]);
     const [publishErrors, setPublishErrors] = useState<string[]>([]);
+    const [hasUnpublishedChanges, setHasUnpublishedChanges] = useState(
+        flow.hasUnpublishedChanges,
+    );
+    const [saveError, setSaveError] = useState<string | null>(null);
+    const [isSaving, setIsSaving] = useState(false);
+    const [revision, setRevision] = useState(0);
+    const [savedRevision, setSavedRevision] = useState(0);
     const selectedNode =
         nodes.find((node) => node.id === selectedNodeId) ?? null;
+    const hasUnsavedChanges = revision !== savedRevision;
 
-    const saveDraft = (nextNodes: FlowNode[], nextEdges: FlowEdge[]) => {
-        router.patch(
-            update(flow.id).url,
-            {
+    const markChanged = () => {
+        setRevision((current) => current + 1);
+        setSaveError(null);
+    };
+
+    const saveFlow = async (): Promise<boolean> => {
+        if (!canEdit || !hasUnsavedChanges || isSaving) {
+            return !isSaving;
+        }
+        if (flowMeta.name.trim() === '') {
+            setSaveError('Dê um nome ao Fluxo antes de salvar.');
+
+            return false;
+        }
+
+        const revisionToSave = revision;
+        setIsSaving(true);
+        setSaveError(null);
+
+        try {
+            await patchJson(update(flow.id).url, {
+                name: flowMeta.name.trim(),
+                trigger_type: flowMeta.triggerType,
+                trigger_event: flowMeta.triggerEvent,
+                channel_id: flowMeta.channelId,
                 dsl: JSON.parse(
                     JSON.stringify({
                         version: flow.draft.version ?? 1,
-                        nodes: nextNodes,
-                        edges: nextEdges,
+                        nodes,
+                        edges,
                     }),
                 ),
-            },
-            { preserveState: true, preserveScroll: true },
-        );
+            });
+            setFlowMeta((current) => ({
+                ...current,
+                name: current.name.trim(),
+            }));
+            setSavedRevision((current) => Math.max(current, revisionToSave));
+            setHasUnpublishedChanges(true);
+
+            return true;
+        } catch (error) {
+            setSaveError(
+                error instanceof Error
+                    ? error.message
+                    : 'Não foi possível salvar o Fluxo.',
+            );
+
+            return false;
+        } finally {
+            setIsSaving(false);
+        }
     };
 
     const applyGraph = (nextNodes: FlowNode[], nextEdges: FlowEdge[]) => {
@@ -110,7 +207,7 @@ export default function FlowShow({
         setFuture([]);
         setNodes(nextNodes);
         setEdges(nextEdges);
-        saveDraft(nextNodes, nextEdges);
+        markChanged();
     };
 
     const addNode = (type: string, afterId: string | null = paletteAfter) => {
@@ -194,11 +291,12 @@ export default function FlowShow({
         if (!canEdit) {
             return;
         }
-        const nextNodes = nodes.map((node) =>
-            node.id === nodeId ? { ...node, config } : node,
+        setNodes((current) =>
+            current.map((node) =>
+                node.id === nodeId ? { ...node, config } : node,
+            ),
         );
-        setNodes(nextNodes);
-        saveDraft(nextNodes, edges);
+        markChanged();
     };
 
     const connectNodes = (source: string, target: string) => {
@@ -221,10 +319,19 @@ export default function FlowShow({
         if (!canEdit) {
             return;
         }
-        router.patch(update(flow.id).url, changes, {
-            preserveState: true,
-            preserveScroll: true,
-        });
+        setFlowMeta((current) => ({
+            name: changes.name ?? current.name,
+            triggerType: changes.trigger_type ?? current.triggerType,
+            triggerEvent:
+                changes.trigger_event !== undefined
+                    ? changes.trigger_event
+                    : current.triggerEvent,
+            channelId:
+                changes.channel_id !== undefined
+                    ? changes.channel_id
+                    : current.channelId,
+        }));
+        markChanged();
     };
 
     const undo = () => {
@@ -236,7 +343,7 @@ export default function FlowShow({
         setFuture((current) => [...current, { nodes, edges }]);
         setNodes(previous.nodes);
         setEdges(previous.edges);
-        saveDraft(previous.nodes, previous.edges);
+        markChanged();
     };
 
     const redo = () => {
@@ -248,11 +355,15 @@ export default function FlowShow({
         setHistory((current) => [...current, { nodes, edges }]);
         setNodes(next.nodes);
         setEdges(next.edges);
-        saveDraft(next.nodes, next.edges);
+        markChanged();
     };
 
-    const publishFlow = () => {
+    const publishFlow = async () => {
         setPublishErrors([]);
+        const saved = await saveFlow();
+        if (!saved) {
+            return;
+        }
         router.post(
             publish(flow.id).url,
             {},
@@ -282,10 +393,14 @@ export default function FlowShow({
 
     return (
         <>
-            <Head title={`Fluxo · ${flow.name}`} />
-            <div className="relative flex min-h-[calc(100vh-4rem)] flex-1 flex-col overflow-hidden">
+            <Head title={`Fluxo · ${flowMeta.name}`} />
+            <div
+                className={`relative flex min-h-[calc(100vh-4rem)] flex-1 flex-col ${activeTab === 'design' ? 'overflow-hidden' : 'overflow-y-auto'}`}
+            >
                 <div className="pointer-events-none absolute inset-x-0 top-0 z-20 flex items-start justify-between p-5">
-                    <div className="bg-background/95 pointer-events-auto flex max-w-[min(420px,calc(100%-1rem))] items-center gap-3 rounded-2xl border p-2 shadow-lg backdrop-blur">
+                    <div className="bg-background/95 pointer-events-auto flex max-w-[min(420px,calc(100%-1rem))] items-center gap-2 rounded-2xl border p-2 shadow-lg backdrop-blur">
+                        <SidebarTrigger />
+                        <div className="bg-border h-6 w-px" />
                         <Button
                             variant="ghost"
                             size="icon"
@@ -299,17 +414,14 @@ export default function FlowShow({
                         <div className="min-w-0 px-1">
                             <Input
                                 className="h-7 border-0 bg-transparent px-0 text-sm font-semibold shadow-none focus-visible:ring-0"
-                                defaultValue={flow.name}
+                                value={flowMeta.name}
                                 disabled={!canEdit}
-                                onBlur={(event) => {
-                                    if (
-                                        event.target.value.trim() !== '' &&
-                                        event.target.value !== flow.name
-                                    ) {
-                                        updateMeta({
-                                            name: event.target.value,
-                                        });
-                                    }
+                                onChange={(event) => {
+                                    setFlowMeta((current) => ({
+                                        ...current,
+                                        name: event.target.value,
+                                    }));
+                                    markChanged();
                                 }}
                             />
                             <div className="flex items-center gap-2">
@@ -322,11 +434,15 @@ export default function FlowShow({
                                 <span className="text-muted-foreground text-[11px]">
                                     {flow.statusLabel}
                                 </span>
-                                {flow.hasUnpublishedChanges && (
+                                {hasUnsavedChanges ? (
+                                    <span className="text-signal-attention text-[11px]">
+                                        Alterações não salvas
+                                    </span>
+                                ) : hasUnpublishedChanges ? (
                                     <span className="text-signal-attention text-[11px]">
                                         Alterações não publicadas
                                     </span>
-                                )}
+                                ) : null}
                             </div>
                         </div>
                     </div>
@@ -355,6 +471,21 @@ export default function FlowShow({
                                 <History /> Execuções
                             </Button>
                         </div>
+                        {canEdit && (
+                            <Button
+                                variant="outline"
+                                size="sm"
+                                disabled={!hasUnsavedChanges || isSaving}
+                                onClick={() => void saveFlow()}
+                            >
+                                {isSaving ? (
+                                    <LoaderCircle className="animate-spin" />
+                                ) : (
+                                    <Save />
+                                )}
+                                {isSaving ? 'Salvando' : 'Salvar'}
+                            </Button>
+                        )}
                         {canEdit && (
                             <Button
                                 variant="ghost"
@@ -401,7 +532,7 @@ export default function FlowShow({
                                         ? toggleStatus
                                         : flow.status === 'paused'
                                           ? toggleStatus
-                                          : publishFlow
+                                          : () => void publishFlow()
                                 }
                             >
                                 {flow.status === 'published' ? (
@@ -422,14 +553,17 @@ export default function FlowShow({
                     </div>
                 </div>
 
-                {publishErrors.length > 0 && (
+                {(saveError !== null || publishErrors.length > 0) && (
                     <div className="bg-destructive/10 text-destructive border-destructive/30 absolute top-24 left-1/2 z-30 flex -translate-x-1/2 items-center gap-2 rounded-xl border px-4 py-3 text-sm shadow-lg">
-                        <span>{publishErrors[0]}</span>
+                        <span>{saveError ?? publishErrors[0]}</span>
                         <Button
                             variant="ghost"
                             size="icon"
                             className="size-7"
-                            onClick={() => setPublishErrors([])}
+                            onClick={() => {
+                                setSaveError(null);
+                                setPublishErrors([]);
+                            }}
                         >
                             ×
                         </Button>
@@ -467,18 +601,12 @@ export default function FlowShow({
                         }}
                     />
                 ) : (
-                    <div className="bg-muted/20 flex flex-1 items-center justify-center p-8">
-                        <div className="max-w-sm text-center">
-                            <History className="text-muted-foreground mx-auto size-8" />
-                            <h2 className="mt-4 font-semibold">
-                                Execuções aparecem aqui
-                            </h2>
-                            <p className="text-muted-foreground mt-2 text-sm leading-6">
-                                Publique e acompanhe os turnos reais nesta área.
-                                O Playground fica fora das métricas.
-                            </p>
-                        </div>
-                    </div>
+                    <FlowExecutionsDashboard
+                        flowId={flow.id}
+                        analytics={observability}
+                        executions={executions}
+                        filters={executionFilters}
+                    />
                 )}
 
                 {canEdit && panelMode === 'palette' && (
@@ -490,12 +618,15 @@ export default function FlowShow({
                 )}
                 {selectedNode && panelMode === 'properties' && (
                     <FlowNodeProperties
+                        key={selectedNode.id}
                         node={selectedNode}
                         catalog={nodeCatalog}
                         channels={channels}
-                        triggerType={flow.triggerType}
-                        triggerEvent={flow.triggerEvent}
-                        channelId={flow.channelId}
+                        integrations={integrations}
+                        events={events}
+                        triggerType={flowMeta.triggerType}
+                        triggerEvent={flowMeta.triggerEvent}
+                        channelId={flowMeta.channelId}
                         onChangeConfig={changeNodeConfig}
                         onChangeFlowMeta={updateMeta}
                         onClose={() => setPanelMode(null)}
@@ -508,16 +639,22 @@ export default function FlowShow({
                         open={aiOpen}
                         onClose={() => setAiOpen(false)}
                         onApply={(dsl) => {
+                            setHistory((current) => [
+                                ...current,
+                                { nodes, edges },
+                            ]);
+                            setFuture([]);
                             setNodes(dsl.nodes);
                             setEdges(dsl.edges);
                             setTraceNodeIds([]);
                             setAiOpen(false);
+                            markChanged();
                         }}
                     />
                 )}
                 <FlowPlaygroundPanel
                     flowId={flow.id}
-                    triggerType={flow.triggerType}
+                    triggerType={flowMeta.triggerType}
                     open={playgroundOpen}
                     onClose={() => {
                         setPlaygroundOpen(false);
@@ -623,6 +760,21 @@ function defaultConfig(type: string): Record<string, unknown> {
             : {}),
         ...(type === 'wait' ? { seconds: 60 } : {}),
         ...(type === 'condition' ? { expression: '' } : {}),
+        ...(type === 'http_request'
+            ? { method: 'POST', url: '', body: {}, response_map: {} }
+            : {}),
+        ...(type === 'emit_event' ? { event_id: '', payload: {} } : {}),
+        ...(type === 'agenda_availability'
+            ? { start: '', end: '', output_variable: 'available_slots' }
+            : {}),
+        ...(type === 'agenda_create_event'
+            ? {
+                  title: '',
+                  start: '',
+                  end: '',
+                  output_variable: 'appointment_id',
+              }
+            : {}),
     };
 }
 

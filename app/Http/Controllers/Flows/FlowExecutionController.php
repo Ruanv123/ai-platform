@@ -17,12 +17,14 @@ class FlowExecutionController extends Controller
     public function show(Flow $flow, FlowExecution $execution): Response
     {
         Gate::authorize('view', $flow);
+        $canViewSensitiveTrace = Gate::allows('viewSensitiveTrace', $flow);
         $execution->load(['flowVersion.flow', 'contact', 'channel', 'steps']);
         abort_unless($execution->flowVersion->flow_id === $flow->getKey(), 404);
 
         $nodes = $this->nodes($execution->flowVersion->dsl);
         $nodesById = $nodes->keyBy('id');
-        $highlightedStepId = $this->highlightedStepId($execution);
+        $displayStatus = $this->displayStatus($execution);
+        $highlightedStepId = $this->highlightedStepId($execution, $displayStatus);
         $reachedNodeIds = $execution->steps->pluck('node_id')->unique();
         $endedAt = $execution->isActive() ? now() : ($execution->last_activity_at ?? now());
 
@@ -40,15 +42,17 @@ class FlowExecutionController extends Controller
                     'type' => $execution->channel->type->value,
                 ],
                 'version' => $execution->flowVersion->number,
-                'status' => $execution->status->value,
-                'statusLabel' => $this->statusLabel($execution->status),
+                'status' => $displayStatus->value,
+                'statusLabel' => $this->statusLabel($displayStatus),
                 'finalReason' => $execution->final_reason,
                 'durationMs' => (int) $execution->created_at->diffInMilliseconds($endedAt),
                 'startedAt' => $execution->created_at->toIso8601String(),
                 'finishedAt' => $execution->isActive() ? null : $endedAt->toIso8601String(),
+                ...($canViewSensitiveTrace ? ['aiCostBrl' => (float) $execution->ai_cost_brl] : []),
             ],
+            'canViewSensitiveTrace' => $canViewSensitiveTrace,
             'steps' => $execution->steps
-                ->map(function (FlowExecutionStep $step) use ($nodesById, $highlightedStepId): array {
+                ->map(function (FlowExecutionStep $step) use ($nodesById, $highlightedStepId, $canViewSensitiveTrace): array {
                     $node = $nodesById->get($step->node_id, []);
                     $nodeType = is_string($node['type'] ?? null) ? $node['type'] : 'unknown';
 
@@ -72,6 +76,18 @@ class FlowExecutionController extends Controller
                             'label' => $step->edge_label,
                         ],
                         'highlighted' => $step->getKey() === $highlightedStepId,
+                        ...($canViewSensitiveTrace ? [
+                            'httpRequest' => $step->http_request,
+                            'httpResponse' => $step->http_response,
+                            'httpStatus' => $step->http_status,
+                            'retryCount' => $step->retry_count,
+                            'aiPrompt' => $step->ai_prompt,
+                            'aiResponse' => $step->ai_response,
+                            'aiInputTokens' => $step->ai_input_tokens,
+                            'aiOutputTokens' => $step->ai_output_tokens,
+                            'aiCostBrl' => $step->ai_cost_brl === null ? null : (float) $step->ai_cost_brl,
+                            'aiToolCalls' => $step->ai_tool_calls,
+                        ] : []),
                     ];
                 })
                 ->values(),
@@ -121,13 +137,13 @@ class FlowExecutionController extends Controller
         return collect($nodes);
     }
 
-    private function highlightedStepId(FlowExecution $execution): ?string
+    private function highlightedStepId(FlowExecution $execution, FlowExecutionStatus $status): ?string
     {
-        if ($execution->status === FlowExecutionStatus::Completed) {
+        if ($status === FlowExecutionStatus::Completed) {
             return null;
         }
 
-        if (in_array($execution->status, [FlowExecutionStatus::Failed, FlowExecutionStatus::Stuck], true)) {
+        if (in_array($status, [FlowExecutionStatus::Failed, FlowExecutionStatus::Stuck], true)) {
             $failedStep = $execution->steps->where('result', 'failed')->last();
             if ($failedStep instanceof FlowExecutionStep) {
                 return $failedStep->getKey();
@@ -146,6 +162,14 @@ class FlowExecutionController extends Controller
         return $lastStep instanceof FlowExecutionStep ? $lastStep->getKey() : null;
     }
 
+    private function displayStatus(FlowExecution $execution): FlowExecutionStatus
+    {
+        $isStuck = $execution->status === FlowExecutionStatus::Stuck
+            || ($execution->isActive() && $execution->wake_at?->isPast() && $execution->wake_at?->lte(now()->subMinutes(5)));
+
+        return $isStuck ? FlowExecutionStatus::Stuck : $execution->status;
+    }
+
     private function statusLabel(FlowExecutionStatus $status): string
     {
         return match ($status) {
@@ -154,6 +178,7 @@ class FlowExecutionController extends Controller
             FlowExecutionStatus::Paused => 'Pausada',
             FlowExecutionStatus::Completed => 'Concluída',
             FlowExecutionStatus::Failed => 'Falhou',
+            FlowExecutionStatus::Abandoned => 'Abandonada',
             FlowExecutionStatus::Stuck => 'Presa',
         };
     }
@@ -195,6 +220,8 @@ class FlowExecutionController extends Controller
             'transfer_human' => 'Transferir para humano',
             'emit_event' => 'Emitir Evento',
             'http_request' => 'Requisição HTTP',
+            'agenda_availability', 'calendar_availability', 'check_availability' => 'Consultar disponibilidade',
+            'agenda_create_event', 'calendar_create_event', 'create_calendar_event' => 'Criar compromisso',
             'send_template' => 'Enviar Template',
             'subflow', 'sub_flow' => 'Sub-fluxo',
             'ai_task' => 'Tarefa de IA',
