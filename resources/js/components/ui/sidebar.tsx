@@ -213,7 +213,7 @@ function Sidebar({
       {/* This is what handles the sidebar gap on desktop */}
       <div
         className={cn(
-          "relative h-svh w-(--sidebar-width) bg-transparent transition-[width] duration-200 ease-linear",
+          "relative h-svh w-(--sidebar-width) bg-transparent transition-[width] duration-250 ease-ui-move motion-reduce:transition-none",
           "group-data-[collapsible=offcanvas]:w-0",
           "group-data-[side=right]:rotate-180",
           variant === "floating" || variant === "inset"
@@ -223,7 +223,7 @@ function Sidebar({
       />
       <div
         className={cn(
-          "fixed inset-y-0 z-10 hidden h-svh w-(--sidebar-width) transition-[left,right,width] duration-200 ease-linear md:flex",
+          "fixed inset-y-0 z-10 hidden h-svh w-(--sidebar-width) transition-[left,right,width] duration-250 ease-ui-move motion-reduce:transition-none md:flex",
           side === "left"
             ? "left-0 group-data-[collapsible=offcanvas]:left-[calc(var(--sidebar-width)*-1)]"
             : "right-0 group-data-[collapsible=offcanvas]:right-[calc(var(--sidebar-width)*-1)]",
@@ -251,7 +251,9 @@ function SidebarTrigger({
   onClick,
   ...props
 }: React.ComponentProps<typeof Button>) {
-  const { toggleSidebar, isMobile, state } = useSidebar()
+  const { toggleSidebar, isMobile, openMobile, state } = useSidebar()
+  const isCollapsed = isMobile ? !openMobile : state === "collapsed"
+  const label = isCollapsed ? "Abrir barra lateral" : "Fechar barra lateral"
 
   return (
     <Button
@@ -259,32 +261,55 @@ function SidebarTrigger({
       data-slot="sidebar-trigger"
       variant="ghost"
       size="icon"
-      className={cn("h-7 w-7", className)}
+      aria-label={label}
+      title={label}
+      className={cn(
+        "h-7 w-7 transition-transform duration-150 ease-ui-out active:scale-[0.97] motion-reduce:transition-none",
+        className
+      )}
       onClick={(event) => {
         onClick?.(event)
         toggleSidebar()
       }}
       {...props}
     >
-      {isMobile || state === "collapsed" ? <PanelLeftOpenIcon /> : <PanelLeftCloseIcon />}
-      <span className="sr-only">Alternar barra lateral</span>
+      <span className="relative size-4" aria-hidden="true">
+        <PanelLeftOpenIcon
+          className={cn(
+            "absolute inset-0 transition-[opacity,transform] duration-200 ease-ui-out motion-reduce:transform-none",
+            isCollapsed
+              ? "translate-x-0 opacity-100"
+              : "-translate-x-1 opacity-0"
+          )}
+        />
+        <PanelLeftCloseIcon
+          className={cn(
+            "absolute inset-0 transition-[opacity,transform] duration-200 ease-ui-out motion-reduce:transform-none",
+            isCollapsed
+              ? "translate-x-1 opacity-0"
+              : "translate-x-0 opacity-100"
+          )}
+        />
+      </span>
+      <span className="sr-only">{label}</span>
     </Button>
   )
 }
 
 function SidebarRail({ className, ...props }: React.ComponentProps<"button">) {
-  const { toggleSidebar } = useSidebar()
+  const { state, toggleSidebar } = useSidebar()
+  const label = state === "collapsed" ? "Abrir barra lateral" : "Fechar barra lateral"
 
   return (
     <button
       data-sidebar="rail"
       data-slot="sidebar-rail"
-      aria-label="Alternar barra lateral"
+      aria-label={label}
       tabIndex={-1}
       onClick={toggleSidebar}
-      title="Alternar barra lateral"
+      title={label}
       className={cn(
-        "hover:after:bg-sidebar-border absolute inset-y-0 z-20 hidden w-4 -translate-x-1/2 transition-all ease-linear group-data-[side=left]:-right-4 group-data-[side=right]:left-0 after:absolute after:inset-y-0 after:left-1/2 after:w-[2px] sm:flex",
+        "hover:after:bg-sidebar-border absolute inset-y-0 z-20 hidden w-4 -translate-x-1/2 transition-transform duration-200 ease-ui-out group-data-[side=left]:-right-4 group-data-[side=right]:left-0 after:absolute after:inset-y-0 after:left-1/2 after:w-[2px] after:transition-colors after:duration-200 after:ease-ui-out motion-reduce:transition-none motion-reduce:after:transition-none sm:flex",
         "in-data-[side=left]:cursor-w-resize in-data-[side=right]:cursor-e-resize",
         "[[data-side=left][data-state=collapsed]_&]:cursor-e-resize [[data-side=right][data-state=collapsed]_&]:cursor-w-resize",
         "hover:group-data-[collapsible=offcanvas]:bg-sidebar group-data-[collapsible=offcanvas]:translate-x-0 group-data-[collapsible=offcanvas]:after:left-full",

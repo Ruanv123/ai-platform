@@ -19,6 +19,9 @@ import {
     SidebarMenu,
     SidebarMenuButton,
     SidebarMenuItem,
+    SidebarRail,
+    SidebarTrigger,
+    useSidebar,
 } from '@/components/ui/sidebar';
 import { dashboard } from '@/routes';
 import { index as collections } from '@/routes/collections';
@@ -33,6 +36,8 @@ import type { NavItem } from '@/types';
 
 export function AppSidebar() {
     const dashboardUrl = dashboard();
+    const { isMobile, state } = useSidebar();
+    const isCollapsed = !isMobile && state === 'collapsed';
     const { props } = usePage<{
         currentTeam?: { id: number } | null;
         pendingHumanCount?: number;
@@ -88,12 +93,22 @@ export function AppSidebar() {
         <Sidebar collapsible="icon" variant="inset">
             <SidebarHeader>
                 <SidebarMenu>
-                    <SidebarMenuItem>
-                        <SidebarMenuButton size="lg" asChild>
-                            <Link href={dashboardUrl} prefetch>
+                    <SidebarMenuItem className="flex items-center gap-1 group-data-[collapsible=icon]:gap-0">
+                        <SidebarMenuButton
+                            size="lg"
+                            asChild
+                            className="ease-ui-move min-w-0 flex-1 transition-[width,height,padding,opacity] duration-250 group-data-[collapsible=icon]:pointer-events-none group-data-[collapsible=icon]:w-0! group-data-[collapsible=icon]:opacity-0 motion-reduce:transition-none"
+                        >
+                            <Link
+                                href={dashboardUrl}
+                                prefetch
+                                aria-hidden={isCollapsed}
+                                tabIndex={isCollapsed ? -1 : undefined}
+                            >
                                 <AppLogo />
                             </Link>
                         </SidebarMenuButton>
+                        <SidebarTrigger className="size-8 shrink-0" />
                     </SidebarMenuItem>
                 </SidebarMenu>
             </SidebarHeader>
@@ -105,6 +120,8 @@ export function AppSidebar() {
             <SidebarFooter>
                 <NavUser />
             </SidebarFooter>
+
+            <SidebarRail />
         </Sidebar>
     );
 }
