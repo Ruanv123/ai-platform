@@ -44,6 +44,12 @@ class SaveAgentRequest extends FormRequest
                 'distinct',
                 Rule::exists('collections', 'id')->where('team_id', $this->user()?->company()?->getKey()),
             ],
+            'schedulable_calendar_ids' => ['nullable', 'array', 'max:100'],
+            'schedulable_calendar_ids.*' => [
+                'uuid',
+                'distinct',
+                Rule::exists('schedulable_calendars', 'id')->where('team_id', $this->user()?->company()?->getKey()),
+            ],
         ];
     }
 
@@ -81,6 +87,11 @@ class SaveAgentRequest extends FormRequest
             'collection_ids.*.uuid' => 'A Coleção selecionada é inválida.',
             'collection_ids.*.distinct' => 'Não selecione a mesma Coleção mais de uma vez.',
             'collection_ids.*.exists' => 'Selecione apenas Coleções da sua Empresa.',
+            'schedulable_calendar_ids.array' => 'Os Calendários selecionados são inválidos.',
+            'schedulable_calendar_ids.max' => 'Selecione no máximo 100 Calendários.',
+            'schedulable_calendar_ids.*.uuid' => 'O Calendário selecionado é inválido.',
+            'schedulable_calendar_ids.*.distinct' => 'Não selecione o mesmo Calendário mais de uma vez.',
+            'schedulable_calendar_ids.*.exists' => 'Selecione apenas Calendários da sua Empresa.',
         ];
     }
 }

@@ -33,6 +33,7 @@ use Illuminate\Support\Carbon;
  * @property Carbon|null $updated_at
  * @property-read Team $team
  * @property-read \Illuminate\Database\Eloquent\Collection<int, Collection> $collections
+ * @property-read \Illuminate\Database\Eloquent\Collection<int, SchedulableCalendar> $schedulableCalendars
  * @property-read \Illuminate\Database\Eloquent\Collection<int, Channel> $channels
  */
 #[Fillable([
@@ -72,6 +73,12 @@ class Agent extends Model
     public function collections(): BelongsToMany
     {
         return $this->belongsToMany(Collection::class, 'agent_collection');
+    }
+
+    /** @return BelongsToMany<SchedulableCalendar, $this> */
+    public function schedulableCalendars(): BelongsToMany
+    {
+        return $this->belongsToMany(SchedulableCalendar::class, 'agent_schedulable_calendar');
     }
 
     /**

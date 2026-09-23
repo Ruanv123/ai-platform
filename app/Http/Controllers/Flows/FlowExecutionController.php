@@ -230,8 +230,6 @@ class FlowExecutionController extends Controller
             'transfer_human' => 'Transferir para humano',
             'emit_event' => 'Emitir Evento',
             'http_request' => 'Requisição HTTP',
-            'agenda_availability', 'calendar_availability', 'check_availability' => 'Consultar disponibilidade',
-            'agenda_create_event', 'calendar_create_event', 'create_calendar_event' => 'Criar compromisso',
             'send_template' => 'Enviar Template',
             'subflow', 'sub_flow' => 'Sub-fluxo',
             'ai_task' => 'Tarefa de IA',

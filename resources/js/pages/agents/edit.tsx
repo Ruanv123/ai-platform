@@ -24,6 +24,7 @@ import {
     SelectValue,
 } from '@/components/ui/select';
 import { index, update } from '@/routes/agents';
+import { show as showIntegration } from '@/routes/integrations';
 
 type Option = {
     value: string;
@@ -35,6 +36,12 @@ type CollectionOption = {
     name: string;
 };
 
+type SchedulableCalendarOption = {
+    id: string;
+    name: string;
+    description: string | null;
+};
+
 type Agent = AgentDraft & {
     id: string;
     description: string | null;
@@ -43,6 +50,8 @@ type Agent = AgentDraft & {
 type Props = {
     agent: Agent;
     collections: CollectionOption[];
+    schedulableCalendars: SchedulableCalendarOption[];
+    agendaConnected: boolean;
     objectives: Option[];
     tones: Option[];
     responseLengths: Option[];
@@ -239,6 +248,8 @@ function AgentForm({
     tones,
     responseLengths,
     permissions,
+    schedulableCalendars,
+    agendaConnected,
 }: Props) {
     const [name, setName] = useState(agent.name);
     const [description, setDescription] = useState(agent.description ?? '');
@@ -255,6 +266,8 @@ function AgentForm({
     const [selectedCollectionIds, setSelectedCollectionIds] = useState(
         agent.collectionIds,
     );
+    const [selectedSchedulableCalendarIds, setSelectedSchedulableCalendarIds] =
+        useState(agent.schedulableCalendarIds);
     const [welcomeMessage, setWelcomeMessage] = useState(agent.welcomeMessage);
     const [activePanel, setActivePanel] = useState<'config' | 'playground'>(
         'config',
@@ -269,6 +282,7 @@ function AgentForm({
         instructions,
         rules,
         collectionIds: selectedCollectionIds,
+        schedulableCalendarIds: selectedSchedulableCalendarIds,
     };
 
     const toggleCollection = (collectionId: string) => {
@@ -276,6 +290,14 @@ function AgentForm({
             current.includes(collectionId)
                 ? current.filter((id) => id !== collectionId)
                 : [...current, collectionId],
+        );
+    };
+
+    const toggleSchedulableCalendar = (calendarId: string) => {
+        setSelectedSchedulableCalendarIds((current) =>
+            current.includes(calendarId)
+                ? current.filter((id) => id !== calendarId)
+                : [...current, calendarId],
         );
     };
 
@@ -352,6 +374,16 @@ function AgentForm({
                                                 type="hidden"
                                                 name="collection_ids[]"
                                                 value={collectionId}
+                                            />
+                                        ),
+                                    )}
+                                    {selectedSchedulableCalendarIds.map(
+                                        (calendarId) => (
+                                            <input
+                                                key={calendarId}
+                                                type="hidden"
+                                                name="schedulable_calendar_ids[]"
+                                                value={calendarId}
                                             />
                                         ),
                                     )}
@@ -542,6 +574,55 @@ function AgentForm({
                                                 'collection_ids',
                                             )}
                                         />
+                                    </section>
+
+                                    <section className="grid gap-3">
+                                        <div className="grid gap-1">
+                                            <Label>Agenda</Label>
+                                            <p className="text-muted-foreground text-sm">
+                                                Escolha em quais Calendários agendáveis este Agente pode marcar.
+                                            </p>
+                                        </div>
+                                        {!agendaConnected ? (
+                                            <p className="text-muted-foreground rounded-md border border-dashed p-3 text-sm">
+                                                Conecte a Agenda em{' '}
+                                                <Link className="text-primary underline" href={showIntegration('agenda').url}>
+                                                    Integrações
+                                                </Link>{' '}
+                                                para liberar Calendários.
+                                            </p>
+                                        ) : schedulableCalendars.length === 0 ? (
+                                            <p className="text-muted-foreground rounded-md border border-dashed p-3 text-sm">
+                                                Libere um Calendário na Agenda para disponibilizá-lo aqui.
+                                            </p>
+                                        ) : (
+                                            <div className="grid gap-2 sm:grid-cols-2">
+                                                {schedulableCalendars.map((calendar) => {
+                                                    const selected = selectedSchedulableCalendarIds.includes(calendar.id);
+
+                                                    return (
+                                                        <label
+                                                            key={calendar.id}
+                                                            className="border-input hover:bg-muted/50 flex cursor-pointer items-start gap-3 rounded-md border px-3 py-2 text-sm"
+                                                        >
+                                                            <input
+                                                                type="checkbox"
+                                                                checked={selected}
+                                                                onChange={() => toggleSchedulableCalendar(calendar.id)}
+                                                                className="accent-primary mt-0.5 size-4"
+                                                            />
+                                                            <span>
+                                                                <span className="block font-medium">{calendar.name}</span>
+                                                                {calendar.description && (
+                                                                    <span className="text-muted-foreground block text-xs">{calendar.description}</span>
+                                                                )}
+                                                            </span>
+                                                        </label>
+                                                    );
+                                                })}
+                                            </div>
+                                        )}
+                                        <InputError message={nestedError(errors, 'schedulable_calendar_ids')} />
                                     </section>
 
                                     {permissions.canManageAgents && (

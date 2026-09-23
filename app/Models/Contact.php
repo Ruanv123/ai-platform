@@ -30,6 +30,7 @@ use Illuminate\Support\Carbon;
  * @property-read Collection<int, Tag> $tags
  * @property-read Collection<int, FlowExecution> $flowExecutions
  * @property-read Collection<int, ContactConsent> $consents
+ * @property-read Collection<int, Appointment> $appointments
  */
 #[Fillable(['team_id', 'phone', 'name', 'human_waiting', 'human_waiting_at'])]
 class Contact extends Model
@@ -77,6 +78,12 @@ class Contact extends Model
     public function consents(): HasMany
     {
         return $this->hasMany(ContactConsent::class);
+    }
+
+    /** @return HasMany<Appointment, $this> */
+    public function appointments(): HasMany
+    {
+        return $this->hasMany(Appointment::class);
     }
 
     protected function casts(): array

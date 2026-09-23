@@ -318,26 +318,6 @@ export function FlowNodeProperties({
                         </Button>
                     </>
                 )}
-                {(node.type === 'agenda_availability' ||
-                    node.type === 'calendar_availability') && (
-                    <IntegrationSelect
-                        value={node.config.integration_id}
-                        integrations={integrations.filter(
-                            (integration) => integration.type === 'agenda',
-                        )}
-                        onChange={(value) => setConfig('integration_id', value)}
-                    />
-                )}
-                {(node.type === 'agenda_create_event' ||
-                    node.type === 'calendar_create_event') && (
-                    <IntegrationSelect
-                        value={node.config.integration_id}
-                        integrations={integrations.filter(
-                            (integration) => integration.type === 'agenda',
-                        )}
-                        onChange={(value) => setConfig('integration_id', value)}
-                    />
-                )}
                 {node.type === 'emit_event' && (
                     <Field label="Evento declarado">
                         <select
@@ -418,10 +398,6 @@ const traceableNodeTypes = [
 
 const dedicatedNodeTypes = [
     'set_variable_or_tag',
-    'agenda_availability',
-    'calendar_availability',
-    'agenda_create_event',
-    'calendar_create_event',
     'deliver_agent',
     'transfer_human',
     'emit_event',
@@ -592,28 +568,6 @@ function NodeConfigFields({
             },
         ],
         emit_event: [{ key: 'payload', label: 'Payload', multiline: true }],
-        agenda_availability: [
-            { key: 'start', label: 'Começa em' },
-            { key: 'end', label: 'Termina em' },
-            { key: 'output_variable', label: 'Guardar horários em' },
-        ],
-        calendar_availability: [
-            { key: 'start', label: 'Começa em' },
-            { key: 'end', label: 'Termina em' },
-            { key: 'output_variable', label: 'Guardar horários em' },
-        ],
-        agenda_create_event: [
-            { key: 'title', label: 'Título' },
-            { key: 'start', label: 'Começa em' },
-            { key: 'end', label: 'Termina em' },
-            { key: 'output_variable', label: 'Guardar identificador em' },
-        ],
-        calendar_create_event: [
-            { key: 'title', label: 'Título' },
-            { key: 'start', label: 'Começa em' },
-            { key: 'end', label: 'Termina em' },
-            { key: 'output_variable', label: 'Guardar identificador em' },
-        ],
         subflow: [
             { key: 'flow_id', label: 'Fluxo chamado' },
             { key: 'inputs', label: 'Entradas', multiline: true },

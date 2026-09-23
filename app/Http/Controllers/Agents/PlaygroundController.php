@@ -34,11 +34,16 @@ class PlaygroundController extends Controller
             'history',
             'message',
             'collection_ids',
+            'schedulable_calendar_ids',
         ]));
         $draftAgent->setRelation('team', $team);
         $draftAgent->setRelation(
             'collections',
             $this->draftCollections($team, $validated['collection_ids'] ?? []),
+        );
+        $draftAgent->setRelation(
+            'schedulableCalendars',
+            $team->schedulableCalendars()->whereKey($validated['schedulable_calendar_ids'] ?? [])->with('integration')->get(),
         );
 
         return response()->stream(function () use (

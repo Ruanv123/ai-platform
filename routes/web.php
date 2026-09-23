@@ -18,6 +18,7 @@ use App\Http\Controllers\Flows\FlowExecutionController;
 use App\Http\Controllers\Flows\FlowPlaygroundController;
 use App\Http\Controllers\Flows\FlowWebhookController;
 use App\Http\Controllers\InboxController;
+use App\Http\Controllers\Integrations\AgendaCalendarController;
 use App\Http\Controllers\Integrations\IntegrationController;
 use App\Http\Controllers\Integrations\IntegrationWebhookFailureController;
 use App\Http\Controllers\Knowledge\CollectionController;
@@ -117,8 +118,18 @@ Route::middleware(['auth', EnsureUserHasTeam::class])->group(function () {
 
     Route::get('integrations', [IntegrationController::class, 'index'])
         ->name('integrations.index');
+    Route::get('integrations/agenda/google/connect', [IntegrationController::class, 'connect'])
+        ->name('integrations.agenda.connect');
+    Route::get('integrations/agenda/google/callback', [IntegrationController::class, 'callback'])
+        ->name('integrations.agenda.callback');
     Route::post('integrations', [IntegrationController::class, 'store'])
         ->name('integrations.store');
+    Route::post('integrations/agenda/calendars', [AgendaCalendarController::class, 'store'])
+        ->name('integrations.agenda.calendars.store');
+    Route::patch('integrations/agenda/calendars/{schedulableCalendar}', [AgendaCalendarController::class, 'update'])
+        ->name('integrations.agenda.calendars.update');
+    Route::delete('integrations/agenda/calendars/{schedulableCalendar}', [AgendaCalendarController::class, 'destroy'])
+        ->name('integrations.agenda.calendars.destroy');
     Route::get('integrations/{type}', [IntegrationController::class, 'show'])
         ->whereIn('type', ['agenda', 'crm', 'ecommerce'])
         ->name('integrations.show');

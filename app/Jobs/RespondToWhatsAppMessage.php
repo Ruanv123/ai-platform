@@ -82,7 +82,7 @@ class RespondToWhatsAppMessage implements ShouldQueue
         WhatsAppCustomerCareWindow $customerCareWindow,
     ): void {
         $channel = Channel::query()
-            ->with('agent.collections')
+            ->with(['agent.collections', 'agent.schedulableCalendars.integration'])
             ->find($this->channelId);
 
         if ($channel === null || $channel->agent === null || ! $channel->agent->is_active) {
@@ -120,6 +120,8 @@ class RespondToWhatsAppMessage implements ShouldQueue
             $history,
             $instructionTemplate,
             $knowledgeBaseSearch,
+            null,
+            $contact,
         );
         $response = $agent->prompt(
             $this->promptFor($lastPendingMessage),

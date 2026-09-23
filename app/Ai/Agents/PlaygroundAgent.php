@@ -2,10 +2,15 @@
 
 namespace App\Ai\Agents;
 
+use App\Ai\Tools\BookAppointment;
+use App\Ai\Tools\CancelAppointment;
+use App\Ai\Tools\ConsultAvailableTimes;
+use App\Ai\Tools\ListAppointments;
 use App\Ai\Tools\SearchKnowledgeBase;
 use App\Knowledge\AgentInstructionTemplate;
 use App\Knowledge\KnowledgeBaseSearch;
 use App\Models\Agent as ConfiguredAgent;
+use App\Scheduling\SchedulingService;
 use Illuminate\Support\Collection;
 use Laravel\Ai\Contracts\Agent;
 use Laravel\Ai\Contracts\Conversational;
@@ -30,6 +35,7 @@ class PlaygroundAgent implements Agent, Conversational, HasTools
         private array $conversationMessages,
         private AgentInstructionTemplate $instructionTemplate,
         private KnowledgeBaseSearch $knowledgeBaseSearch,
+        private ?SchedulingService $scheduling = null,
     ) {}
 
     /**
@@ -63,14 +69,27 @@ class PlaygroundAgent implements Agent, Conversational, HasTools
     {
         $collections = $this->configuredAgent->collections;
 
-        if ($collections->isEmpty()) {
-            return [];
+        $tools = [];
+        if ($collections->isNotEmpty()) {
+            $tools[] = new SearchKnowledgeBase(
+                $this->configuredAgent->team,
+                $collections->modelKeys(),
+                $this->knowledgeBaseSearch,
+            );
         }
 
-        return [new SearchKnowledgeBase(
-            $this->configuredAgent->team,
-            $collections->modelKeys(),
-            $this->knowledgeBaseSearch,
-        )];
+        $calendars = $this->configuredAgent->schedulableCalendars;
+        if ($calendars->isNotEmpty()) {
+            $scheduling = $this->scheduling ?? app(SchedulingService::class);
+            $tools = [
+                ...$tools,
+                new ConsultAvailableTimes($this->configuredAgent->team, $calendars, $scheduling),
+                new BookAppointment(null, $calendars, $scheduling, true),
+                new ListAppointments(null, $scheduling, true),
+                new CancelAppointment(null, $scheduling, true),
+            ];
+        }
+
+        return $tools;
     }
 }

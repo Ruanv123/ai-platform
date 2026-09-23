@@ -510,8 +510,6 @@ final class FlowEngine
             'transfer_human' => $this->transferNode($execution, $config),
             'emit_event' => $this->eventNode($execution, $config),
             'http_request' => $this->httpNode($execution, $node, $config),
-            'agenda_availability', 'calendar_availability', 'check_availability' => $this->agendaAvailabilityNode($execution, $node, $config),
-            'agenda_create_event', 'calendar_create_event', 'create_calendar_event' => $this->agendaCreateEventNode($execution, $node, $config),
             'send_template' => $this->templateNode($execution, $node, $config),
             'subflow', 'sub_flow' => $this->subflowNode($execution, $config),
             'ai_task' => $this->aiTaskNode($execution, $node, $config),
@@ -744,6 +742,7 @@ final class FlowEngine
                 $this->instructionTemplate,
                 $this->knowledgeBaseSearch,
                 new ReturnToFlow($execution),
+                $execution->contact,
             ))->prompt($prompt, provider: config('ai.playground.provider'), model: config('ai.playground.model'), timeout: (int) config('ai.playground.timeout', 60));
             $traceData = $this->aiTraceData($prompt, $response, $config, $execution->variables);
             $text = trim($response->text);
@@ -866,66 +865,6 @@ final class FlowEngine
         }
 
         return $this->executeHttpRequest($execution, $node, $config, $integration);
-    }
-
-    /** @param array<string, mixed> $config */
-    private function agendaAvailabilityNode(FlowExecution $execution, array $node, array $config): array
-    {
-        try {
-            $integration = $this->integrationFor($execution, $config);
-        } catch (Throwable $exception) {
-            return $this->integrationError($execution, $node, $exception);
-        }
-        if ($integration->type !== 'agenda') {
-            return $this->integrationError($execution, $node, new RuntimeException('Este Nó precisa usar uma Integração de Agenda.'));
-        }
-        $request = [
-            'method' => 'GET',
-            'url' => (string) ($config['path'] ?? $integration->credential('availability_path', '/availability')),
-            'body' => array_filter([
-                'start' => $this->interpolateValue($config['start'] ?? $config['start_at'] ?? null, $execution),
-                'end' => $this->interpolateValue($config['end'] ?? $config['end_at'] ?? null, $execution),
-                'timezone' => (string) ($execution->team?->timezone ?? $config['timezone'] ?? 'America/Sao_Paulo'),
-            ], fn (mixed $value): bool => $value !== null && $value !== ''),
-            'response_map' => [
-                (string) ($config['output_variable'] ?? 'available_slots') => (string) ($config['response_path'] ?? 'slots'),
-            ],
-        ];
-
-        return $this->executeHttpRequest($execution, $node, [...$config, ...$request], $integration);
-    }
-
-    /** @param array<string, mixed> $config */
-    private function agendaCreateEventNode(FlowExecution $execution, array $node, array $config): array
-    {
-        try {
-            $integration = $this->integrationFor($execution, $config);
-        } catch (Throwable $exception) {
-            return $this->integrationError($execution, $node, $exception);
-        }
-        if ($integration->type !== 'agenda') {
-            return $this->integrationError($execution, $node, new RuntimeException('Este Nó precisa usar uma Integração de Agenda.'));
-        }
-        $body = is_array($config['body'] ?? null) ? $this->interpolateValue($config['body'], $execution) : [
-            'title' => $this->interpolateValue($config['title'] ?? $config['summary'] ?? 'Compromisso', $execution),
-            'start' => $this->interpolateValue($config['start'] ?? $config['start_at'] ?? null, $execution),
-            'end' => $this->interpolateValue($config['end'] ?? $config['end_at'] ?? null, $execution),
-            'timezone' => (string) ($execution->team?->timezone ?? $config['timezone'] ?? 'America/Sao_Paulo'),
-            'contact' => $execution->contact === null ? null : [
-                'name' => $execution->contact->name,
-                'phone' => $execution->contact->phone,
-            ],
-        ];
-        $request = [
-            'method' => 'POST',
-            'url' => (string) ($config['path'] ?? $integration->credential('event_path', '/events')),
-            'body' => $body,
-            'response_map' => [
-                (string) ($config['output_variable'] ?? 'appointment_id') => (string) ($config['response_path'] ?? 'id'),
-            ],
-        ];
-
-        return $this->executeHttpRequest($execution, $node, [...$config, ...$request], $integration);
     }
 
     /** @return array<string, mixed> */
@@ -1227,7 +1166,7 @@ final class FlowEngine
         try {
             $history = $execution->contact?->history($execution->channel) ?? new Collection;
             $prompt = $this->interpolate((string) ($config['instruction'] ?? $config['prompt'] ?? ''), $execution);
-            $response = (new WhatsAppAgent($agent, $history, $this->instructionTemplate, $this->knowledgeBaseSearch))
+            $response = (new WhatsAppAgent($agent, $history, $this->instructionTemplate, $this->knowledgeBaseSearch, null, $execution->contact))
                 ->prompt($prompt, provider: config('ai.playground.provider'), model: config('ai.playground.model'), timeout: (int) config('ai.playground.timeout', 60));
             $traceData = $this->aiTraceData($prompt, $response, $config, $execution->variables);
             $value = trim($response->text);
@@ -1265,7 +1204,7 @@ final class FlowEngine
         try {
             $history = $execution->contact?->history($execution->channel) ?? new Collection;
             $prompt = $message !== null ? $message->content : (string) ($execution->variables['message'] ?? '');
-            $response = (new WhatsAppAgent($agent, $history, $this->instructionTemplate, $this->knowledgeBaseSearch))
+            $response = (new WhatsAppAgent($agent, $history, $this->instructionTemplate, $this->knowledgeBaseSearch, null, $execution->contact))
                 ->prompt($prompt, provider: config('ai.playground.provider'), model: config('ai.playground.model'), timeout: (int) config('ai.playground.timeout', 60));
             $traceData = $this->aiTraceData($prompt, $response, $config, $execution->variables);
             $intent = trim($response->text);

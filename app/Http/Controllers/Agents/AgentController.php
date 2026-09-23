@@ -11,6 +11,7 @@ use App\Http\Requests\Agents\SaveAgentRequest;
 use App\Models\Agent;
 use App\Models\Channel;
 use App\Models\Collection;
+use App\Models\SchedulableCalendar;
 use App\Models\Team;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -34,7 +35,7 @@ class AgentController extends Controller
         return Inertia::render('agents/index', [
             'agents' => $team->agents()
                 ->withCount(['collections', 'channels'])
-                ->with(['collections', 'channels' => fn ($query) => $query->orderBy('id')])
+                ->with(['collections', 'schedulableCalendars', 'channels' => fn ($query) => $query->orderBy('id')])
                 ->orderBy('name')
                 ->get()
                 ->map(fn (Agent $agent): array => [
@@ -52,6 +53,7 @@ class AgentController extends Controller
                     'rules' => $agent->rules,
                     'isActive' => $agent->is_active,
                     'collectionIds' => $agent->collections->modelKeys(),
+                    'schedulableCalendarIds' => $agent->schedulableCalendars->modelKeys(),
                     'collectionCount' => $agent->collections_count,
                     'channelCount' => $agent->channels_count,
                     'channels' => $agent->channels
@@ -73,6 +75,17 @@ class AgentController extends Controller
                     'name' => $collection->name,
                 ])
                 ->values(),
+            'schedulableCalendars' => $team->schedulableCalendars()
+                ->whereHas('integration', fn ($query) => $query->where('type', 'agenda'))
+                ->orderBy('display_name')
+                ->get()
+                ->map(fn (SchedulableCalendar $calendar): array => [
+                    'id' => $calendar->id,
+                    'name' => $calendar->display_name,
+                    'description' => $calendar->display_description,
+                ])
+                ->values(),
+            'agendaConnected' => $team->integrations()->where('type', 'agenda')->where('status', 'connected')->exists(),
             'permissions' => $user->toTeamPermissions($team),
             'objectives' => AgentObjective::options(),
             'tones' => AgentTone::options(),
@@ -87,7 +100,7 @@ class AgentController extends Controller
     {
         Gate::authorize('view', $agent);
 
-        $agent->loadMissing('collections');
+        $agent->loadMissing(['collections', 'schedulableCalendars']);
 
         return Inertia::render('agents/edit', $this->editorProps(
             $agent->team,
@@ -130,10 +143,12 @@ class AgentController extends Controller
     {
         $validated = $request->validated();
         $collectionIds = $validated['collection_ids'] ?? [];
-        unset($validated['collection_ids']);
+        $calendarIds = $validated['schedulable_calendar_ids'] ?? [];
+        unset($validated['collection_ids'], $validated['schedulable_calendar_ids']);
 
         $agent->update($validated);
         $agent->collections()->sync($collectionIds);
+        $agent->schedulableCalendars()->sync($calendarIds);
 
         Inertia::flash('toast', [
             'type' => 'success',
@@ -202,6 +217,7 @@ class AgentController extends Controller
                 'instructions' => $agent->instructions,
                 'rules' => $agent->rules,
                 'collectionIds' => $agent->collections->modelKeys(),
+                'schedulableCalendarIds' => $agent->schedulableCalendars->modelKeys(),
             ],
             'collections' => $team->collections()
                 ->orderBy('name')
@@ -211,6 +227,17 @@ class AgentController extends Controller
                     'name' => $collection->name,
                 ])
                 ->values(),
+            'schedulableCalendars' => $team->schedulableCalendars()
+                ->whereHas('integration', fn ($query) => $query->where('type', 'agenda'))
+                ->orderBy('display_name')
+                ->get()
+                ->map(fn (SchedulableCalendar $calendar): array => [
+                    'id' => $calendar->id,
+                    'name' => $calendar->display_name,
+                    'description' => $calendar->display_description,
+                ])
+                ->values(),
+            'agendaConnected' => $team->integrations()->where('type', 'agenda')->where('status', 'connected')->exists(),
             'objectives' => AgentObjective::options(),
             'tones' => AgentTone::options(),
             'responseLengths' => AgentResponseLength::options(),

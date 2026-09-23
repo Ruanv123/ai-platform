@@ -141,15 +141,7 @@ final class FlowPublisher
     private function validateExternalReferences(Flow $flow, array $dsl): array
     {
         $warnings = [];
-        $requestTypes = [
-            'http_request',
-            'agenda_availability',
-            'calendar_availability',
-            'check_availability',
-            'agenda_create_event',
-            'calendar_create_event',
-            'create_calendar_event',
-        ];
+        $requestTypes = ['http_request'];
 
         foreach ($dsl['nodes'] as $node) {
             $type = str_replace('-', '_', strtolower((string) ($node['type'] ?? '')));
@@ -164,9 +156,6 @@ final class FlowPublisher
                     ->find($integrationId);
                 if ($integration === null) {
                     throw new FlowValidationException(["A Integração do Nó {$node['id']} não existe nesta Empresa."]);
-                }
-                if ($type !== 'http_request' && $integration->type !== 'agenda') {
-                    throw new FlowValidationException(["O Nó {$node['id']} precisa usar uma Integração de Agenda."]);
                 }
                 if ($this->containsLegacyCredential($config)) {
                     $warnings[] = "O Nó {$node['id']} ainda contém uma credencial antiga no DSL; ela será ignorada. Edite-o para usar a Integração salva.";

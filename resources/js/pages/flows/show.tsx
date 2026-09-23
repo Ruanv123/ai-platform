@@ -849,7 +849,6 @@ function NodePalette({
 
 const emptyEditorStarters = [
     'Qualificar quem chega e passar os quentes para a equipe comercial',
-    'Marcar horário consultando a agenda e confirmar por mensagem',
     'Responder dúvidas pela Base de conhecimento e escalar o que não souber',
 ];
 
@@ -1042,17 +1041,6 @@ function defaultConfig(type: string): Record<string, unknown> {
         ...(type === 'emit_event' ? { event_id: '', payload: {} } : {}),
         ...(type === 'send_template'
             ? { template_id: '', purpose: 'utility', variables: [] }
-            : {}),
-        ...(type === 'agenda_availability'
-            ? { start: '', end: '', output_variable: 'available_slots' }
-            : {}),
-        ...(type === 'agenda_create_event'
-            ? {
-                  title: '',
-                  start: '',
-                  end: '',
-                  output_variable: 'appointment_id',
-              }
             : {}),
     };
 }

@@ -9,6 +9,7 @@ use Illuminate\Database\Eloquent\Attributes\Hidden;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Carbon;
 
 /**
@@ -40,6 +41,12 @@ class Integration extends Model
         $baseUrl = $this->credential('base_url');
 
         return is_string($baseUrl) && filled($baseUrl) ? rtrim($baseUrl, '/') : null;
+    }
+
+    /** @return HasMany<SchedulableCalendar, $this> */
+    public function schedulableCalendars(): HasMany
+    {
+        return $this->hasMany(SchedulableCalendar::class);
     }
 
     protected function casts(): array

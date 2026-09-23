@@ -17,7 +17,7 @@ class SaveIntegrationRequest extends FormRequest
     {
         return [
             'name' => ['required', 'string', 'max:120'],
-            'type' => ['required', 'string', 'max:64', 'in:agenda,http,crm,ecommerce'],
+            'type' => ['required', 'string', 'max:64', 'in:http,crm,ecommerce'],
             'provider' => ['nullable', 'string', 'max:64'],
             'base_url' => ['nullable', 'url:http,https', 'max:2048'],
             'auth_type' => ['nullable', 'in:none,bearer,api_key,basic'],

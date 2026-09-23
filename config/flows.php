@@ -101,21 +101,6 @@ return [
             'fields' => ['integration_id', 'method', 'url', 'headers', 'body', 'response_map'],
         ],
         [
-            'type' => 'agenda_availability',
-            'label' => 'Consultar disponibilidade',
-            'description' => 'Busca horários livres na Agenda conectada.',
-            'category' => 'Integrações',
-            'icon' => 'CalendarDays',
-            'fields' => ['integration_id', 'start', 'end', 'output_variable'],
-        ],
-        [
-            'type' => 'agenda_create_event',
-            'label' => 'Criar compromisso',
-            'description' => 'Marca um compromisso na Agenda conectada.',
-            'category' => 'Integrações',
-            'icon' => 'CalendarCheck',
-            'fields' => ['integration_id', 'title', 'start', 'end', 'output_variable'],
-        ],        [
             'type' => 'send_template',
             'label' => 'Enviar Template',
             'description' => 'Envia um Template aprovado pelo Canal.',

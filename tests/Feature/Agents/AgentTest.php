@@ -9,6 +9,8 @@ use App\Enums\TeamRole;
 use App\Models\Agent;
 use App\Models\Channel;
 use App\Models\Collection;
+use App\Models\Integration;
+use App\Models\SchedulableCalendar;
 use App\Models\User;
 use Illuminate\Support\Str;
 use Inertia\Testing\AssertableInertia as Assert;
@@ -326,4 +328,30 @@ it('returns not found when a company accesses another company agent', function (
     $toggleResponse->assertNotFound();
     $deleteResponse->assertNotFound();
     expect($otherAgent->fresh()->name)->toBe('Isolado');
+});
+
+it('saves only the current company schedulable Calendars for an Agent', function () {
+    $user = User::factory()->withTeam()->create();
+    $team = $user->company();
+    $integration = Integration::factory()->for($team)->create([
+        'type' => 'agenda',
+        'provider' => 'google',
+        'status' => 'connected',
+    ]);
+    $calendar = SchedulableCalendar::factory()->for($team)->for($integration)->create();
+    $otherCalendar = SchedulableCalendar::factory()->create();
+    $agent = Agent::factory()->for($team)->create();
+
+    $response = $this->actingAs($user)->patch(route('agents.update', $agent), agentDetails([
+        'schedulable_calendar_ids' => [$calendar->id],
+    ]));
+
+    $response->assertRedirect(route('agents.edit', $agent));
+    expect($agent->fresh()->schedulableCalendars()->pluck('schedulable_calendars.id')->all())->toBe([$calendar->id]);
+
+    $this->actingAs($user)->patch(route('agents.update', $agent), agentDetails([
+        'schedulable_calendar_ids' => [$otherCalendar->id],
+    ]))->assertSessionHasErrors([
+        'schedulable_calendar_ids.0' => 'Selecione apenas Calendários da sua Empresa.',
+    ]);
 });

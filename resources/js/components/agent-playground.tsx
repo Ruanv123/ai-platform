@@ -28,6 +28,7 @@ export type AgentDraft = {
     instructions: string[];
     rules: string[];
     collectionIds: string[];
+    schedulableCalendarIds: string[];
 };
 
 type Source = {
@@ -250,6 +251,7 @@ export default function AgentPlayground({ draft }: Props) {
                     instructions: draft.instructions,
                     rules: draft.rules,
                     collection_ids: draft.collectionIds,
+                    schedulable_calendar_ids: draft.schedulableCalendarIds,
                     history,
                     message,
                 }),

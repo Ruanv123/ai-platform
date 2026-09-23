@@ -48,6 +48,8 @@ use Illuminate\Support\Carbon;
  * @property-read Collection<int, Membership> $memberships
  * @property-read Collection<int, User> $members
  * @property-read Collection<int, Integration> $integrations
+ * @property-read Collection<int, SchedulableCalendar> $schedulableCalendars
+ * @property-read Collection<int, Appointment> $appointments
  * @property-read Collection<int, FlowEvent> $flowEvents
  */
 #[Fillable([
@@ -232,6 +234,18 @@ class Team extends Model
     public function integrations(): HasMany
     {
         return $this->hasMany(Integration::class);
+    }
+
+    /** @return HasMany<SchedulableCalendar, $this> */
+    public function schedulableCalendars(): HasMany
+    {
+        return $this->hasMany(SchedulableCalendar::class);
+    }
+
+    /** @return HasMany<Appointment, $this> */
+    public function appointments(): HasMany
+    {
+        return $this->hasMany(Appointment::class);
     }
 
     /** @return HasMany<FlowEvent, $this> */
