@@ -29,7 +29,7 @@ _Avoid_: Expediente, Horário comercial, Business hours
 ### Agente
 
 **Agente**:
-Uma configuração de atendimento pertencente à Empresa — persona, objetivo, estilo, instruções e Coleções consultáveis. Uma Empresa pode ter vários, e o mesmo Agente pode atender em vários Canais.
+Uma configuração de atendimento pertencente à Empresa — persona, objetivo, estilo, instruções, Coleções consultáveis e Calendários agendáveis em que pode marcar. Uma Empresa pode ter vários, e o mesmo Agente pode atender em vários Canais.
 _Avoid_: Bot, Assistente, Chatbot, Persona
 
 **Instrução**:
@@ -37,7 +37,7 @@ Uma orientação escrita pelo cliente que entra no prompt do Agente. Formam uma 
 _Avoid_: Regra, Prompt, Diretriz
 
 **Playground**:
-O chat de teste do atendimento. Roda sobre o rascunho — do formulário, no caso do Agente, e da Versão não publicada, no caso do Fluxo — e nada é enviado ao Contato. No Fluxo, mostra o Traço do turno ao lado da conversa.
+O chat de teste do atendimento. Roda sobre o rascunho — do formulário, no caso do Agente, e da Versão não publicada, no caso do Fluxo — e nada é enviado ao Contato. Consultar Horários disponíveis é real; marcar e cancelar Compromisso são simulados. No Fluxo, mostra o Traço do turno ao lado da conversa.
 _Avoid_: Simulador, Preview, Sandbox
 
 **Agente inativo**:
@@ -84,8 +84,28 @@ O Tipo de canal que conecta um número de WhatsApp por um serviço não oficial,
 _Avoid_: Evolution, WhatsApp não oficial, WhatsApp alternativo
 
 **Integração**:
-Uma conexão configurada com um sistema externo — CRM, agenda, e-commerce — que os Nós de um Fluxo usam para consultar ou registrar coisas lá fora. É outra coisa que um Canal: Canal traz a conversa, Integração leva e busca o resultado. Guarda a credencial; o Fluxo guarda o que fazer com ela.
+Uma conexão configurada com um sistema externo — CRM, agenda, e-commerce — que os Nós de um Fluxo ou o Agente usam para consultar ou registrar coisas lá fora. É outra coisa que um Canal: Canal traz a conversa, Integração leva e busca o resultado. Guarda a credencial; o Fluxo guarda o que fazer com ela.
 _Avoid_: Conector, Canal, App
+
+**Agenda**:
+A Integração com a conta Google da Empresa, autorizada uma vez por alguém da Equipe e pertencente à Empresa, não a quem autorizou. Uma Empresa tem no máximo uma. Quando o Google revoga o acesso, fica com erro até alguém reconectar.
+_Avoid_: Google Agenda, Calendar, Conexão de agenda
+
+**Calendário**:
+Um dos calendários dentro da conta Google conectada pela Agenda — o de um profissional, de uma sala. Uma Agenda pode ter vários.
+_Avoid_: Agenda, Calendar
+
+**Calendário agendável**:
+Um Calendário que a Empresa liberou para agendamento, com as regras de quem atende nele: duração do compromisso, janela de atendimento e antecedência mínima, além do nome e da descrição com que o Agente o apresenta ao Contato. A janela, quando não é personalizada, é o Horário de atendimento da Empresa. As regras são do Calendário, não do Agente: todo Agente que marca nele obedece às mesmas.
+_Avoid_: Profissional, Recurso, Agenda
+
+**Horário disponível**:
+Um intervalo com a duração do Calendário agendável, dentro da janela, depois da antecedência mínima, e livre no Calendário. É o que o Agente oferece ao Contato.
+_Avoid_: Slot, Vaga, Horário livre
+
+**Compromisso**:
+Um evento que o Agente marcou num Calendário agendável para um Contato, registrado na plataforma. Só o que a plataforma marcou é Compromisso: eventos criados direto no Google não são. É por ele que o Agente sabe o que o Contato tem marcado e o que pode cancelar. O Google continua sendo a fonte da verdade: evento apagado lá é Compromisso cancelado, evento movido lá é Compromisso remarcado. Um Contato tem no máximo um Compromisso futuro por Calendário agendável; remarcar é cancelar e marcar de novo.
+_Avoid_: Agendamento, Evento, Consulta, Reserva
 
 ### Atendimento
 

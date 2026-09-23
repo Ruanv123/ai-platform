@@ -14,7 +14,6 @@ use App\Models\WhatsAppTestConnection;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Http;
-use RuntimeException;
 
 function responseFlowTestFixture(string $name, string $provider = 'testes'): array
 {
@@ -77,9 +76,9 @@ it('uses the saved Agent instructions and the Contact history for a response', f
     WhatsAppAgent::fake(['Encontrei o seu pedido.']);
     Http::preventStrayRequests();
     Http::fake([
-        'https://evolution.test/chat/markMessageAsRead/local-development' => Http::response([]),
-        'https://evolution.test/chat/sendPresence/local-development' => Http::response([]),
-        'https://evolution.test/message/sendText/local-development' => Http::response([
+        'https://evolution.test/message/markread' => Http::response([]),
+        'https://evolution.test/message/presence' => Http::response([]),
+        'https://evolution.test/send/text' => Http::response([
             'key' => ['id' => 'test-outgoing-message-history'],
         ]),
     ]);
@@ -104,9 +103,9 @@ it('responds to an incoming test WhatsApp message through the public webhook', f
     WhatsAppAgent::fake(['Resposta do atendimento.']);
     Http::preventStrayRequests();
     Http::fake([
-        'https://evolution.test/chat/markMessageAsRead/local-development' => Http::response([]),
-        'https://evolution.test/chat/sendPresence/local-development' => Http::response([]),
-        'https://evolution.test/message/sendText/local-development' => Http::response([
+        'https://evolution.test/message/markread' => Http::response([]),
+        'https://evolution.test/message/presence' => Http::response([]),
+        'https://evolution.test/send/text' => Http::response([
             'key' => ['id' => 'test-outgoing-message-1'],
         ]),
     ]);
@@ -130,7 +129,7 @@ it('responds to an incoming test WhatsApp message through the public webhook', f
     WhatsAppAgent::assertPrompted('Olá, preciso de ajuda com meu pedido.');
 
     Http::assertSent(function (Request $request): bool {
-        return $request->url() === 'https://evolution.test/message/sendText/local-development'
+        return $request->url() === 'https://evolution.test/send/text'
             && $request->data() === [
                 'number' => '5511999999999',
                 'text' => 'Resposta do atendimento.',
@@ -143,9 +142,9 @@ it('does not respond twice when the provider redelivers an already handled messa
     WhatsAppAgent::fake(['Resposta única.']);
     Http::preventStrayRequests();
     Http::fake([
-        'https://evolution.test/chat/markMessageAsRead/local-development' => Http::response([]),
-        'https://evolution.test/chat/sendPresence/local-development' => Http::response([]),
-        'https://evolution.test/message/sendText/local-development' => Http::response([
+        'https://evolution.test/message/markread' => Http::response([]),
+        'https://evolution.test/message/presence' => Http::response([]),
+        'https://evolution.test/send/text' => Http::response([
             'key' => ['id' => 'test-outgoing-message-duplicate'],
         ]),
     ]);
@@ -210,9 +209,9 @@ it('groups messages that arrive before the response flow runs', function () {
     WhatsAppAgent::fake(['Resposta única para as duas mensagens.']);
     Http::preventStrayRequests();
     Http::fake([
-        'https://evolution.test/chat/markMessageAsRead/local-development' => Http::response([]),
-        'https://evolution.test/chat/sendPresence/local-development' => Http::response([]),
-        'https://evolution.test/message/sendText/local-development' => Http::response([
+        'https://evolution.test/message/markread' => Http::response([]),
+        'https://evolution.test/message/presence' => Http::response([]),
+        'https://evolution.test/send/text' => Http::response([
             'key' => ['id' => 'test-outgoing-message-2'],
         ]),
     ]);
@@ -302,9 +301,9 @@ it('retries a temporary Agent failure with backoff before sending the response',
     });
     Http::preventStrayRequests();
     Http::fake([
-        'https://evolution.test/chat/markMessageAsRead/local-development' => Http::response([]),
-        'https://evolution.test/chat/sendPresence/local-development' => Http::response([]),
-        'https://evolution.test/message/sendText/local-development' => Http::response([
+        'https://evolution.test/message/markread' => Http::response([]),
+        'https://evolution.test/message/presence' => Http::response([]),
+        'https://evolution.test/send/text' => Http::response([
             'key' => ['id' => 'test-outgoing-recovered'],
         ]),
     ]);
@@ -338,9 +337,9 @@ it('retries a temporary provider failure with backoff before recording the respo
     $sendAttempts = 0;
     Http::preventStrayRequests();
     Http::fake([
-        'https://evolution.test/chat/markMessageAsRead/local-development' => Http::response([]),
-        'https://evolution.test/chat/sendPresence/local-development' => Http::response([]),
-        'https://evolution.test/message/sendText/local-development' => function () use (&$sendAttempts) {
+        'https://evolution.test/message/markread' => Http::response([]),
+        'https://evolution.test/message/presence' => Http::response([]),
+        'https://evolution.test/send/text' => function () use (&$sendAttempts) {
             $sendAttempts++;
 
             return $sendAttempts === 1
@@ -375,9 +374,9 @@ it('notifies the Contact and records the Channel error after response retries ar
     });
     Http::preventStrayRequests();
     Http::fake([
-        'https://evolution.test/chat/markMessageAsRead/local-development' => Http::response([]),
-        'https://evolution.test/chat/sendPresence/local-development' => Http::response([]),
-        'https://evolution.test/message/sendText/local-development' => Http::response([
+        'https://evolution.test/message/markread' => Http::response([]),
+        'https://evolution.test/message/presence' => Http::response([]),
+        'https://evolution.test/send/text' => Http::response([
             'key' => ['id' => 'test-outgoing-failure-notice'],
         ]),
     ]);

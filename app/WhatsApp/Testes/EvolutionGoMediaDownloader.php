@@ -139,7 +139,7 @@ final class EvolutionGoMediaDownloader
         $request = Http::connectTimeout(3)->timeout(20);
 
         if (filled($connection->access_token)) {
-            $request = $request->withToken($connection->access_token);
+            $request = $request->withHeader('apikey', $connection->access_token);
         }
 
         $response = $request->get($url)->throw();

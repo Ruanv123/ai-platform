@@ -19,7 +19,7 @@ final class EvolutionGoOutputAdapter extends AbstractWhatsAppOutputAdapter
         $this->assertContactBelongsToChannel($channel, $contact);
         $connection = $this->connection($channel);
         $response = $this->request($connection)->post(
-            $this->endpoint($connection, 'message/sendText'),
+            $this->endpoint($connection, 'send/text'),
             [
                 'number' => $contact->phone,
                 'text' => $content,
@@ -37,22 +37,8 @@ final class EvolutionGoOutputAdapter extends AbstractWhatsAppOutputAdapter
     public function sendTemplate(Channel $channel, Contact $contact, string|WhatsAppTemplate $template, array $parameters = []): Message
     {
         $this->assertContactBelongsToChannel($channel, $contact);
-        $connection = $this->connection($channel);
-        $response = $this->request($connection)->post(
-            $this->endpoint($connection, 'message/sendTemplate'),
-            [
-                'number' => $contact->phone,
-                'name' => $template instanceof WhatsAppTemplate ? $template->name : $template,
-                'language' => $template instanceof WhatsAppTemplate ? $template->language : 'pt_BR',
-                'parameters' => $parameters,
-            ],
-        )->throw();
-        $providerMessageId = $this->providerMessageId($response->json());
-        if ($providerMessageId === null) {
-            throw new RuntimeException('O WhatsApp de testes não retornou o id do Template enviado.');
-        }
 
-        return $this->recordOutgoingTemplate($channel, $contact, $template, $parameters, $providerMessageId);
+        throw new RuntimeException('O Evolution Go não oferece envio de templates oficiais do WhatsApp Business.');
     }
 
     public function markIncomingMessageAsRead(Channel $channel, Message $message): void
@@ -60,13 +46,10 @@ final class EvolutionGoOutputAdapter extends AbstractWhatsAppOutputAdapter
         $this->assertIncomingMessageBelongsToChannel($channel, $message);
         $connection = $this->connection($channel);
         $this->request($connection)->post(
-            $this->endpoint($connection, 'chat/markMessageAsRead'),
+            $this->endpoint($connection, 'message/markread'),
             [
-                'readMessages' => [[
-                    'remoteJid' => $this->remoteJid($message),
-                    'fromMe' => false,
-                    'id' => $message->provider_message_id,
-                ]],
+                'number' => $message->contact->phone,
+                'id' => [$message->provider_message_id],
             ],
         )->throw();
     }
@@ -76,10 +59,10 @@ final class EvolutionGoOutputAdapter extends AbstractWhatsAppOutputAdapter
         $this->assertIncomingMessageBelongsToChannel($channel, $message);
         $connection = $this->connection($channel);
         $this->request($connection)->post(
-            $this->endpoint($connection, 'chat/sendPresence'),
+            $this->endpoint($connection, 'message/presence'),
             [
                 'number' => $message->contact->phone,
-                'presence' => 'composing',
+                'state' => 'composing',
                 'delay' => 5000,
             ],
         )->throw();
@@ -90,7 +73,7 @@ final class EvolutionGoOutputAdapter extends AbstractWhatsAppOutputAdapter
         $request = Http::connectTimeout(3)->timeout(10);
 
         return filled($connection->access_token)
-            ? $request->withToken($connection->access_token)
+            ? $request->withHeader('apikey', $connection->access_token)
             : $request;
     }
 
@@ -108,14 +91,7 @@ final class EvolutionGoOutputAdapter extends AbstractWhatsAppOutputAdapter
 
     private function endpoint(WhatsAppTestConnection $connection, string $path): string
     {
-        return rtrim($connection->service_url, '/').'/'.trim($path, '/').'/'.rawurlencode($connection->instance_name);
-    }
-
-    private function remoteJid(Message $message): string
-    {
-        $message->loadMissing('contact');
-
-        return $message->contact->phone.'@s.whatsapp.net';
+        return rtrim($connection->service_url, '/').'/'.trim($path, '/');
     }
 
     /**

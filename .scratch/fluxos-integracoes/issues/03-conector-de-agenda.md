@@ -4,7 +4,7 @@
 
 **Blocked by:** 02
 
-**Status:** ready-for-agent
+**Status:** wontfix
 
 - [ ] Conectar uma agenda pela tela de Integrações
 - [ ] Nó de consultar disponibilidade devolve horários em Variáveis
@@ -13,3 +13,7 @@
 - [ ] Fuso horário respeita o configurado no Horário de atendimento da Empresa
 - [ ] Erro da agenda segue a saída de erro do Nó, com motivo legível
 - [ ] CRM fica para depois: este é o conector que fecha o ciclo sem depender de alguém olhar um funil
+
+## Comments
+
+- 2026-09-22: Substituída por `.scratch/agenda-google/spec.md`. Agendamento passa a viver só no Agente, via Tool, e a Agenda passa a ser só Google; os Nós de agenda do Fluxo serão removidos.

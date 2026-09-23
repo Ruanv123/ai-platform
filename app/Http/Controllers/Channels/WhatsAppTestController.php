@@ -72,13 +72,13 @@ class WhatsAppTestController extends Controller
         $instanceName = 'canal_'.$team->getKey();
 
         try {
-            $instance = $this->evolutionGo->createInstance($instanceName);
-            $this->evolutionGo->connect($instance['id'], route('webhooks.whatsapp-test'));
+            $instanceToken = $this->evolutionGo->createInstance($instanceName);
+            $this->evolutionGo->connect($instanceToken, route('webhooks.whatsapp-test'));
         } catch (RuntimeException $exception) {
             throw ValidationException::withMessages(['name' => $exception->getMessage()]);
         }
 
-        DB::transaction(function () use ($team, $validated, $name, $instanceName, $instance): void {
+        DB::transaction(function () use ($team, $validated, $name, $instanceName, $instanceToken): void {
             $channel = $team->channels()->create([
                 'type' => ChannelType::WhatsAppTest,
                 'agent_id' => $validated['agent_id'] ?? null,
@@ -90,7 +90,7 @@ class WhatsAppTestController extends Controller
                 'service_url' => config('services.evolution.base_url'),
                 'instance_name' => $instanceName,
                 'name' => $name,
-                'access_token' => $instance['token'],
+                'access_token' => $instanceToken,
                 'qrcode' => null,
             ]);
         });

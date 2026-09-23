@@ -1,4 +1,5 @@
 import Echo from 'laravel-echo';
+import Pusher from 'pusher-js';
 
 let echo: Echo<'reverb'> | null = null;
 
@@ -10,6 +11,7 @@ export function getEcho(): Echo<'reverb'> | null {
     if (echo === null) {
         echo = new Echo({
             broadcaster: 'reverb',
+            Pusher,
             key: import.meta.env.VITE_REVERB_APP_KEY,
             wsHost:
                 import.meta.env.VITE_REVERB_HOST || window.location.hostname,

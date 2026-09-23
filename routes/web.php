@@ -119,6 +119,9 @@ Route::middleware(['auth', EnsureUserHasTeam::class])->group(function () {
         ->name('integrations.index');
     Route::post('integrations', [IntegrationController::class, 'store'])
         ->name('integrations.store');
+    Route::get('integrations/{type}', [IntegrationController::class, 'show'])
+        ->whereIn('type', ['agenda', 'crm', 'ecommerce'])
+        ->name('integrations.show');
     Route::patch('integrations/{integration}', [IntegrationController::class, 'update'])
         ->name('integrations.update');
     Route::post('integrations/{integration}/test', [IntegrationController::class, 'test'])

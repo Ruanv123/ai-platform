@@ -12,7 +12,13 @@ import {
     UserRound,
     Users,
 } from 'lucide-react';
-import { type FormEvent, type ReactNode, useState } from 'react';
+import {
+    type FormEvent,
+    type ReactNode,
+    useCallback,
+    useRef,
+    useState,
+} from 'react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -133,8 +139,6 @@ export default function InboxPage({
 }: Props) {
     const { props } = usePage<{ currentTeam?: { id: number } | null }>();
     const [search, setSearch] = useState(filters.search);
-    const [showDetails, setShowDetails] = useState(true);
-    const [messageType, setMessageType] = useState<'text' | 'template'>('text');
     const teamId = props.currentTeam?.id ?? null;
     useInboxRealtime(teamId, realtimeProps);
 
@@ -161,7 +165,7 @@ export default function InboxPage({
     return (
         <>
             <Head title="Atendimento" />
-            <div className="flex h-full min-h-0 flex-1 flex-col xl:flex-row">
+            <div className="flex h-full min-h-0 flex-1 flex-col overflow-hidden xl:flex-row">
                 <ConversationsPanel
                     conversations={conversations.data}
                     counts={counts}
@@ -180,20 +184,11 @@ export default function InboxPage({
                 {selected === null ? (
                     <EmptySelection />
                 ) : (
-                    <>
-                        <ConversationThread
-                            key={selected.contact.id}
-                            selected={selected}
-                            currentUserId={currentUserId}
-                            showDetails={showDetails}
-                            onToggleDetails={() =>
-                                setShowDetails((value) => !value)
-                            }
-                            messageType={messageType}
-                            onMessageTypeChange={setMessageType}
-                        />
-                        {showDetails && <ContactPanel selected={selected} />}
-                    </>
+                    <SelectedConversationView
+                        key={selected.contact.id}
+                        selected={selected}
+                        currentUserId={currentUserId}
+                    />
                 )}
             </div>
         </>
@@ -230,7 +225,7 @@ function ConversationsPanel({
     return (
         <section
             className={cn(
-                'border-border/70 flex w-full shrink-0 flex-col border-b xl:w-[330px] xl:border-r xl:border-b-0',
+                'border-border/70 flex min-h-0 w-full flex-1 flex-col overflow-hidden border-b xl:w-[330px] xl:flex-none xl:border-r xl:border-b-0',
                 className,
             )}
         >
@@ -422,7 +417,7 @@ function QueuePill({
 
 function EmptySelection() {
     return (
-        <section className="flex flex-1 flex-col items-center justify-center gap-3 p-8 text-center">
+        <section className="hidden flex-1 flex-col items-center justify-center gap-3 p-8 text-center xl:flex">
             <span className="bg-muted flex size-12 items-center justify-center rounded-full">
                 <Users className="text-muted-foreground size-5" />
             </span>
@@ -434,6 +429,31 @@ function EmptySelection() {
                 </p>
             </div>
         </section>
+    );
+}
+
+function SelectedConversationView({
+    selected,
+    currentUserId,
+}: {
+    selected: SelectedConversation;
+    currentUserId: number;
+}) {
+    const [showDetails, setShowDetails] = useState(false);
+    const [messageType, setMessageType] = useState<'text' | 'template'>('text');
+
+    return (
+        <>
+            <ConversationThread
+                selected={selected}
+                currentUserId={currentUserId}
+                showDetails={showDetails}
+                onToggleDetails={() => setShowDetails((value) => !value)}
+                messageType={messageType}
+                onMessageTypeChange={setMessageType}
+            />
+            {showDetails && <ContactPanel selected={selected} />}
+        </>
     );
 }
 
@@ -458,6 +478,53 @@ function ConversationThread({
         template: '',
         parameters: '',
     });
+    const messageScrollRef = useRef<HTMLDivElement | null>(null);
+    const shouldFollowLatestRef = useRef(true);
+    const hasPlacedInitialScrollRef = useRef(false);
+    const latestMessageId = selected.messages.data.at(-1)?.id ?? 'empty';
+    const latestMessageAnchorRef = useCallback(
+        (anchor: HTMLDivElement | null) => {
+            if (anchor === null || !shouldFollowLatestRef.current) {
+                return;
+            }
+
+            const isInitialPlacement = !hasPlacedInitialScrollRef.current;
+            hasPlacedInitialScrollRef.current = true;
+
+            window.requestAnimationFrame(() => {
+                const messageScroll = messageScrollRef.current;
+
+                if (
+                    messageScroll === null ||
+                    !anchor.isConnected ||
+                    (!isInitialPlacement &&
+                        !shouldFollowLatestRef.current)
+                ) {
+                    return;
+                }
+
+                const scrollBounds = messageScroll.getBoundingClientRect();
+                const anchorBounds = anchor.getBoundingClientRect();
+                const top = Math.max(
+                    0,
+                    messageScroll.scrollTop +
+                        anchorBounds.bottom -
+                        scrollBounds.bottom,
+                );
+                const prefersReducedMotion = window.matchMedia(
+                    '(prefers-reduced-motion: reduce)',
+                ).matches;
+
+                if (isInitialPlacement || prefersReducedMotion) {
+                    messageScroll.scrollTop = top;
+                    return;
+                }
+
+                messageScroll.scrollTo({ top, behavior: 'smooth' });
+            });
+        },
+        [],
+    );
     const assignedToMe = selected.assignee?.id === currentUserId;
 
     const sendMessage = (event: FormEvent<HTMLFormElement>) => {
@@ -551,7 +618,16 @@ function ConversationThread({
                 </button>
             </header>
 
-            <div className="bg-muted/20 min-h-0 flex-1 space-y-3 overflow-y-auto p-5">
+            <div
+                ref={messageScrollRef}
+                onScroll={(event) => {
+                    const { clientHeight, scrollHeight, scrollTop } =
+                        event.currentTarget;
+                    shouldFollowLatestRef.current =
+                        scrollHeight - scrollTop - clientHeight <= 96;
+                }}
+                className="bg-muted/20 min-h-0 flex-1 space-y-3 overflow-y-auto p-5"
+            >
                 <div className="flex justify-center">
                     <span className="border-border/70 bg-background text-muted-foreground flex items-center gap-1.5 rounded-full border px-3 py-1 text-[11px] font-medium">
                         <Bot className="text-signal-attention size-3.5" />
@@ -566,6 +642,13 @@ function ConversationThread({
                 {selected.messages.data.map((message) => (
                     <MessageBubble key={message.id} message={message} />
                 ))}
+
+                <div
+                    key={latestMessageId}
+                    ref={latestMessageAnchorRef}
+                    className="h-px"
+                    aria-hidden="true"
+                />
 
                 <HistoryPanel history={selected.history} />
             </div>
@@ -756,7 +839,7 @@ function HistoryPanel({ history }: { history: MessagePage }) {
 
 function ContactPanel({ selected }: { selected: SelectedConversation }) {
     return (
-        <aside className="border-border/70 flex w-full shrink-0 flex-col overflow-y-auto border-t xl:w-[300px] xl:border-t-0 xl:border-l">
+        <aside className="border-border/70 flex max-h-[35%] min-h-0 w-full shrink-0 flex-col overflow-y-auto border-t xl:max-h-none xl:w-[300px] xl:border-t-0 xl:border-l">
             <div className="border-border/70 flex items-start gap-2.5 border-b px-4.5 py-4">
                 <div className="min-w-0 flex-1">
                     <span className="text-muted-foreground block text-[10px] font-bold tracking-[0.07em] uppercase">

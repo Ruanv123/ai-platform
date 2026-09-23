@@ -9,8 +9,6 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\Integrations\SaveIntegrationRequest;
 use App\Integrations\IntegrationConnectionTester;
 use App\Models\Flow;
-use App\Models\FlowEvent;
-use App\Models\FlowEventDelivery;
 use App\Models\Integration;
 use App\Models\Team;
 use Illuminate\Http\JsonResponse;
@@ -23,31 +21,42 @@ use Inertia\Response;
 
 class IntegrationController extends Controller
 {
+    /** @var list<string> */
+    private const SINGLETON_TYPES = ['agenda', 'crm', 'ecommerce'];
+
     public function index(Request $request): Response
     {
         $team = $request->user()->company();
-        $team->load([
-            'integrations',
-            'flowEvents' => fn ($query) => $query->withCount('emissions')->with('webhooks'),
-        ]);
+        $team->load('integrations');
+        $configured = $team->integrations->keyBy('type');
 
         return Inertia::render('integrations/index', [
-            'integrations' => $this->catalog(CrmProvider::catalog()),
-            'ecommerceIntegrations' => $this->catalog(EcommerceProvider::catalog()),
-            'agendaIntegrations' => [[
-                'value' => 'agenda',
-                'name' => 'Agenda',
-                'description' => 'Consulte horários e crie compromissos direto no atendimento.',
-                'logo' => 'AG',
-                'capabilities' => ['Consultar disponibilidade', 'Criar compromisso'],
-                'available' => true,
-            ]],
-            'configuredIntegrations' => $team->integrations->map(fn (Integration $integration): array => $this->serialize($integration))->values(),
-            'events' => $team->flowEvents->map(fn (FlowEvent $event): array => $this->serializeEvent($event))->values(),
-            'webhookFailures' => [
-                'count' => $this->failedDeliveryCount($team),
-                'href' => route('integrations.webhook-failures.index'),
+            'crmCatalog' => $this->catalog(CrmProvider::catalog()),
+            'ecommerceCatalog' => $this->catalog(EcommerceProvider::catalog()),
+            'agendaCatalog' => [$this->agendaCatalogEntry()],
+            'singletonIntegrations' => [
+                'crm' => optional($configured->get('crm'), fn (Integration $integration): array => $this->serialize($integration)),
+                'ecommerce' => optional($configured->get('ecommerce'), fn (Integration $integration): array => $this->serialize($integration)),
+                'agenda' => optional($configured->get('agenda'), fn (Integration $integration): array => $this->serialize($integration)),
             ],
+            'permissions' => $request->user()->toTeamPermissions($team),
+        ]);
+    }
+
+    public function show(Request $request, string $type): Response
+    {
+        $team = $request->user()->company();
+        $integration = $team->integrations()->where('type', $type)->first();
+
+        return Inertia::render('integrations/show', [
+            'type' => $type,
+            'catalog' => match ($type) {
+                'crm' => $this->catalog(CrmProvider::catalog()),
+                'ecommerce' => $this->catalog(EcommerceProvider::catalog()),
+                default => [$this->agendaCatalogEntry()],
+            },
+            'provider' => $request->query('provider'),
+            'integration' => $integration === null ? null : $this->serialize($integration),
             'permissions' => $request->user()->toTeamPermissions($team),
         ]);
     }
@@ -57,21 +66,38 @@ class IntegrationController extends Controller
         $this->authorizeManagement($request);
         $team = $request->user()->company();
         $data = $request->validated();
-        $integration = $team->integrations()->create([
-            'name' => $data['name'],
-            'type' => $data['type'],
-            'provider' => $data['provider'] ?? null,
-            'credentials' => $this->credentials($data),
-            'status' => 'never_tested',
-        ]);
+
+        $existing = in_array($data['type'], self::SINGLETON_TYPES, true)
+            ? $team->integrations()->where('type', $data['type'])->first()
+            : null;
+
+        if ($existing !== null) {
+            $existing->update([
+                'name' => $data['name'],
+                'provider' => $data['provider'] ?? null,
+                'credentials' => $this->credentials($data, $existing->credentials),
+                'status' => 'never_tested',
+                'status_message' => null,
+                'last_tested_at' => null,
+            ]);
+            $integration = $existing->fresh();
+        } else {
+            $integration = $team->integrations()->create([
+                'name' => $data['name'],
+                'type' => $data['type'],
+                'provider' => $data['provider'] ?? null,
+                'credentials' => $this->credentials($data),
+                'status' => 'never_tested',
+            ]);
+        }
 
         if ($request->expectsJson()) {
-            return response()->json($this->serialize($integration), 201);
+            return response()->json($this->serialize($integration), $existing === null ? 201 : 200);
         }
 
         Inertia::flash('toast', ['type' => 'success', 'message' => 'Integração cadastrada. Teste a conexão para ativá-la.']);
 
-        return to_route('integrations.index');
+        return $this->redirectToIntegration($integration);
     }
 
     public function update(SaveIntegrationRequest $request, Integration $integration): RedirectResponse|JsonResponse
@@ -94,7 +120,7 @@ class IntegrationController extends Controller
 
         Inertia::flash('toast', ['type' => 'success', 'message' => 'Integração atualizada. Teste a conexão novamente.']);
 
-        return to_route('integrations.index');
+        return $this->redirectToIntegration($integration);
     }
 
     public function test(Request $request, Integration $integration, IntegrationConnectionTester $tester): RedirectResponse|JsonResponse
@@ -119,7 +145,7 @@ class IntegrationController extends Controller
             'message' => $result['message'],
         ]);
 
-        return to_route('integrations.index');
+        return $this->redirectToIntegration($integration);
     }
 
     public function destroy(Request $request, Integration $integration): RedirectResponse|JsonResponse
@@ -179,12 +205,27 @@ class IntegrationController extends Controller
         })->values();
     }
 
-    private function failedDeliveryCount(Team $team): int
+    private function redirectToIntegration(Integration $integration): RedirectResponse
     {
-        return FlowEventDelivery::withoutGlobalScopes()
-            ->where('team_id', $team->getKey())
-            ->where('status', 'failed')
-            ->count();
+        if (in_array($integration->type, self::SINGLETON_TYPES, true)) {
+            return to_route('integrations.show', $integration->type);
+        }
+
+        return to_route('integrations.index');
+    }
+
+    /** @return array<string, mixed> */
+    private function agendaCatalogEntry(): array
+    {
+        return [
+            'value' => 'agenda',
+            'name' => 'Agenda',
+            'description' => 'Consulte horários e crie compromissos direto no atendimento.',
+            'logo' => 'AG',
+            'capabilities' => ['Consultar disponibilidade', 'Criar compromisso'],
+            'planned' => false,
+            'available' => true,
+        ];
     }
 
     /** @return array<string, mixed> */
@@ -204,23 +245,6 @@ class IntegrationController extends Controller
             },
             'statusMessage' => $integration->status_message,
             'lastTestedAt' => $integration->last_tested_at?->toIso8601String(),
-        ];
-    }
-
-    /** @return array<string, mixed> */
-    private function serializeEvent(FlowEvent $event): array
-    {
-        return [
-            'id' => $event->getKey(),
-            'name' => $event->name,
-            'description' => $event->description,
-            'payloadSchema' => $event->payload_schema,
-            'webhooks' => $event->webhooks->map(fn ($webhook): array => [
-                'id' => $webhook->getKey(),
-                'url' => $webhook->url,
-                'active' => $webhook->active,
-            ])->values(),
-            'emissionsCount' => (int) ($event->emissions_count ?? 0),
         ];
     }
 

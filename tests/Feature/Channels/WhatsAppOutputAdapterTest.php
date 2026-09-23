@@ -68,7 +68,7 @@ it('records a provider text response for each WhatsApp channel', function (Chann
     $adapter = app(WhatsAppOutputAdapterFactory::class)->make($channel);
     $sendUrl = $channelType === ChannelType::WhatsApp
         ? 'https://graph.facebook.com/v23.0/official-phone-number-id/messages'
-        : 'https://evolution.test/message/sendText/local-development';
+        : 'https://evolution.test/send/text';
     $providerMessageId = $channelType === ChannelType::WhatsApp
         ? 'official-outgoing-message-1'
         : 'test-outgoing-message-1';
@@ -115,7 +115,8 @@ it('records a provider text response for each WhatsApp channel', function (Chann
             ];
 
         return $request->url() === $sendUrl
-            && $request->data() === $expectedData;
+            && $request->data() === $expectedData
+            && ($channelType !== ChannelType::WhatsAppTest || $request->header('apikey') === ['test-access-token']);
     });
 })->with('WhatsApp output channels');
 
@@ -125,10 +126,10 @@ it('marks the incoming message as read and shows typing for each WhatsApp channe
     $adapter = app(WhatsAppOutputAdapterFactory::class)->make($channel);
     $readUrl = $channelType === ChannelType::WhatsApp
         ? 'https://graph.facebook.com/v23.0/official-phone-number-id/messages'
-        : 'https://evolution.test/chat/markMessageAsRead/local-development';
+        : 'https://evolution.test/message/markread';
     $typingUrl = $channelType === ChannelType::WhatsApp
         ? 'https://graph.facebook.com/v23.0/official-phone-number-id/messages'
-        : 'https://evolution.test/chat/sendPresence/local-development';
+        : 'https://evolution.test/message/presence';
 
     Http::preventStrayRequests();
     Http::fake([
@@ -147,15 +148,13 @@ it('marks the incoming message as read and shows typing for each WhatsApp channe
                 'message_id' => 'incoming-message-1',
             ]
             : [
-                'readMessages' => [[
-                    'remoteJid' => '5511999999999@s.whatsapp.net',
-                    'fromMe' => false,
-                    'id' => 'incoming-message-1',
-                ]],
+                'number' => '5511999999999',
+                'id' => ['incoming-message-1'],
             ];
 
         return $request->url() === $readUrl
-            && $request->data() === $expectedData;
+            && $request->data() === $expectedData
+            && ($channelType !== ChannelType::WhatsAppTest || $request->header('apikey') === ['test-access-token']);
     });
     Http::assertSent(function (Request $request) use ($channelType, $typingUrl): bool {
         $expectedData = $channelType === ChannelType::WhatsApp
@@ -167,11 +166,12 @@ it('marks the incoming message as read and shows typing for each WhatsApp channe
             ]
             : [
                 'number' => '5511999999999',
-                'presence' => 'composing',
+                'state' => 'composing',
                 'delay' => 5000,
             ];
 
         return $request->url() === $typingUrl
-            && $request->data() === $expectedData;
+            && $request->data() === $expectedData
+            && ($channelType !== ChannelType::WhatsAppTest || $request->header('apikey') === ['test-access-token']);
     });
 })->with('WhatsApp output channels');

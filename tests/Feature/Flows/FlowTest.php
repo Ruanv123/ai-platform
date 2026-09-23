@@ -71,9 +71,9 @@ it('runs a published message flow through the channel webhook', function () {
         'category' => FlowCategory::Reaction,
     ]);
     Http::fake([
-        'https://evolution.test/chat/markMessageAsRead/flow-test' => Http::response([]),
-        'https://evolution.test/chat/sendPresence/flow-test' => Http::response([]),
-        'https://evolution.test/message/sendText/flow-test' => Http::response(['key' => ['id' => 'flow-outgoing']]),
+        'https://evolution.test/message/markread' => Http::response([]),
+        'https://evolution.test/message/presence' => Http::response([]),
+        'https://evolution.test/send/text' => Http::response(['key' => ['id' => 'flow-outgoing']]),
     ]);
 
     $message = Message::factory()->for($contact)->for($channel)->incoming()->create([
@@ -107,7 +107,7 @@ it('starts a published flow from the dedicated webhook trigger', function () {
     ]);
     FlowVersion::factory()->for($flow)->create(['team_id' => $team->getKey(), 'dsl' => $dsl, 'category' => FlowCategory::Reaction]);
     Http::fake([
-        'https://evolution.test/message/sendText/flow-webhook' => Http::response(['key' => ['id' => 'webhook-outgoing']]),
+        'https://evolution.test/send/text' => Http::response(['key' => ['id' => 'webhook-outgoing']]),
     ]);
 
     $this->postJson(route('webhooks.flows', [$channel->getKey(), 'appointment.created']), [
@@ -142,7 +142,7 @@ it('resumes a conversation flow at a capture node on the next turn', function ()
     ]);
     FlowVersion::factory()->for($flow)->create(['team_id' => $team->getKey(), 'dsl' => $dsl, 'category' => FlowCategory::Conversation]);
     Http::fake([
-        'https://evolution.test/message/sendText/flow-capture' => Http::sequence()
+        'https://evolution.test/send/text' => Http::sequence()
             ->push(['key' => ['id' => 'ask-sent']])
             ->push(['key' => ['id' => 'done-sent']]),
     ]);

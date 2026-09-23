@@ -5,51 +5,46 @@ namespace App\WhatsApp\Testes;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\Response;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Str;
 use RuntimeException;
 
 final class EvolutionGoClient
 {
     /**
      * Create a new instance on the platform's shared Evolution Go server.
-     *
-     * @return array{id: string, token: string}
      */
-    public function createInstance(string $name): array
+    public function createInstance(string $name): string
     {
-        $response = $this->send('post', 'instance/create', ['name' => $name]);
+        $token = Str::uuid()->toString();
 
-        $id = $response->json('data.id');
-        $token = $response->json('data.token');
+        $this->send('post', 'instance/create', [
+            'name' => $name,
+            'token' => $token,
+        ], (string) config('services.evolution.api_key'));
 
-        if (! is_string($id) || blank($id) || ! is_string($token) || blank($token)) {
-            throw new RuntimeException('O Evolution Go não retornou os dados da instância criada.');
-        }
-
-        return ['id' => $id, 'token' => $token];
+        return $token;
     }
 
     /**
      * Register our webhook and start the pairing session for the instance.
      */
-    public function connect(string $instanceId, string $webhookUrl): void
+    public function connect(string $instanceToken, string $webhookUrl): void
     {
         $this->send('post', 'instance/connect', [
             'webhookUrl' => $webhookUrl,
             'subscribe' => ['QRCODE', 'CONNECTION', 'MESSAGE', 'SEND_MESSAGE', 'READ_RECEIPT'],
             'immediate' => true,
-        ], ['instanceId' => $instanceId]);
+        ], $instanceToken);
     }
 
     /**
      * Send a request to the platform's Evolution Go server, translating any failure to Portuguese.
      *
      * @param  array<string, mixed>  $payload
-     * @param  array<string, string>  $headers
      */
-    private function send(string $method, string $path, array $payload, array $headers = []): Response
+    private function send(string $method, string $path, array $payload, string $apiKey): Response
     {
         $baseUrl = config('services.evolution.base_url');
-        $apiKey = config('services.evolution.api_key');
 
         if (blank($baseUrl) || blank($apiKey)) {
             throw new RuntimeException('O Evolution Go ainda não está configurado nesta plataforma. Defina EVOLUTION_API_URL e EVOLUTION_API_KEY.');
@@ -59,14 +54,18 @@ final class EvolutionGoClient
             $response = Http::connectTimeout(3)
                 ->timeout(10)
                 ->withHeader('apikey', $apiKey)
-                ->withHeaders($headers)
                 ->{$method}(rtrim((string) $baseUrl, '/').'/'.trim($path, '/'), $payload);
         } catch (ConnectionException) {
             throw new RuntimeException('Não foi possível conectar ao Evolution Go. Verifique se o serviço está no ar.');
         }
 
         if (! $response->successful()) {
-            throw new RuntimeException($this->translateError($response->json()));
+            $body = $response->json();
+
+            throw new RuntimeException($this->translateError(
+                is_array($body) ? $body : null,
+                $response->status(),
+            ));
         }
 
         return $response;
@@ -77,12 +76,14 @@ final class EvolutionGoClient
      *
      * @param  array<string, mixed>|null  $body
      */
-    private function translateError(?array $body): string
+    private function translateError(?array $body, int $status): string
     {
-        $message = data_get($body, 'message') ?? data_get($body, 'error.message');
+        $message = data_get($body, 'message')
+            ?? data_get($body, 'error.message')
+            ?? data_get($body, 'error');
 
         return is_string($message) && filled($message)
             ? "O Evolution Go recusou a operação: {$message}"
-            : 'O Evolution Go recusou a operação. Verifique o nome escolhido e tente novamente.';
+            : "O Evolution Go recusou a operação (HTTP {$status}). Revise os dados enviados e a configuração da integração.";
     }
 }

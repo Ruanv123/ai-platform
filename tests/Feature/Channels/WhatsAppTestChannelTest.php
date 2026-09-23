@@ -18,10 +18,7 @@ function fakeEvolutionGo(): void
     ]);
 
     Http::fake([
-        'evolution.test/instance/create' => Http::response([
-            'data' => ['id' => 'instance-uuid-1', 'token' => 'instance-token-1'],
-            'message' => 'success',
-        ]),
+        'evolution.test/instance/create' => Http::response(['message' => 'success']),
         'evolution.test/instance/connect' => Http::response(['message' => 'success']),
     ]);
 }
@@ -44,21 +41,23 @@ it('creates the instance on Evolution Go and stores the Channel as not configure
         ->firstOrFail();
     $connection = $channel->whatsappTestConnection;
     $team = $user->company();
+    $instanceToken = $connection->access_token;
 
     expect($channel->status)->toBe(ChannelStatus::NotConfigured)
         ->and($connection->service_url)->toBe('https://evolution.test')
         ->and($connection->instance_name)->toBe('canal_'.$team->getKey())
         ->and($connection->name)->toBe('local-development')
-        ->and($connection->access_token)->toBe('instance-token-1')
+        ->and($instanceToken)->not->toBe('')
         ->and($connection->qrcode)->toBeNull();
     $this->assertDatabaseMissing('whatsapp_test_connections', [
-        'access_token' => 'instance-token-1',
+        'access_token' => $instanceToken,
     ]);
     Http::assertSent(fn ($request): bool => $request->url() === 'https://evolution.test/instance/create'
         && $request['name'] === 'canal_'.$team->getKey()
+        && $request['token'] === $instanceToken
         && $request->header('apikey') === ['admin-key']);
     Http::assertSent(fn ($request): bool => $request->url() === 'https://evolution.test/instance/connect'
-        && $request->header('instanceId') === ['instance-uuid-1']
+        && $request->header('apikey') === [$instanceToken]
         && $request['webhookUrl'] === route('webhooks.whatsapp-test'));
 });
 
@@ -70,7 +69,7 @@ it('does not create a Channel when Evolution Go refuses the instance', function 
         'services.evolution.api_key' => 'admin-key',
     ]);
     Http::fake([
-        'evolution.test/instance/create' => Http::response(['message' => 'name already taken'], 422),
+        'evolution.test/instance/create' => Http::response(['error' => 'instance already exists'], 400),
     ]);
     $user = User::factory()->withTeam()->create();
 
@@ -79,7 +78,7 @@ it('does not create a Channel when Evolution Go refuses the instance', function 
         ['name' => 'local-development', 'agent_id' => null],
     );
 
-    $response->assertSessionHasErrors('name');
+    $response->assertSessionHasErrors(['name' => 'O Evolution Go recusou a operação: instance already exists']);
     $this->assertDatabaseCount('whatsapp_test_connections', 0);
     expect($user->company()->channels()->where('type', ChannelType::WhatsAppTest)->exists())->toBeFalse();
 });
