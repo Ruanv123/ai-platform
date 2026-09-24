@@ -1,5 +1,6 @@
 <?php
 
+use App\Enums\ChannelType;
 use App\Enums\FlowExecutionStatus;
 use App\Enums\MessageDirection;
 use App\Models\Channel;
@@ -77,6 +78,55 @@ it('lists two channel conversations for one contact as separate latest-message r
         ->where('conversations.data.1.contactId', $contact->id)
         ->where('conversations.data.1.channel.id', $firstExecution->channel_id)
         ->where('conversations.data.1.excerpt', $message->content));
+});
+
+it('lists message-backed WhatsApp conversations once and opens Agent conversations read-only', function () {
+    $user = User::factory()->withTeam()->create(['is_platform_admin' => true]);
+    $team = $user->company();
+    $contact = Contact::factory()->for($team)->create();
+    $officialChannel = Channel::factory()->for($team)->create();
+    $testChannel = Channel::factory()->for($team)->create(['type' => ChannelType::WhatsAppTest]);
+    $websiteChannel = Channel::factory()->for($team)->create(['type' => ChannelType::WebsiteChat]);
+    $emptyChannel = Channel::factory()->for($team)->create();
+    $execution = humanWaitingExecution($user, $contact, $testChannel);
+    $timestamp = now();
+    $agentMessage = Message::factory()
+        ->for($contact)
+        ->for($officialChannel)
+        ->create(['content' => 'Atendimento direto do Agente.', 'created_at' => $timestamp]);
+    $flowMessage = Message::factory()
+        ->for($contact)
+        ->for($testChannel)
+        ->create(['content' => 'Transferência de Fluxo.', 'created_at' => $timestamp]);
+    Message::factory()
+        ->for($contact)
+        ->for($websiteChannel)
+        ->create(['content' => 'Canal fora do escopo.']);
+
+    $this->actingAs($user)
+        ->get(route('inbox.index'))
+        ->assertOk()
+        ->assertInertia(fn ($page) => $page
+            ->where('conversations.total', 2)
+            ->where('conversations.data.0.channel.id', $testChannel->id)
+            ->where('conversations.data.0.state', 'flow')
+            ->where('conversations.data.0.excerpt', $flowMessage->content)
+            ->where('conversations.data.1.channel.id', $officialChannel->id)
+            ->where('conversations.data.1.state', 'agent')
+            ->where('conversations.data.1.excerpt', $agentMessage->content));
+
+    $this->actingAs($user)
+        ->get(route('inbox.show', ['contact' => $contact, 'channel' => $officialChannel]))
+        ->assertOk()
+        ->assertInertia(fn ($page) => $page
+            ->where('selected.state', 'agent')
+            ->where('selected.execution', null)
+            ->where('selected.canWrite', false)
+            ->where('selected.messages.data.0.id', $agentMessage->id));
+
+    $this->actingAs($user)
+        ->get(route('inbox.show', ['contact' => $contact, 'channel' => $emptyChannel]))
+        ->assertNotFound();
 });
 
 it('renders only the selected channel messages, history, and Flow execution with pagination', function () {

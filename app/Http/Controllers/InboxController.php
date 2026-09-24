@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Consent\ContactConsentService;
+use App\Enums\ChannelType;
 use App\Enums\FlowExecutionStatus;
 use App\Enums\MessageDirection;
 use App\Http\Requests\SendHumanMessageRequest;
@@ -14,6 +15,8 @@ use App\Models\Message;
 use App\Models\User;
 use App\WhatsApp\WhatsAppCustomerCareWindow;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Collection;
+use Illuminate\Database\Query\Builder as QueryBuilder;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Pagination\LengthAwarePaginator;
@@ -29,7 +32,7 @@ final class InboxController extends Controller
 
     public function show(Request $request, Contact $contact, Channel $channel): Response
     {
-        abort_unless($this->waitingQuery()
+        abort_unless($this->conversationMessages($request->user())
             ->where('contact_id', $contact->getKey())
             ->where('channel_id', $channel->getKey())
             ->exists(), 404);
@@ -71,48 +74,28 @@ final class InboxController extends Controller
         $team = $request->user()->company();
         abort_if($team === null, 404);
 
-        $baseQuery = $this->waitingQuery();
+        $baseQuery = $this->conversationMessages($request->user());
         $this->applyFilters($baseQuery, $request);
         $counts = [
-            'awaiting' => (clone $baseQuery)->whereNull('human_assigned_user_id')->count(),
-            'mine' => (clone $baseQuery)->where('human_assigned_user_id', $request->user()->getKey())->count(),
+            'awaiting' => $this->countWaitingConversations(clone $baseQuery, unassigned: true),
+            'mine' => $this->countWaitingConversations(clone $baseQuery, userId: $request->user()->getKey()),
             'all' => (clone $baseQuery)->count(),
         ];
 
         $listQuery = clone $baseQuery;
         $this->applyQueue($listQuery, $request);
         $this->applyAssignmentFilter($listQuery, $request);
-        $latestMessageId = Message::query()
-            ->select('id')
-            ->whereColumn('messages.contact_id', 'flow_executions.contact_id')
-            ->whereColumn('messages.channel_id', 'flow_executions.channel_id')
-            ->orderByDesc('messages.created_at')
-            ->orderByDesc('messages.id')
-            ->limit(1);
-        $latestMessageAt = Message::query()
-            ->select('created_at')
-            ->whereColumn('messages.contact_id', 'flow_executions.contact_id')
-            ->whereColumn('messages.channel_id', 'flow_executions.channel_id')
-            ->orderByDesc('messages.created_at')
-            ->orderByDesc('messages.id')
-            ->limit(1);
         $conversations = $listQuery
-            ->addSelect(['inbox_latest_message_id' => $latestMessageId])
             ->with([
                 'contact',
                 'channel',
-                'flowVersion.flow',
-                'humanAssignee',
             ])
-            ->orderByDesc($latestMessageAt)
-            ->orderByDesc('flow_executions.id')
+            ->orderByDesc('messages.created_at')
+            ->orderByDesc('messages.id')
             ->paginate(20)
             ->withQueryString();
 
-        $latestMessages = Message::query()
-            ->whereKey($conversations->getCollection()->pluck('inbox_latest_message_id')->filter()->unique())
-            ->get()
-            ->keyBy('id');
+        $executionsByConversation = $this->waitingExecutionsFor($conversations);
 
         $selectedExecution = $selectedContact === null || $selectedChannel === null
             ? null
@@ -129,11 +112,13 @@ final class InboxController extends Controller
                 ->latest('created_at')
                 ->first();
 
+        $selectedContact?->loadMissing(['fieldValues.field', 'tags']);
+
         return Inertia::render('inbox/index', [
             'conversations' => [
-                'data' => $conversations->getCollection()->map(fn (FlowExecution $execution): array => $this->conversation(
-                    $execution,
-                    $latestMessages->get($execution->inbox_latest_message_id),
+                'data' => $conversations->getCollection()->map(fn (Message $message): array => $this->conversation(
+                    $message,
+                    $executionsByConversation->get($this->conversationKey($message->contact_id, $message->channel_id)),
                 ))->values(),
                 'currentPage' => $conversations->currentPage(),
                 'lastPage' => $conversations->lastPage(),
@@ -141,7 +126,7 @@ final class InboxController extends Controller
             ],
             'counts' => $counts,
             'filters' => [
-                'queue' => $request->string('queue', 'awaiting')->toString(),
+                'queue' => $request->string('queue', 'all')->toString(),
                 'assignedTo' => $request->input('assigned_to'),
                 'channel' => $request->input('channel'),
                 'search' => $request->string('search')->toString(),
@@ -153,6 +138,7 @@ final class InboxController extends Controller
                 ->map(fn (User $user): array => ['id' => $user->id, 'name' => $user->name])
                 ->values(),
             'channels' => $team->channels()
+                ->whereIn('type', $this->visibleWhatsAppTypes($request->user()))
                 ->orderBy('type')
                 ->get(['id', 'type'])
                 ->map(fn (Channel $channel): array => [
@@ -160,7 +146,9 @@ final class InboxController extends Controller
                     'label' => $channel->type->label(),
                 ])
                 ->values(),
-            'selected' => $selectedExecution === null ? null : $this->selectedConversation($selectedExecution, $request),
+            'selected' => $selectedContact === null || $selectedChannel === null
+                ? null
+                : $this->selectedConversation($selectedContact, $selectedChannel, $selectedExecution, $request),
             'currentUserId' => $request->user()->getKey(),
         ]);
     }
@@ -176,7 +164,99 @@ final class InboxController extends Controller
             ->whereHas('channel');
     }
 
-    /** @param Builder<FlowExecution> $query */
+    /** @return Builder<Message> */
+    private function conversationMessages(User $user): Builder
+    {
+        $query = Message::query()
+            ->whereHas('channel', fn (Builder $channelQuery): Builder => $channelQuery
+                ->whereIn('type', $this->visibleWhatsAppTypes($user)))
+            ->whereNotExists(function (QueryBuilder $query): void {
+                $query->selectRaw('1')
+                    ->from('messages as newer_messages')
+                    ->whereColumn('newer_messages.team_id', 'messages.team_id')
+                    ->whereColumn('newer_messages.contact_id', 'messages.contact_id')
+                    ->whereColumn('newer_messages.channel_id', 'messages.channel_id')
+                    ->where(function (QueryBuilder $query): void {
+                        $query->whereColumn('newer_messages.created_at', '>', 'messages.created_at')
+                            ->orWhere(function (QueryBuilder $query): void {
+                                $query->whereColumn('newer_messages.created_at', 'messages.created_at')
+                                    ->whereColumn('newer_messages.id', '>', 'messages.id');
+                            });
+                    });
+            });
+
+        return $query;
+    }
+
+    /** @return list<string> */
+    private function visibleWhatsAppTypes(User $user): array
+    {
+        return array_values(array_map(
+            fn (ChannelType $type): string => $type->value,
+            array_filter(
+                [ChannelType::WhatsApp, ChannelType::WhatsAppTest],
+                fn (ChannelType $type): bool => $type->isVisible($user),
+            ),
+        ));
+    }
+
+    /** @param Builder<Message> $query */
+    private function countWaitingConversations(Builder $query, bool $unassigned = false, ?int $userId = null): int
+    {
+        $query->whereExists(function (QueryBuilder $subquery) use ($unassigned, $userId): void {
+            $this->waitingExecutionSubquery($subquery);
+
+            if ($unassigned) {
+                $subquery->whereNull('flow_executions.human_assigned_user_id');
+            } elseif ($userId !== null) {
+                $subquery->where('flow_executions.human_assigned_user_id', $userId);
+            }
+        });
+
+        return $query->count();
+    }
+
+    private function waitingExecutionsFor(LengthAwarePaginator $conversations): Collection
+    {
+        $messages = $conversations->getCollection();
+        if ($messages->isEmpty()) {
+            return new Collection;
+        }
+
+        return $this->waitingQuery()
+            ->where(function (Builder $query) use ($messages): void {
+                foreach ($messages as $message) {
+                    $query->orWhere(function (Builder $pairQuery) use ($message): void {
+                        $pairQuery->where('contact_id', $message->contact_id)
+                            ->where('channel_id', $message->channel_id);
+                    });
+                }
+            })
+            ->with(['flowVersion.flow', 'humanAssignee'])
+            ->get()
+            ->keyBy(fn (FlowExecution $execution): string => $this->conversationKey(
+                (int) $execution->contact_id,
+                (string) $execution->channel_id,
+            ));
+    }
+
+    private function conversationKey(int $contactId, string $channelId): string
+    {
+        return $contactId.':'.$channelId;
+    }
+
+    private function waitingExecutionSubquery(QueryBuilder $query): void
+    {
+        $query->selectRaw('1')
+            ->from('flow_executions')
+            ->whereColumn('flow_executions.team_id', 'messages.team_id')
+            ->whereColumn('flow_executions.contact_id', 'messages.contact_id')
+            ->whereColumn('flow_executions.channel_id', 'messages.channel_id')
+            ->where('flow_executions.status', FlowExecutionStatus::Paused->value)
+            ->where('flow_executions.waiting_for', 'human');
+    }
+
+    /** @param Builder<Message> $query */
     private function applyFilters(Builder $query, Request $request): void
     {
         $search = trim($request->string('search')->toString());
@@ -192,39 +272,50 @@ final class InboxController extends Controller
         }
 
         if ($channel !== '') {
-            $query->where('channel_id', $channel);
+            $query->where('messages.channel_id', $channel);
         }
     }
 
-    /** @param Builder<FlowExecution> $query */
+    /** @param Builder<Message> $query */
     private function applyQueue(Builder $query, Request $request): void
     {
-        match ($request->string('queue', 'awaiting')->toString()) {
-            'mine' => $query->where('human_assigned_user_id', $request->user()->getKey()),
+        match ($request->string('queue', 'all')->toString()) {
+            'mine' => $query->whereExists(function (QueryBuilder $subquery) use ($request): void {
+                $this->waitingExecutionSubquery($subquery);
+                $subquery->where('flow_executions.human_assigned_user_id', $request->user()->getKey());
+            }),
             'all' => null,
-            default => $query->whereNull('human_assigned_user_id'),
+            default => $query->whereExists(function (QueryBuilder $subquery): void {
+                $this->waitingExecutionSubquery($subquery);
+                $subquery->whereNull('flow_executions.human_assigned_user_id');
+            }),
         };
     }
 
-    /** @param Builder<FlowExecution> $query */
+    /** @param Builder<Message> $query */
     private function applyAssignmentFilter(Builder $query, Request $request): void
     {
         $assignedTo = $request->input('assigned_to');
         if ($assignedTo === 'unassigned') {
-            $query->whereNull('human_assigned_user_id');
+            $query->whereNotExists(function (QueryBuilder $subquery): void {
+                $this->waitingExecutionSubquery($subquery);
+                $subquery->whereNotNull('flow_executions.human_assigned_user_id');
+            });
         } elseif (is_numeric($assignedTo)) {
-            $query->where('human_assigned_user_id', (int) $assignedTo);
+            $query->whereExists(function (QueryBuilder $subquery) use ($assignedTo): void {
+                $this->waitingExecutionSubquery($subquery);
+                $subquery->where('flow_executions.human_assigned_user_id', (int) $assignedTo);
+            });
         }
     }
 
     /** @return array<string, mixed> */
-    private function conversation(FlowExecution $execution, ?Message $latestMessage): array
+    private function conversation(Message $latestMessage, ?FlowExecution $execution): array
     {
-        $contact = $execution->contact;
-        $channel = $execution->channel;
-        abort_if($contact === null || $channel === null, 404);
+        $contact = $latestMessage->contact;
+        $channel = $latestMessage->channel;
 
-        $excerpt = $latestMessage?->content;
+        $excerpt = $latestMessage->content;
         if (blank($excerpt)) {
             $excerpt = 'Sem Mensagens de texto.';
         }
@@ -234,15 +325,16 @@ final class InboxController extends Controller
             'name' => $contact->name,
             'phone' => $contact->phone,
             'excerpt' => $excerpt,
-            'lastMessageAt' => $latestMessage?->created_at?->toIso8601String(),
-            'waitingSince' => $execution->created_at?->toIso8601String(),
-            'waitingSeconds' => $execution->created_at === null ? 0 : max(0, (int) $execution->created_at->diffInSeconds(now())),
-            'reason' => $this->reason($execution->human_transfer_reason),
+            'lastMessageAt' => $latestMessage->created_at?->toIso8601String(),
+            'waitingSince' => $execution?->created_at?->toIso8601String(),
+            'waitingSeconds' => $latestMessage->created_at === null ? 0 : max(0, (int) $latestMessage->created_at->diffInSeconds(now())),
+            'state' => $execution === null ? 'agent' : 'flow',
+            'reason' => $execution === null ? null : $this->reason($execution->human_transfer_reason),
             'channel' => [
                 'id' => $channel->id,
                 'label' => $channel->type->label(),
             ],
-            'assignee' => $execution->humanAssignee === null ? null : [
+            'assignee' => $execution?->humanAssignee === null ? null : [
                 'id' => $execution->humanAssignee->id,
                 'name' => $execution->humanAssignee->name,
             ],
@@ -250,12 +342,8 @@ final class InboxController extends Controller
     }
 
     /** @return array<string, mixed> */
-    private function selectedConversation(FlowExecution $execution, Request $request): array
+    private function selectedConversation(Contact $contact, Channel $channel, ?FlowExecution $execution, Request $request): array
     {
-        $contact = $execution->contact;
-        $channel = $execution->channel;
-        abort_if($contact === null || $channel === null, 404);
-
         $messages = Message::query()
             ->where('contact_id', $contact->getKey())
             ->where('channel_id', $channel->getKey())
@@ -283,8 +371,9 @@ final class InboxController extends Controller
             ->latest('id')
             ->first();
         $expiresAt = $window->expiresAt($channel, $lastIncoming);
-        $flow = $execution->flowVersion->flow;
         $consents = app(ContactConsentService::class)->snapshot($contact);
+
+        $flow = $execution?->flowVersion?->flow;
 
         return [
             'contact' => [
@@ -309,12 +398,13 @@ final class InboxController extends Controller
                 'id' => $channel->id,
                 'label' => $channel->type->label(),
             ],
-            'assignee' => $execution->humanAssignee === null ? null : [
+            'state' => $execution === null ? 'agent' : 'flow',
+            'assignee' => $execution?->humanAssignee === null ? null : [
                 'id' => $execution->humanAssignee->id,
                 'name' => $execution->humanAssignee->name,
             ],
-            'reason' => $this->reason($execution->human_transfer_reason),
-            'execution' => [
+            'reason' => $execution === null ? null : $this->reason($execution->human_transfer_reason),
+            'execution' => $execution === null || $flow === null ? null : [
                 'id' => $execution->id,
                 'flowId' => $flow->id,
                 'flowName' => $flow->name,
@@ -331,7 +421,7 @@ final class InboxController extends Controller
                 'expiresAt' => $expiresAt?->toIso8601String(),
                 'remainingSeconds' => $window->remainingSeconds($channel, $lastIncoming),
             ],
-            'canWrite' => $execution->human_assigned_user_id === $request->user()->getKey(),
+            'canWrite' => $execution !== null && $execution->human_assigned_user_id === $request->user()->getKey(),
         ];
     }
 

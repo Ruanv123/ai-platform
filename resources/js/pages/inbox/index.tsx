@@ -40,7 +40,8 @@ type Conversation = {
     lastMessageAt: string | null;
     waitingSince: string | null;
     waitingSeconds: number;
-    reason: { code: string; label: string };
+    state: 'agent' | 'flow';
+    reason: { code: string; label: string } | null;
     channel: { id: string; label: string };
     assignee: { id: number; name: string } | null;
 };
@@ -84,8 +85,9 @@ type SelectedConversation = {
         >;
     };
     channel: { id: string; label: string };
+    state: 'agent' | 'flow';
     assignee: { id: number; name: string } | null;
-    reason: { code: string; label: string };
+    reason: { code: string; label: string } | null;
     execution: {
         id: string;
         flowId: string;
@@ -95,7 +97,7 @@ type SelectedConversation = {
         nodeName: string;
         traceUrl: string;
         status: string;
-    };
+    } | null;
     messages: MessagePage;
     history: MessagePage;
     window: {
@@ -354,21 +356,35 @@ function ConversationsPanel({
                                     {conversation.excerpt}
                                 </p>
                                 <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
-                                    <span
-                                        className={cn(
-                                            'rounded-md px-1.5 py-0.5 text-[10px] font-semibold',
-                                            reasonBadgeClass(
-                                                conversation.reason.code,
-                                            ),
-                                        )}
-                                    >
-                                        {conversation.reason.label}
-                                    </span>
-                                    {conversation.assignee === null ? (
+                                    {conversation.state === 'agent' ? (
+                                        <span className="bg-signal-live/10 text-signal-live rounded-md px-1.5 py-0.5 text-[10px] font-semibold">
+                                            Agente ativo
+                                        </span>
+                                    ) : (
+                                        <>
+                                            <span className="bg-muted text-muted-foreground rounded-md px-1.5 py-0.5 text-[10px] font-semibold">
+                                                Fluxo transferido
+                                            </span>
+                                            {conversation.reason !== null && (
+                                                <span
+                                                    className={cn(
+                                                        'rounded-md px-1.5 py-0.5 text-[10px] font-semibold',
+                                                        reasonBadgeClass(
+                                                            conversation.reason.code,
+                                                        ),
+                                                    )}
+                                                >
+                                                    {conversation.reason.label}
+                                                </span>
+                                            )}
+                                        </>
+                                    )}
+                                    {conversation.state === 'flow' && conversation.assignee === null && (
                                         <span className="border-border text-muted-foreground rounded-md border px-1.5 py-0.5 text-[10px] font-semibold">
                                             não atribuída
                                         </span>
-                                    ) : (
+                                    )}
+                                    {conversation.assignee !== null && (
                                         <span className="bg-muted inline-flex items-center gap-1 rounded-full py-0.5 pr-2 pl-0.5 text-[10px] font-semibold">
                                             <span className="bg-border flex size-3.5 items-center justify-center rounded-full text-[8px]">
                                                 {initials(
@@ -432,8 +448,8 @@ function EmptySelection() {
             <div>
                 <h2 className="font-semibold">Escolha uma conversa</h2>
                 <p className="text-muted-foreground mt-1 max-w-sm text-sm">
-                    Leia o motivo da transferência e o histórico antes de entrar
-                    no atendimento.
+                    Acompanhe o atendimento do Agente ou abra uma transferência
+                    de Fluxo para continuar.
                 </p>
             </div>
         </section>
@@ -599,13 +615,14 @@ function ConversationThread({
                 <div className="flex-1" />
                 <span className="text-muted-foreground bg-muted hidden items-center gap-1.5 rounded-md px-2.5 py-1 text-[11.5px] font-medium sm:flex">
                     <Bot className="size-3.5" />
-                    Bot pausado
+                    {selected.state === 'flow' ? 'Fluxo transferido' : 'Agente ativo'}
                 </span>
-                {selected.assignee === null ? (
+                {selected.state === 'flow' && selected.assignee === null && (
                     <Button size="sm" onClick={takeConversation}>
                         Assumir conversa
                     </Button>
-                ) : (
+                )}
+                {selected.assignee !== null && (
                     <span className="text-muted-foreground hidden items-center gap-1.5 text-xs md:flex">
                         <UserRound className="size-3.5" />
                         {assignedToMe
@@ -648,11 +665,9 @@ function ConversationThread({
                 <div className="flex justify-center">
                     <span className="border-border/70 bg-background text-muted-foreground flex items-center gap-1.5 rounded-full border px-3 py-1 text-[11px] font-medium">
                         <Bot className="text-signal-attention size-3.5" />
-                        O Fluxo{' '}
-                        <strong className="text-foreground font-semibold">
-                            {selected.execution.flowName}
-                        </strong>{' '}
-                        transferiu esta conversa para atendimento humano
+                        {selected.state === 'flow' && selected.execution !== null
+                            ? `O Fluxo ${selected.execution.flowName} transferiu esta conversa para atendimento humano`
+                            : 'O Agente está conduzindo esta conversa'}
                     </span>
                 </div>
 
@@ -670,6 +685,7 @@ function ConversationThread({
                 <HistoryPanel history={selected.history} />
             </div>
 
+            {selected.state === 'flow' ? (
             <div className="border-border/70 bg-background shrink-0 border-t p-4">
                 {!selected.canWrite && (
                     <div className="border-signal-attention/40 bg-signal-attention/10 text-foreground mb-3 rounded-lg border px-3 py-2 text-sm">
@@ -792,6 +808,11 @@ function ConversationThread({
                     </div>
                 </form>
             </div>
+            ) : (
+                <div className="border-border/70 bg-background text-muted-foreground shrink-0 border-t px-4 py-3 text-center text-xs">
+                    Conversa em modo de leitura enquanto o Agente atende.
+                </div>
+            )}
         </section>
     );
 }
@@ -932,33 +953,44 @@ function ContactPanel({ selected }: { selected: SelectedConversation }) {
                 </div>
             </div>
 
-            <div className="px-4.5 py-3.5">
-                <div className="text-muted-foreground mb-2.5 text-[10px] font-bold tracking-[0.07em] uppercase">
-                    Execução pausada
+            {selected.execution !== null ? (
+                <div className="px-4.5 py-3.5">
+                    <div className="text-muted-foreground mb-2.5 text-[10px] font-bold tracking-[0.07em] uppercase">
+                        Execução pausada
+                    </div>
+                    <div className="border-border/70 rounded-lg border p-3">
+                        <div className="text-[12.5px] font-semibold">
+                            {selected.execution.flowName}
+                        </div>
+                        <div className="text-muted-foreground mt-0.5 text-[11px]">
+                            #{selected.execution.id} · v{selected.execution.version}
+                            {' · '}
+                            {selected.execution.nodeName}
+                        </div>
+                        <div className="bg-muted mt-2 flex items-center gap-1.5 rounded-md px-2.5 py-1.5">
+                            <span className="bg-signal-attention size-1.5 shrink-0 rounded-full" />
+                            <span className="text-[11.5px] font-medium">
+                                {selected.reason?.label ?? 'Atendimento transferido'}
+                            </span>
+                        </div>
+                        <Link
+                            href={selected.execution.traceUrl}
+                            className="mt-2.5 inline-block text-[11.5px] font-semibold underline underline-offset-4"
+                        >
+                            Ver o traço completo →
+                        </Link>
+                    </div>
                 </div>
-                <div className="border-border/70 rounded-lg border p-3">
-                    <div className="text-[12.5px] font-semibold">
-                        {selected.execution.flowName}
+            ) : (
+                <div className="px-4.5 py-3.5">
+                    <div className="text-muted-foreground mb-2.5 text-[10px] font-bold tracking-[0.07em] uppercase">
+                        Atendimento
                     </div>
-                    <div className="text-muted-foreground mt-0.5 text-[11px]">
-                        #{selected.execution.id} · v{selected.execution.version}
-                        {' · '}
-                        {selected.execution.nodeName}
+                    <div className="border-border/70 rounded-lg border p-3 text-xs">
+                        Agente ativo neste Canal.
                     </div>
-                    <div className="bg-muted mt-2 flex items-center gap-1.5 rounded-md px-2.5 py-1.5">
-                        <span className="bg-signal-attention size-1.5 shrink-0 rounded-full" />
-                        <span className="text-[11.5px] font-medium">
-                            {selected.reason.label}
-                        </span>
-                    </div>
-                    <Link
-                        href={selected.execution.traceUrl}
-                        className="mt-2.5 inline-block text-[11.5px] font-semibold underline underline-offset-4"
-                    >
-                        Ver o traço completo →
-                    </Link>
                 </div>
-            </div>
+            )}
         </aside>
     );
 }
