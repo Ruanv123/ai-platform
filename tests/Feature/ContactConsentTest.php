@@ -3,6 +3,7 @@
 use App\Consent\ContactConsentService;
 use App\Enums\ConsentAction;
 use App\Enums\ConsentPurpose;
+use App\Models\Channel;
 use App\Models\Contact;
 use App\Models\User;
 
@@ -28,14 +29,16 @@ it('records an append-only decision and exposes the latest state by purpose', fu
 it('stores consent changes through the contact endpoint', function () {
     $user = User::factory()->withTeam()->create();
     $contact = Contact::factory()->for($user->company())->create();
+    $channel = Channel::factory()->for($user->company())->create();
+    $conversation = ['contact' => $contact, 'channel' => $channel];
 
-    $response = $this->actingAs($user)->post(route('inbox.consents.store', $contact), [
+    $response = $this->actingAs($user)->post(route('inbox.consents.store', $conversation), [
         'purpose' => ConsentPurpose::Utility->value,
         'action' => ConsentAction::Granted->value,
         'source' => 'manual',
     ]);
 
-    $response->assertRedirect(route('inbox.show', $contact));
+    $response->assertRedirect(route('inbox.show', $conversation));
     $this->assertDatabaseHas('contact_consents', [
         'team_id' => $user->company()->id,
         'contact_id' => $contact->id,
@@ -49,8 +52,9 @@ it('does not reveal another team contact through consent changes', function () {
     $user = User::factory()->withTeam()->create();
     $otherUser = User::factory()->withTeam()->create();
     $contact = Contact::factory()->for($otherUser->company())->create();
+    $channel = Channel::factory()->for($otherUser->company())->create();
 
-    $this->actingAs($user)->post(route('inbox.consents.store', $contact), [
+    $this->actingAs($user)->post(route('inbox.consents.store', ['contact' => $contact, 'channel' => $channel]), [
         'purpose' => 'marketing',
         'action' => 'granted',
     ])->assertNotFound();

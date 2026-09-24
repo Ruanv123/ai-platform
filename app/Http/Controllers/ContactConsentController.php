@@ -6,13 +6,14 @@ use App\Consent\ContactConsentService;
 use App\Enums\ConsentAction;
 use App\Enums\ConsentPurpose;
 use App\Http\Requests\SaveContactConsentRequest;
+use App\Models\Channel;
 use App\Models\Contact;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 
 final class ContactConsentController extends Controller
 {
-    public function store(SaveContactConsentRequest $request, Contact $contact, ContactConsentService $consents): RedirectResponse|JsonResponse
+    public function store(SaveContactConsentRequest $request, Contact $contact, Channel $channel, ContactConsentService $consents): RedirectResponse|JsonResponse
     {
         $data = $request->validated();
         $purpose = ConsentPurpose::from($data['purpose']);
@@ -34,6 +35,6 @@ final class ContactConsentController extends Controller
             ]);
         }
 
-        return to_route('inbox.show', $contact);
+        return to_route('inbox.show', [$contact, $channel]);
     }
 }
