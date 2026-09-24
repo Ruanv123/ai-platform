@@ -105,7 +105,7 @@ it('renders only the selected channel messages, history, and Flow execution with
             ->where('selected.messages.lastPage', 2)
             ->where('selected.history.lastPage', 3)
             ->where('selected.messages.data.0.id', $selectedMessages->get(1)->id)
-            ->where('selected.history.data.0.id', $selectedMessages->get(51)->id)
+            ->where('selected.history.data.0.id', $selectedMessages->last()->id)
             ->where('selected.messages.data', fn ($messages): bool => $messages->every(
                 fn (array $message): bool => $message['id'] !== $otherChannelMessage->id,
             ))
