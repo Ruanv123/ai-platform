@@ -30,7 +30,8 @@ final class IncomingMessageResponseDispatcher
         }
 
         $channel->loadMissing('agent');
-        $isFlowChannel = $this->flowEngine->hasManagedMessageFlows($channel);
+        $isFlowChannel = $this->flowEngine->hasManagedMessageFlows($channel)
+            && $this->flowEngine->hasNonTrivialManagedMessageFlows($channel);
 
         if ($this->optOutInterceptor->intercept($channel, $message)) {
             return;
