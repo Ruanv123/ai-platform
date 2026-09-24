@@ -15,6 +15,7 @@ final class HumanConversationUpdated implements ShouldBroadcastNow, ShouldDispat
     public function __construct(
         public readonly int $teamId,
         public readonly ?int $contactId,
+        public readonly ?string $channelId,
         public readonly string $action,
     ) {}
 
@@ -28,12 +29,13 @@ final class HumanConversationUpdated implements ShouldBroadcastNow, ShouldDispat
         return 'human-conversation.updated';
     }
 
-    /** @return array<string, int|string|null> */
+    /** @return array{teamId: int, contactId: int|null, channelId: string|null, action: string} */
     public function broadcastWith(): array
     {
         return [
             'teamId' => $this->teamId,
             'contactId' => $this->contactId,
+            'channelId' => $this->channelId,
             'action' => $this->action,
         ];
     }

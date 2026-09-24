@@ -15,6 +15,7 @@ final class InboxMessageCreated implements ShouldBroadcastNow, ShouldDispatchAft
     public function __construct(
         public readonly int $teamId,
         public readonly int $contactId,
+        public readonly string $channelId,
         public readonly int $messageId,
     ) {}
 
@@ -28,12 +29,13 @@ final class InboxMessageCreated implements ShouldBroadcastNow, ShouldDispatchAft
         return 'inbox-message.created';
     }
 
-    /** @return array<string, int> */
+    /** @return array{teamId: int, contactId: int, channelId: string, messageId: int} */
     public function broadcastWith(): array
     {
         return [
             'teamId' => $this->teamId,
             'contactId' => $this->contactId,
+            'channelId' => $this->channelId,
             'messageId' => $this->messageId,
         ];
     }

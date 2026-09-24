@@ -61,7 +61,7 @@ final class HumanInboxService
                 'human_last_activity_at' => $now,
             ])->save();
 
-            HumanConversationUpdated::dispatch($execution->team_id, $execution->contact_id, 'assigned');
+            HumanConversationUpdated::dispatch($execution->team_id, $execution->contact_id, $execution->channel_id, 'assigned');
 
             return $execution->fresh(['contact', 'channel', 'flowVersion.flow', 'humanAssignee']);
         });
@@ -113,7 +113,7 @@ final class HumanInboxService
                 'last_activity_at' => now(),
             ])->save();
 
-            HumanConversationUpdated::dispatch($execution->team_id, $execution->contact_id, 'message');
+            HumanConversationUpdated::dispatch($execution->team_id, $execution->contact_id, $execution->channel_id, 'message');
 
             return $message;
         });
@@ -167,7 +167,7 @@ final class HumanInboxService
                             'human_assigned_at' => null,
                             'human_last_activity_at' => null,
                         ])->save();
-                        HumanConversationUpdated::dispatch($locked->team_id, $locked->contact_id, 'unassigned');
+                        HumanConversationUpdated::dispatch($locked->team_id, $locked->contact_id, $locked->channel_id, 'unassigned');
 
                         return true;
                     });

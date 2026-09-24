@@ -23,6 +23,21 @@ export function useInboxRealtime(teamId: number | null, only: string[]): void {
                 only: reloadOnly,
             });
         };
+        let hasConnected = echo.connectionStatus() === 'connected';
+        let wasConnected = hasConnected;
+        const stopConnectionUpdates = echo.connector.onConnectionChange((status) => {
+            const reconnected = status === 'connected' && hasConnected && !wasConnected;
+
+            if (status === 'connected') {
+                hasConnected = true;
+            }
+
+            wasConnected = status === 'connected';
+
+            if (reconnected) {
+                reload();
+            }
+        });
 
         channel.listen('.human-conversation.updated', reload);
         channel.listen('.inbox-message.created', reload);
@@ -30,6 +45,7 @@ export function useInboxRealtime(teamId: number | null, only: string[]): void {
         return () => {
             channel.stopListening('.human-conversation.updated', reload);
             channel.stopListening('.inbox-message.created', reload);
+            stopConnectionUpdates();
             echo.leave(channelName);
         };
     }, [teamId, onlyKey]);

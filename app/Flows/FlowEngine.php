@@ -187,7 +187,7 @@ final class FlowEngine
             $this->finishExecution($execution, FlowExecutionStatus::Failed, 'execution_ttl_exceeded');
             if ($waitingFor === 'human') {
                 $this->clearHumanWaiting($execution);
-                HumanConversationUpdated::dispatch($execution->team_id, $execution->contact_id, 'expired');
+                HumanConversationUpdated::dispatch($execution->team_id, $execution->contact_id, $execution->channel_id, 'expired');
             }
 
             return;
@@ -210,7 +210,7 @@ final class FlowEngine
         ])->save();
         if ($waitingFor === 'human') {
             $this->clearHumanWaiting($execution);
-            HumanConversationUpdated::dispatch($execution->team_id, $execution->contact_id, 'returned');
+            HumanConversationUpdated::dispatch($execution->team_id, $execution->contact_id, $execution->channel_id, 'returned');
         }
         $this->hydrate($execution);
         if ($waitingFor === 'contact_response') {
@@ -273,7 +273,7 @@ final class FlowEngine
         if ($execution->expires_at->isPast()) {
             $this->finishExecution($execution, FlowExecutionStatus::Failed, 'execution_ttl_exceeded');
             $this->clearHumanWaiting($execution);
-            HumanConversationUpdated::dispatch($execution->team_id, $execution->contact_id, 'returned');
+            HumanConversationUpdated::dispatch($execution->team_id, $execution->contact_id, $execution->channel_id, 'returned');
 
             return;
         }
@@ -292,7 +292,7 @@ final class FlowEngine
         $execution->current_node_id = $this->nextNode($dsl, (string) $execution->current_node_id);
         $execution->save();
         $this->run($execution, null);
-        HumanConversationUpdated::dispatch($execution->team_id, $execution->contact_id, 'returned');
+        HumanConversationUpdated::dispatch($execution->team_id, $execution->contact_id, $execution->channel_id, 'returned');
     }
 
     private function clearHumanWaiting(FlowExecution $execution): void
@@ -804,7 +804,7 @@ final class FlowEngine
             'wake_at' => CarbonImmutable::now()->addSeconds($inactivity),
         ])->save();
         dispatch(new WakeFlowExecution($execution->getKey()))->delay($execution->wake_at);
-        HumanConversationUpdated::dispatch($execution->team_id, $execution->contact_id, 'transferred');
+        HumanConversationUpdated::dispatch($execution->team_id, $execution->contact_id, $execution->channel_id, 'transferred');
 
         return ['wait' => true];
     }

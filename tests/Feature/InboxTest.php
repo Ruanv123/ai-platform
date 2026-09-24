@@ -4,6 +4,8 @@ use App\Enums\ChannelStatus;
 use App\Enums\ChannelType;
 use App\Enums\FlowExecutionStatus;
 use App\Enums\MessageDirection;
+use App\Events\HumanConversationUpdated;
+use App\Events\InboxMessageCreated;
 use App\Models\Channel;
 use App\Models\Contact;
 use App\Models\Flow;
@@ -253,6 +255,25 @@ it('authorizes the inbox broadcast channel only for members of the Empresa', fun
             'channel_name' => $channel,
         ])
         ->assertForbidden();
+});
+
+it('broadcasts conversation pair identifiers without message content or media details', function () {
+    $messageEvent = new InboxMessageCreated(12, 34, 'channel-56', 78);
+    $stateEvent = new HumanConversationUpdated(12, 34, 'channel-56', 'assigned');
+
+    expect($messageEvent->broadcastOn()[0]->name)->toBe('private-team.12.inbox')
+        ->and($messageEvent->broadcastWith())->toBe([
+            'teamId' => 12,
+            'contactId' => 34,
+            'channelId' => 'channel-56',
+            'messageId' => 78,
+        ])
+        ->and($stateEvent->broadcastWith())->toBe([
+            'teamId' => 12,
+            'contactId' => 34,
+            'channelId' => 'channel-56',
+            'action' => 'assigned',
+        ]);
 });
 
 it('does not reveal a transferred conversation from another Empresa', function () {

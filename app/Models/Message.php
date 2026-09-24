@@ -69,14 +69,16 @@ class Message extends Model
         });
 
         static::created(function (Message $message): void {
-            $isHumanWaiting = Contact::withoutGlobalScopes()
-                ->whereKey($message->contact_id)
-                ->where('human_waiting', true)
-                ->exists();
-
-            if ($isHumanWaiting) {
-                InboxMessageCreated::dispatch($message->team_id, $message->contact_id, $message->getKey());
+            if ($message->team_id === null || $message->contact_id === null || $message->channel_id === null) {
+                return;
             }
+
+            InboxMessageCreated::dispatch(
+                (int) $message->team_id,
+                (int) $message->contact_id,
+                (string) $message->channel_id,
+                (int) $message->getKey(),
+            );
         });
     }
 
