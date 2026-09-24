@@ -3,6 +3,7 @@
 namespace App\WhatsApp;
 
 use App\Flows\FlowEngine;
+use App\Inbox\AgentConversationService;
 use App\Jobs\RespondToWhatsAppMessage;
 use App\Jobs\RunFlowTurn;
 use App\Models\Channel;
@@ -16,6 +17,7 @@ final class IncomingMessageResponseDispatcher
         private readonly WhatsAppOutputAdapterFactory $outputAdapterFactory,
         private readonly FlowEngine $flowEngine,
         private readonly OptOutInterceptor $optOutInterceptor,
+        private readonly AgentConversationService $agentConversations,
     ) {}
 
     /**
@@ -23,6 +25,10 @@ final class IncomingMessageResponseDispatcher
      */
     public function dispatch(Channel $channel, Message $message): void
     {
+        if ($this->agentConversations->isPaused($channel, $message->contact_id)) {
+            return;
+        }
+
         $channel->loadMissing('agent');
         $isFlowChannel = $this->flowEngine->hasManagedMessageFlows($channel);
 
