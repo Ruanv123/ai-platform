@@ -20,6 +20,8 @@ final class MetaUnsupportedStrategy extends MetaMessageStrategy
     /** @param array<string, mixed> $payload */
     protected function content(Channel $channel, array $payload): ?string
     {
-        return null;
+        return ($this->message($payload)['type'] ?? null) === 'sticker'
+            ? 'Figurinha não exibida'
+            : null;
     }
 }

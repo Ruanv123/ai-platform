@@ -54,6 +54,7 @@ test('company settings render only company props', function () {
         ->where('team.phone', '(11) 99999-9999')
         ->where('team.publicEmail', 'contato@acme.example.com')
         ->where('team.address', 'São Paulo, SP')
+        ->where('team.agentPauseDurationMinutes', 30)
         ->has('segments')
         ->where('canUpdate', true)
         ->missing('team.slug')
@@ -79,6 +80,8 @@ test('owners can update all company details without changing business hours', fu
 
     $payload = companyUpdatePayload();
     $payload['name'] = 'Acme do Owner';
+    $payload['agent_pause_duration_hours'] = 2;
+    $payload['agent_pause_duration_minutes_part'] = 15;
 
     $response = $this
         ->actingAs($owner)
@@ -102,6 +105,7 @@ test('owners can update all company details without changing business hours', fu
         'phone' => $payload['phone'],
         'public_email' => $payload['public_email'],
         'address' => $payload['address'],
+        'agent_pause_duration_minutes' => 135,
     ]);
     expect($team->fresh()->business_hours)->toBe($originalBusinessHours);
     expect($team->fresh()->timezone)->toBe('America/Sao_Paulo');
@@ -116,6 +120,8 @@ test('admins can update all company details', function () {
 
     $payload = companyUpdatePayload();
     $payload['name'] = 'Acme do Admin';
+    $payload['agent_pause_duration_hours'] = 0;
+    $payload['agent_pause_duration_minutes_part'] = 1;
 
     $response = $this
         ->actingAs($admin)
@@ -126,7 +132,39 @@ test('admins can update all company details', function () {
         'id' => $team->id,
         'name' => 'Acme do Admin',
         'public_email' => $payload['public_email'],
+        'agent_pause_duration_minutes' => 1,
     ]);
+});
+
+it('rejects a pause duration outside the one-minute to twenty-four-hour range', function (int $hours, int $minutes, string $errorField) {
+    $user = User::factory()->withTeam()->create();
+
+    $this->actingAs($user)
+        ->from(route('company.edit'))
+        ->patch(route('company.update'), array_merge(companyUpdatePayload(), [
+            'agent_pause_duration_hours' => $hours,
+            'agent_pause_duration_minutes_part' => $minutes,
+        ]))
+        ->assertSessionHasErrors($errorField);
+
+    expect($user->company()->fresh()->agent_pause_duration_minutes)->toBe(30);
+})->with([
+    'zero minutes' => [0, 0, 'agent_pause_duration_minutes'],
+    'more than one day' => [24, 1, 'agent_pause_duration_minutes'],
+    'invalid minute component' => [0, 60, 'agent_pause_duration_minutes_part'],
+]);
+
+it('accepts the maximum twenty-four-hour pause duration', function () {
+    $user = User::factory()->withTeam()->create();
+
+    $this->actingAs($user)
+        ->patch(route('company.update'), array_merge(companyUpdatePayload(), [
+            'agent_pause_duration_hours' => 24,
+            'agent_pause_duration_minutes_part' => 0,
+        ]))
+        ->assertRedirect(route('company.edit'));
+
+    expect($user->company()->fresh()->agent_pause_duration_minutes)->toBe(1440);
 });
 
 test('company validation returns Portuguese messages for invalid fields', function () {

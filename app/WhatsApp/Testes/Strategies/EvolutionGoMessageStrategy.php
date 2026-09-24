@@ -8,16 +8,24 @@ use App\Models\Channel;
 use App\Models\Contact;
 use App\Models\Message;
 use App\WhatsApp\Media\IncomingMediaResolver;
+use App\WhatsApp\Media\IncomingMediaStorage;
 use App\WhatsApp\Testes\EvolutionGoMediaDownloader;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Throwable;
 
 abstract class EvolutionGoMessageStrategy implements EvolutionGoStrategy
 {
+    /** @var array{contents: string, mime_type: string|null, filename: string}|null */
+    private ?array $originalMedia = null;
+
+    private bool $mediaWasExpected = false;
+
     public function __construct(
         protected readonly IncomingMediaResolver $mediaResolver,
         protected readonly EvolutionGoMediaDownloader $mediaDownloader,
+        protected readonly IncomingMediaStorage $mediaStorage,
     ) {}
 
     /**
@@ -51,6 +59,7 @@ abstract class EvolutionGoMessageStrategy implements EvolutionGoStrategy
 
         $contact->save();
 
+        $content = $this->content($channel, $payload);
         $message = new Message([
             'team_id' => $channel->team_id,
             'contact_id' => $contact->getKey(),
@@ -58,7 +67,7 @@ abstract class EvolutionGoMessageStrategy implements EvolutionGoStrategy
             'direction' => $this->direction($payload),
             'payload_type' => $this->eventType($payload),
             'provider_message_id' => $providerMessageId,
-            'content' => $this->content($channel, $payload),
+            'content' => $content,
             'delivery_status' => $this->deliveryStatus(),
         ]);
         $timestamp = $this->providerTimestamp($payload);
@@ -67,7 +76,10 @@ abstract class EvolutionGoMessageStrategy implements EvolutionGoStrategy
             $message->created_at = $timestamp;
         }
 
-        $message->save();
+        DB::transaction(function () use ($message): void {
+            $message->save();
+            $this->persistOriginalMedia($message);
+        });
 
         return $message;
     }
@@ -97,8 +109,11 @@ abstract class EvolutionGoMessageStrategy implements EvolutionGoStrategy
         string $type,
         ?string $caption,
     ): ?string {
+        $this->mediaWasExpected = true;
+
         try {
             $media = $this->mediaDownloader->download($channel, $payload, $type);
+            $this->originalMedia = $media;
 
             if ($media === null) {
                 return $caption;
@@ -116,11 +131,39 @@ abstract class EvolutionGoMessageStrategy implements EvolutionGoStrategy
     /**
      * @param  array<string, mixed>  $payload
      */
-    protected function videoContent(array $payload): string
+    protected function videoContent(Channel $channel, array $payload): string
     {
+        $this->mediaWasExpected = true;
+
+        try {
+            $this->originalMedia = $this->mediaDownloader->download($channel, $payload, 'video');
+        } catch (Throwable) {
+            $this->originalMedia = null;
+        }
+
         return $this->mediaResolver->videoWarning(
             $this->textContent($payload),
         );
+    }
+
+    private function persistOriginalMedia(Message $message): void
+    {
+        if (! $this->mediaWasExpected) {
+            return;
+        }
+
+        if ($this->originalMedia === null) {
+            $this->mediaStorage->markUnavailable($message);
+
+            return;
+        }
+
+        try {
+            $this->mediaStorage->store($message, $this->originalMedia);
+        } catch (Throwable $exception) {
+            report($exception);
+            $this->mediaStorage->markUnavailable($message);
+        }
     }
 
     /**
@@ -139,83 +182,47 @@ abstract class EvolutionGoMessageStrategy implements EvolutionGoStrategy
     }
 
     /**
-     * @param  array<string, mixed>  $payload
-     * @return array<string, mixed>
-     */
-    protected function eventData(array $payload): array
-    {
-        $data = $payload['data'] ?? [];
-
-        if (! is_array($data)) {
-            return [];
-        }
-
-        if (is_array($data['data'] ?? null)) {
-            return $data['data'];
-        }
-
-        return $data;
-    }
-
-    /**
-     * Get the provider's message envelope when it wraps the message fields one level deeper.
+     * Get the whatsmeow message metadata (`data.Info`) of a Message event.
      *
      * @param  array<string, mixed>  $payload
      * @return array<string, mixed>
      */
-    protected function messageEnvelope(array $payload): array
+    protected function info(array $payload): array
     {
-        $data = $this->eventData($payload);
-        $message = $data['message'] ?? null;
+        $info = data_get($payload, 'data.Info');
 
-        return is_array($message) && isset($message['key']) && is_array($message['key'])
-            ? $message
-            : $data;
+        return is_array($info) ? $info : [];
     }
 
     /**
+     * Get the protobuf-shaped message content (`data.Message`).
+     *
      * @param  array<string, mixed>  $payload
      * @return array<string, mixed>
      */
     protected function messageBody(array $payload): array
     {
-        $data = $this->messageEnvelope($payload);
-        $message = $data['message'] ?? [];
+        $body = data_get($payload, 'data.Message');
 
-        if (! is_array($message)) {
-            return [];
-        }
-
-        if (isset($message['key']) && is_array($message['message'] ?? null)) {
-            return $message['message'];
-        }
-
-        return $message;
+        return is_array($body) ? $body : [];
     }
 
     /**
+     * Get the first content key of the message, ignoring protocol bookkeeping.
+     *
      * @param  array<string, mixed>  $payload
      */
     protected function rawMessageType(array $payload): ?string
     {
-        $data = $this->messageEnvelope($payload);
-        $type = $data['messageType'] ?? $data['type'] ?? null;
-
-        if (is_string($type) && filled($type)) {
-            return $type;
-        }
-
-        if (is_scalar($data['message'] ?? null)) {
-            return 'text';
-        }
-
-        foreach (['conversation', 'extendedTextMessage', 'imageMessage', 'audioMessage', 'videoMessage', 'documentMessage'] as $key) {
-            if (array_key_exists($key, $this->messageBody($payload))) {
+        foreach (array_keys($this->messageBody($payload)) as $key) {
+            if (! in_array($key, ['messageContextInfo', 'senderKeyDistributionMessage'], true)) {
                 return $key;
             }
         }
 
-        return null;
+        $type = $this->info($payload)['Type'] ?? null;
+
+        return is_string($type) && filled($type) ? $type : null;
     }
 
     /**
@@ -223,33 +230,16 @@ abstract class EvolutionGoMessageStrategy implements EvolutionGoStrategy
      */
     public function detectedMessageType(array $payload): ?string
     {
-        $rawType = Str::lower((string) $this->rawMessageType($payload));
         $body = $this->messageBody($payload);
 
-        if (in_array($rawType, ['conversation', 'extendedtextmessage', 'text', 'textmessage'], true)
-            || array_key_exists('conversation', $body)
-            || array_key_exists('extendedTextMessage', $body)) {
-            return 'text';
-        }
-
-        if (in_array($rawType, ['image', 'imagemessage'], true) || array_key_exists('imageMessage', $body)) {
-            return 'image';
-        }
-
-        if (in_array($rawType, ['audio', 'audiomessage'], true) || array_key_exists('audioMessage', $body)) {
-            return 'audio';
-        }
-
-        if (in_array($rawType, ['video', 'videomessage'], true) || array_key_exists('videoMessage', $body)) {
-            return 'video';
-        }
-
-        if (in_array($rawType, ['document', 'documentmessage', 'documentwithcaptionmessage'], true)
-            || array_key_exists('documentMessage', $body)) {
-            return 'document';
-        }
-
-        return null;
+        return match (true) {
+            array_key_exists('conversation', $body), array_key_exists('extendedTextMessage', $body) => 'text',
+            array_key_exists('imageMessage', $body) => 'image',
+            array_key_exists('audioMessage', $body) => 'audio',
+            array_key_exists('videoMessage', $body) => 'video',
+            array_key_exists('documentMessage', $body), array_key_exists('documentWithCaptionMessage', $body) => 'document',
+            default => null,
+        };
     }
 
     /**
@@ -259,17 +249,13 @@ abstract class EvolutionGoMessageStrategy implements EvolutionGoStrategy
      */
     protected function textContent(array $payload): ?string
     {
-        $data = $this->messageEnvelope($payload);
         $body = $this->messageBody($payload);
         $content = data_get($body, 'conversation')
             ?? data_get($body, 'extendedTextMessage.text')
             ?? data_get($body, 'imageMessage.caption')
             ?? data_get($body, 'videoMessage.caption')
             ?? data_get($body, 'documentMessage.caption')
-            ?? ($data['text'] ?? null)
-            ?? ($data['content'] ?? null)
-            ?? ($data['caption'] ?? null)
-            ?? (is_scalar($data['message'] ?? null) ? $data['message'] : null);
+            ?? data_get($body, 'documentWithCaptionMessage.message.documentMessage.caption');
 
         return is_scalar($content) ? (string) $content : null;
     }
@@ -279,59 +265,45 @@ abstract class EvolutionGoMessageStrategy implements EvolutionGoStrategy
      */
     protected function providerMessageId(array $payload): ?string
     {
-        $data = $this->messageEnvelope($payload);
-        $key = is_array($data['key'] ?? null) ? $data['key'] : [];
-        $id = $key['id']
-            ?? $data['messageId']
-            ?? $data['message_id']
-            ?? $data['id']
-            ?? (is_array($data['message'] ?? null) ? ($data['message']['id'] ?? null) : null)
-            ?? null;
+        $id = $this->info($payload)['ID'] ?? null;
 
-        return is_scalar($id) && filled($id) ? (string) $id : null;
+        return is_string($id) && filled($id) ? $id : null;
     }
 
     /**
+     * Resolve the Contact's phone, since 1:1 chats may be addressed by an opaque `@lid` identifier
+     * whose phone JID comes in `SenderAlt` (incoming) or `RecipientAlt` (sent by us).
+     *
      * @param  array<string, mixed>  $payload
      */
     protected function phone(array $payload): ?string
     {
-        $data = $this->messageEnvelope($payload);
-        $key = is_array($data['key'] ?? null) ? $data['key'] : [];
-        $rawPhone = $key['remoteJid']
-            ?? $key['remoteJidAlt']
-            ?? $data['remoteJid']
-            ?? $data['phone']
-            ?? $data['from']
-            ?? $data['sender']
-            ?? $data['number']
-            ?? $data['senderPhone']
-            ?? null;
+        $info = $this->info($payload);
+        $alternate = ($info['IsFromMe'] ?? false) === true ? 'RecipientAlt' : 'SenderAlt';
+        $jid = collect([$info['Chat'] ?? null, $info[$alternate] ?? null])
+            ->first(fn (mixed $candidate): bool => is_string($candidate) && Str::endsWith($candidate, '@s.whatsapp.net'))
+            ?? $info['Chat'] ?? null;
 
-        if (! is_string($rawPhone) || blank($rawPhone)) {
+        if (! is_string($jid) || blank($jid)) {
             return null;
         }
 
-        $phone = Str::before($rawPhone, '@');
-        $phone = preg_replace('/\\D+/', '', $phone);
+        $phone = preg_replace('/\\D+/', '', Str::before($jid, '@'));
 
         return is_string($phone) && filled($phone) ? $phone : null;
     }
 
     /**
+     * Only the Contact's own push name identifies them; on messages we sent it is our own name.
+     *
      * @param  array<string, mixed>  $payload
      */
     protected function contactName(array $payload): ?string
     {
-        $data = $this->messageEnvelope($payload);
-        $name = $data['pushName']
-            ?? $data['push_name']
-            ?? $data['senderName']
-            ?? data_get($data, 'profile.name')
-            ?? $data['name']
-            ?? null;
+        $info = $this->info($payload);
+        $name = ($info['IsFromMe'] ?? false) === true ? null : ($info['PushName'] ?? null);
 
-        return is_scalar($name) && filled($name) ? (string) $name : null;
+        return is_string($name) && filled($name) ? $name : null;
     }
 
     /**
@@ -339,25 +311,14 @@ abstract class EvolutionGoMessageStrategy implements EvolutionGoStrategy
      */
     protected function providerTimestamp(array $payload): ?Carbon
     {
-        $data = $this->messageEnvelope($payload);
-        $timestamp = $data['messageTimestamp'] ?? $data['timestamp'] ?? null;
+        $timestamp = $this->info($payload)['Timestamp'] ?? null;
 
-        if (! is_scalar($timestamp) || blank($timestamp)) {
+        if (! is_string($timestamp) || blank($timestamp)) {
             return null;
         }
 
         try {
-            if (is_numeric($timestamp)) {
-                $seconds = (int) $timestamp;
-
-                if ($seconds > 10_000_000_000) {
-                    $seconds = (int) floor($seconds / 1000);
-                }
-
-                return Carbon::createFromTimestamp($seconds);
-            }
-
-            return Carbon::parse((string) $timestamp);
+            return Carbon::parse($timestamp);
         } catch (Throwable) {
             return null;
         }

@@ -68,6 +68,7 @@ final class WhatsAppResponseFailureHandler
                     'provider_message_id' => null,
                     'content' => self::GENERIC_FAILURE_NOTICE,
                     'delivery_status' => MessageDeliveryStatus::Failed,
+                    'failure_reason' => 'agent_response_failed',
                 ]);
             } else {
                 $this->outputAdapterFactory

@@ -11,6 +11,7 @@ use App\Models\Team;
 use App\Models\WhatsAppAccount;
 use App\Models\WhatsAppPhoneNumber;
 use App\Models\WhatsAppTestConnection;
+use App\WhatsApp\IncomingMessageResponseDispatcher;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Http;
@@ -26,6 +27,8 @@ function responseFlowTestFixture(string $name, string $provider = 'testes'): arr
 
 function createResponseFlowTestChannel(): Channel
 {
+    config(['services.evolution.test_allowed_phones' => ['5511999999999']]);
+
     $team = Team::factory()->create();
     $agent = Agent::factory()->for($team)->create();
     $channel = Channel::factory()->for($team)->create([
@@ -78,9 +81,7 @@ it('uses the saved Agent instructions and the Contact history for a response', f
     Http::fake([
         'https://evolution.test/message/markread' => Http::response([]),
         'https://evolution.test/message/presence' => Http::response([]),
-        'https://evolution.test/send/text' => Http::response([
-            'key' => ['id' => 'test-outgoing-message-history'],
-        ]),
+        'https://evolution.test/send/text' => Http::response(['data' => ['Info' => ['ID' => 'test-outgoing-message-history']]]),
     ]);
 
     $response = $this->postJson(
@@ -105,9 +106,7 @@ it('responds to an incoming test WhatsApp message through the public webhook', f
     Http::fake([
         'https://evolution.test/message/markread' => Http::response([]),
         'https://evolution.test/message/presence' => Http::response([]),
-        'https://evolution.test/send/text' => Http::response([
-            'key' => ['id' => 'test-outgoing-message-1'],
-        ]),
+        'https://evolution.test/send/text' => Http::response(['data' => ['Info' => ['ID' => 'test-outgoing-message-1']]]),
     ]);
 
     $response = $this->postJson(
@@ -137,6 +136,71 @@ it('responds to an incoming test WhatsApp message through the public webhook', f
     });
 });
 
+it('only responds to the phones allowed on the test WhatsApp channel', function (array $allowedPhones, bool $shouldRespond) {
+    createResponseFlowTestChannel();
+    config(['services.evolution.test_allowed_phones' => $allowedPhones]);
+    WhatsAppAgent::fake(['Resposta do atendimento.']);
+    Http::preventStrayRequests();
+    Http::fake([
+        'https://evolution.test/*' => Http::response(['data' => ['Info' => ['ID' => 'test-outgoing-message-1']]]),
+    ]);
+
+    $this->postJson(route('webhooks.whatsapp-test'), responseFlowTestFixture('message-text'))->assertOk();
+
+    $this->assertDatabaseHas('messages', [
+        'provider_message_id' => 'test-message-text-1',
+        'direction' => MessageDirection::Incoming->value,
+        'is_responded' => $shouldRespond,
+    ]);
+    Http::assertSentCount($shouldRespond ? 3 : 0);
+})->with([
+    'listed phone' => [['5511999999999'], true],
+    'listed phone with formatting' => [['+55 (11) 99999-9999'], true],
+    'Brazilian JID without the ninth digit' => [['551199999999'], true],
+    'another phone' => [['5511888888888'], false],
+    'no phones configured' => [[], false],
+]);
+
+it('answers the paired account when it writes in its own conversation', function () {
+    createResponseFlowTestChannel();
+    WhatsAppAgent::fake(['Resposta do atendimento.']);
+    Http::preventStrayRequests();
+    Http::fake([
+        'https://evolution.test/*' => Http::response(['data' => ['Info' => ['ID' => 'test-outgoing-self-chat']]]),
+    ]);
+    $payload = responseFlowTestFixture('message-text');
+    $payload['data']['Info']['IsFromMe'] = true;
+    $payload['data']['Info']['Chat'] = '11313078092023@lid';
+    $payload['data']['Info']['Sender'] = '11313078092023@lid';
+    $payload['data']['Info']['RecipientAlt'] = '5511999999999@s.whatsapp.net';
+
+    $this->postJson(route('webhooks.whatsapp-test'), $payload)->assertOk();
+
+    $this->assertDatabaseHas('messages', [
+        'provider_message_id' => 'test-message-text-1',
+        'direction' => MessageDirection::Incoming->value,
+        'is_responded' => true,
+    ]);
+    $this->assertDatabaseHas('messages', [
+        'provider_message_id' => 'test-outgoing-self-chat',
+        'direction' => MessageDirection::Outgoing->value,
+    ]);
+});
+
+it('does not answer the message the app itself sent through the API', function () {
+    createResponseFlowTestChannel();
+    WhatsAppAgent::fake(['Resposta do atendimento.']);
+    Http::preventStrayRequests();
+
+    $this->postJson(route('webhooks.whatsapp-test'), responseFlowTestFixture('send-message'))->assertOk();
+
+    $this->assertDatabaseHas('messages', [
+        'provider_message_id' => 'test-message-send-1',
+        'direction' => MessageDirection::Outgoing->value,
+    ]);
+    WhatsAppAgent::assertNeverPrompted();
+});
+
 it('does not respond twice when the provider redelivers an already handled message', function () {
     createResponseFlowTestChannel();
     WhatsAppAgent::fake(['Resposta única.']);
@@ -144,9 +208,7 @@ it('does not respond twice when the provider redelivers an already handled messa
     Http::fake([
         'https://evolution.test/message/markread' => Http::response([]),
         'https://evolution.test/message/presence' => Http::response([]),
-        'https://evolution.test/send/text' => Http::response([
-            'key' => ['id' => 'test-outgoing-message-duplicate'],
-        ]),
+        'https://evolution.test/send/text' => Http::response(['data' => ['Info' => ['ID' => 'test-outgoing-message-duplicate']]]),
     ]);
     $payload = responseFlowTestFixture('message-text');
 
@@ -204,16 +266,14 @@ it('groups messages that arrive before the response flow runs', function () {
     $channel = createResponseFlowTestChannel();
     $firstPayload = responseFlowTestFixture('message-text');
     $secondPayload = responseFlowTestFixture('message-text');
-    $secondPayload['data']['key']['id'] = 'test-message-text-2';
-    $secondPayload['data']['message']['conversation'] = 'Também quero saber o prazo.';
+    $secondPayload['data']['Info']['ID'] = 'test-message-text-2';
+    $secondPayload['data']['Message']['conversation'] = 'Também quero saber o prazo.';
     WhatsAppAgent::fake(['Resposta única para as duas mensagens.']);
     Http::preventStrayRequests();
     Http::fake([
         'https://evolution.test/message/markread' => Http::response([]),
         'https://evolution.test/message/presence' => Http::response([]),
-        'https://evolution.test/send/text' => Http::response([
-            'key' => ['id' => 'test-outgoing-message-2'],
-        ]),
+        'https://evolution.test/send/text' => Http::response(['data' => ['Info' => ['ID' => 'test-outgoing-message-2']]]),
     ]);
     config(['queue.default' => 'database']);
 
@@ -221,7 +281,7 @@ it('groups messages that arrive before the response flow runs', function () {
     $this->postJson(route('webhooks.whatsapp-test'), $secondPayload)->assertOk();
     Artisan::call('queue:work', ['--once' => true, '--quiet' => true]);
     Artisan::call('queue:work', ['--once' => true, '--quiet' => true]);
-    $this->travel(5)->seconds();
+    $this->travel(IncomingMessageResponseDispatcher::BUFFER_SECONDS)->seconds();
     Artisan::call('queue:work', ['--once' => true, '--quiet' => true]);
     Artisan::call('queue:work', ['--once' => true, '--quiet' => true]);
 
@@ -303,9 +363,7 @@ it('retries a temporary Agent failure with backoff before sending the response',
     Http::fake([
         'https://evolution.test/message/markread' => Http::response([]),
         'https://evolution.test/message/presence' => Http::response([]),
-        'https://evolution.test/send/text' => Http::response([
-            'key' => ['id' => 'test-outgoing-recovered'],
-        ]),
+        'https://evolution.test/send/text' => Http::response(['data' => ['Info' => ['ID' => 'test-outgoing-recovered']]]),
     ]);
     config(['queue.default' => 'database']);
 
@@ -314,7 +372,7 @@ it('retries a temporary Agent failure with backoff before sending the response',
         responseFlowTestFixture('message-text'),
     )->assertOk();
     Artisan::call('queue:work', ['--once' => true, '--quiet' => true]);
-    $this->travel(5)->seconds();
+    $this->travel(IncomingMessageResponseDispatcher::BUFFER_SECONDS)->seconds();
     Artisan::call('queue:work', ['--once' => true, '--quiet' => true]);
     $this->travel(10)->seconds();
     Artisan::call('queue:work', ['--once' => true, '--quiet' => true]);
@@ -344,7 +402,7 @@ it('retries a temporary provider failure with backoff before recording the respo
 
             return $sendAttempts === 1
                 ? Http::response([], 503)
-                : Http::response(['key' => ['id' => 'test-outgoing-provider-recovered']]);
+                : Http::response(['data' => ['Info' => ['ID' => 'test-outgoing-provider-recovered']]]);
         },
     ]);
     config(['queue.default' => 'database']);
@@ -354,7 +412,7 @@ it('retries a temporary provider failure with backoff before recording the respo
         responseFlowTestFixture('message-text'),
     )->assertOk();
     Artisan::call('queue:work', ['--once' => true, '--quiet' => true]);
-    $this->travel(5)->seconds();
+    $this->travel(IncomingMessageResponseDispatcher::BUFFER_SECONDS)->seconds();
     Artisan::call('queue:work', ['--once' => true, '--quiet' => true]);
     $this->travel(10)->seconds();
     Artisan::call('queue:work', ['--once' => true, '--quiet' => true]);
@@ -376,9 +434,7 @@ it('notifies the Contact and records the Channel error after response retries ar
     Http::fake([
         'https://evolution.test/message/markread' => Http::response([]),
         'https://evolution.test/message/presence' => Http::response([]),
-        'https://evolution.test/send/text' => Http::response([
-            'key' => ['id' => 'test-outgoing-failure-notice'],
-        ]),
+        'https://evolution.test/send/text' => Http::response(['data' => ['Info' => ['ID' => 'test-outgoing-failure-notice']]]),
     ]);
     config(['queue.default' => 'database']);
 
@@ -387,7 +443,7 @@ it('notifies the Contact and records the Channel error after response retries ar
         responseFlowTestFixture('message-text'),
     )->assertOk();
     Artisan::call('queue:work', ['--once' => true, '--quiet' => true]);
-    $this->travel(5)->seconds();
+    $this->travel(IncomingMessageResponseDispatcher::BUFFER_SECONDS)->seconds();
     Artisan::call('queue:work', ['--once' => true, '--quiet' => true]);
 
     for ($attempt = 0; $attempt < 4; $attempt++) {

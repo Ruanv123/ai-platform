@@ -38,6 +38,58 @@ final class EvolutionGoClient
     }
 
     /**
+     * Whether the instance's WhatsApp session is already paired (logged in).
+     */
+    public function isLoggedIn(string $instanceToken): bool
+    {
+        return data_get($this->send('get', 'instance/status', [], $instanceToken)->json(), 'data.LoggedIn') === true;
+    }
+
+    /**
+     * Fetch the pairing QR code currently valid for the instance, as an image data URI.
+     *
+     * Evolution Go rotates the QR code every few seconds, so it must be read live instead of stored.
+     * Returns null while the server has no QR code to show (e.g. still generating or already paired).
+     */
+    public function qrcode(string $instanceToken): ?string
+    {
+        $body = $this->send('get', 'instance/qr', [], $instanceToken)->json();
+
+        foreach (['data.Qrcode', 'data.qrcode', 'data.qrCode', 'data.QRCode', 'data.base64', 'Qrcode', 'qrcode'] as $path) {
+            $value = data_get($body, $path);
+
+            if (is_string($value) && filled($value)) {
+                return $this->imageDataUri($value);
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Normalize a raw base64 or data URI image into a data URI, rejecting anything that isn't an image.
+     */
+    private function imageDataUri(string $value): ?string
+    {
+        $base64 = preg_replace('/\Adata:image\/[a-z+.-]+;base64,/i', '', trim($value)) ?? '';
+        $base64 = preg_replace('/\s+/', '', $base64) ?? '';
+        $image = base64_decode($base64, true);
+
+        if ($image === false) {
+            return null;
+        }
+
+        $mimeType = match (true) {
+            str_starts_with($image, "\x89PNG\r\n\x1a\n") => 'image/png',
+            str_starts_with($image, "\xff\xd8\xff") => 'image/jpeg',
+            str_starts_with($image, 'GIF87a'), str_starts_with($image, 'GIF89a') => 'image/gif',
+            default => null,
+        };
+
+        return $mimeType === null ? null : "data:{$mimeType};base64,{$base64}";
+    }
+
+    /**
      * Send a request to the platform's Evolution Go server, translating any failure to Portuguese.
      *
      * @param  array<string, mixed>  $payload

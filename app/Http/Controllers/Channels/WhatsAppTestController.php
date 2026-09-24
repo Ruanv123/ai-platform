@@ -14,6 +14,7 @@ use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -21,7 +22,9 @@ use RuntimeException;
 
 class WhatsAppTestController extends Controller
 {
-    public function __construct(private readonly EvolutionGoClient $evolutionGo) {}
+    public function __construct(
+        private readonly EvolutionGoClient $evolutionGo,
+    ) {}
 
     /**
      * Display the WhatsApp test channel configuration page.
@@ -36,23 +39,27 @@ class WhatsAppTestController extends Controller
         abort_if($team === null, 404);
         Gate::authorize('viewAny', Channel::class);
 
-        $channel = $team->channels()
+        $channel = $team
+            ->channels()
             ->where('type', ChannelType::WhatsAppTest)
             ->with(['agent:id,name', 'whatsappTestConnection'])
             ->first();
+        $canManage = $channel !== null && $user->can('update', $channel);
 
         return Inertia::render('channels/whatsapp-test', [
-            'whatsappTest' => $channel === null ? null : $this->toFrontend(
-                $channel,
-                $user->can('update', $channel),
-            ),
-            'agents' => $team->agents()
+            'whatsappTest' => $channel === null
+                    ? null
+                    : $this->toFrontend($channel, $canManage),
+            'agents' => $team
+                ->agents()
                 ->orderBy('name')
                 ->get(['id', 'name'])
-                ->map(fn (Agent $agent): array => [
-                    'id' => $agent->id,
-                    'name' => $agent->name,
-                ])
+                ->map(
+                    fn (Agent $agent): array => [
+                        'id' => $agent->id,
+                        'name' => $agent->name,
+                    ],
+                )
                 ->values(),
             'permissions' => $user->toTeamPermissions($team),
         ]);
@@ -61,8 +68,9 @@ class WhatsAppTestController extends Controller
     /**
      * Create the instance on the platform's Evolution Go server and store the Channel.
      */
-    public function store(SaveWhatsAppTestChannelRequest $request): RedirectResponse
-    {
+    public function store(
+        SaveWhatsAppTestChannelRequest $request,
+    ): RedirectResponse {
         $team = $request->user()->company();
         abort_if($team === null, 404);
         Gate::authorize('create', Channel::class);
@@ -73,12 +81,19 @@ class WhatsAppTestController extends Controller
 
         try {
             $instanceToken = $this->evolutionGo->createInstance($instanceName);
-            $this->evolutionGo->connect($instanceToken, route('webhooks.whatsapp-test'));
         } catch (RuntimeException $exception) {
-            throw ValidationException::withMessages(['name' => $exception->getMessage()]);
+            throw ValidationException::withMessages([
+                'name' => $exception->getMessage(),
+            ]);
         }
 
-        DB::transaction(function () use ($team, $validated, $name, $instanceName, $instanceToken): void {
+        $channel = DB::transaction(function () use (
+            $team,
+            $validated,
+            $name,
+            $instanceName,
+            $instanceToken,
+        ): Channel {
             $channel = $team->channels()->create([
                 'type' => ChannelType::WhatsAppTest,
                 'agent_id' => $validated['agent_id'] ?? null,
@@ -93,7 +108,36 @@ class WhatsAppTestController extends Controller
                 'access_token' => $instanceToken,
                 'qrcode' => null,
             ]);
+
+            return $channel;
         });
+
+        Log::info('[WHATSAPP-TEST-QR] connection.persisted', [
+            'channel_id' => $channel->getKey(),
+            'instance_name' => $instanceName,
+        ]);
+
+        try {
+            $this->evolutionGo->connect(
+                $instanceToken,
+                config('services.evolution.webhook_url') ?: route('webhooks.whatsapp-test'),
+            );
+        } catch (RuntimeException $exception) {
+            Log::warning('[WHATSAPP-TEST-QR] evolution.connect_failed', [
+                'channel_id' => $channel->getKey(),
+                'exception_type' => $exception::class,
+            ]);
+
+            $channel->delete();
+
+            throw ValidationException::withMessages([
+                'name' => $exception->getMessage(),
+            ]);
+        }
+
+        Log::info('[WHATSAPP-TEST-QR] evolution.connect_completed', [
+            'channel_id' => $channel->getKey(),
+        ]);
 
         Inertia::flash('toast', [
             'type' => 'success',
@@ -113,7 +157,9 @@ class WhatsAppTestController extends Controller
         Gate::authorize('update', $whatsappTestChannel);
 
         $validated = $request->validated();
-        $whatsappTestChannel->update(['agent_id' => $validated['agent_id'] ?? null]);
+        $whatsappTestChannel->update([
+            'agent_id' => $validated['agent_id'] ?? null,
+        ]);
 
         Inertia::flash('toast', [
             'type' => 'success',
@@ -126,8 +172,10 @@ class WhatsAppTestController extends Controller
     /**
      * Remove the test channel and its specific connection.
      */
-    public function destroy(Request $request, Channel $whatsappTestChannel): RedirectResponse
-    {
+    public function destroy(
+        Request $request,
+        Channel $whatsappTestChannel,
+    ): RedirectResponse {
         $this->ensureVisible($request->user());
         Gate::authorize('delete', $whatsappTestChannel);
         $whatsappTestChannel->delete();
@@ -152,16 +200,47 @@ class WhatsAppTestController extends Controller
         return [
             'id' => $channel->id,
             'name' => $connection?->name,
-            'qrcode' => $canManage ? $connection?->qrcode : null,
+            'qrcode' => $canManage ? $this->liveQrCode($channel) : null,
             'status' => $channel->status->value,
             'statusLabel' => $channel->status->label(),
             'lastError' => $channel->last_error,
             'credentialsSavedAt' => $connection?->created_at?->toIso8601String(),
-            'agent' => $channel->agent === null ? null : [
-                'id' => $channel->agent->id,
-                'name' => $channel->agent->name,
-            ],
+            'agent' => $channel->agent === null
+                    ? null
+                    : [
+                        'id' => $channel->agent->id,
+                        'name' => $channel->agent->name,
+                    ],
         ];
+    }
+
+    /**
+     * Read the current QR code straight from Evolution Go, since it rotates faster than we could store it.
+     */
+    private function liveQrCode(Channel $channel): ?string
+    {
+        $connection = $channel->whatsappTestConnection;
+
+        if ($connection === null || $channel->status === ChannelStatus::Connected) {
+            return null;
+        }
+
+        try {
+            if ($this->evolutionGo->isLoggedIn($connection->access_token)) {
+                $channel->update(['status' => ChannelStatus::Connected, 'last_error' => null]);
+
+                return null;
+            }
+
+            return $this->evolutionGo->qrcode($connection->access_token);
+        } catch (RuntimeException $exception) {
+            Log::warning('[WHATSAPP-TEST-QR] evolution.qrcode_failed', [
+                'channel_id' => $channel->getKey(),
+                'message' => $exception->getMessage(),
+            ]);
+
+            return null;
+        }
     }
 
     /**

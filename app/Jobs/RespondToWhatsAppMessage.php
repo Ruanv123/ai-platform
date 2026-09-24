@@ -42,11 +42,21 @@ class RespondToWhatsAppMessage implements ShouldQueue
     public function __construct(
         public string|int $channelId,
         public int $contactId,
+        public bool $returnFromPause = false,
+        public string $returnAction = 'returned',
     ) {
+        if ($this->returnFromPause) {
+            $this->tries = 1;
+            $this->maxExceptions = 1;
+            $this->backoff = [];
+        }
+
         $this->retryDeadline = CarbonImmutable::now()->addSeconds(self::RETRY_WINDOW_SECONDS);
     }
 
     public CarbonImmutable $retryDeadline;
+
+    public ?int $returnMessageId = null;
 
     public function retryUntil(): DateTimeInterface
     {
@@ -55,6 +65,17 @@ class RespondToWhatsAppMessage implements ShouldQueue
 
     public function failed(?Throwable $exception): void
     {
+        if ($this->returnFromPause) {
+            app(AgentConversationService::class)->recordFailedReturnAttempt(
+                $this->channelId,
+                $this->contactId,
+                $this->returnMessageId,
+                $exception,
+            );
+
+            return;
+        }
+
         app(WhatsAppResponseFailureHandler::class)->handle(
             $this->channelId,
             $this->contactId,
@@ -100,7 +121,7 @@ class RespondToWhatsAppMessage implements ShouldQueue
             return;
         }
 
-        if ($agentConversations->isPaused($channel, (int) $contact->getKey())) {
+        if (! $this->returnFromPause && $agentConversations->isPaused($channel, (int) $contact->getKey())) {
             return;
         }
 
@@ -114,10 +135,21 @@ class RespondToWhatsAppMessage implements ShouldQueue
             ->get();
 
         if ($pendingMessages->isEmpty()) {
+            if ($this->returnFromPause) {
+                $agentConversations->completeReturnWithoutResponse($channel, $contact);
+            }
+
             return;
         }
 
         $lastPendingMessage = $pendingMessages->last();
+        if ($this->returnFromPause) {
+            $this->returnMessageId = (int) $lastPendingMessage->getKey();
+            if (! $agentConversations->beginReturnAttempt($channel, $contact, $lastPendingMessage)) {
+                return;
+            }
+        }
+
         $history = $contact->history($channel)
             ->reject(fn (Message $message): bool => $message->is($lastPendingMessage))
             ->values();
@@ -139,6 +171,12 @@ class RespondToWhatsAppMessage implements ShouldQueue
 
         if ($content === '') {
             throw new RuntimeException('O Agente não retornou conteúdo para enviar ao Contato.');
+        }
+
+        if ($this->returnFromPause) {
+            $agentConversations->completeReturnResponse($channel, $contact, $lastPendingMessage, $content);
+
+            return;
         }
 
         $agentConversations->runIfUnpaused($channel, $contact, function () use (
@@ -181,6 +219,7 @@ class RespondToWhatsAppMessage implements ShouldQueue
             'provider_message_id' => null,
             'content' => $content,
             'delivery_status' => MessageDeliveryStatus::Failed,
+            'failure_reason' => 'customer_care_window_closed',
         ]);
 
         $this->markAsResponded($pendingMessages);

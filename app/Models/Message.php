@@ -6,6 +6,7 @@ use App\Concerns\BelongsToTeam;
 use App\Enums\MessageDeliveryStatus;
 use App\Enums\MessageDirection;
 use App\Events\InboxMessageCreated;
+use App\WhatsApp\Media\IncomingMediaStorage;
 use Database\Factories\MessageFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -24,6 +25,12 @@ use Illuminate\Support\Carbon;
  * @property int|null $sent_by_user_id
  * @property string|null $content
  * @property MessageDeliveryStatus|null $delivery_status
+ * @property string|null $failure_reason
+ * @property string|null $media_path
+ * @property string|null $media_filename
+ * @property string|null $media_mime_type
+ * @property int|null $media_size
+ * @property bool|null $media_available
  * @property bool $is_responded
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
@@ -42,6 +49,12 @@ use Illuminate\Support\Carbon;
     'sent_by_user_id',
     'content',
     'delivery_status',
+    'failure_reason',
+    'media_path',
+    'media_filename',
+    'media_mime_type',
+    'media_size',
+    'media_available',
     'is_responded',
 ])]
 class Message extends Model
@@ -79,6 +92,10 @@ class Message extends Model
                 (string) $message->channel_id,
                 (int) $message->getKey(),
             );
+        });
+
+        static::deleting(function (Message $message): void {
+            app(IncomingMediaStorage::class)->delete($message);
         });
     }
 
@@ -119,6 +136,7 @@ class Message extends Model
             'direction' => MessageDirection::class,
             'delivery_status' => MessageDeliveryStatus::class,
             'is_responded' => 'boolean',
+            'media_available' => 'boolean',
         ];
     }
 }

@@ -18,13 +18,14 @@ abstract class AbstractWhatsAppOutputAdapter implements WhatsAppOutputAdapter
         string $content,
         string $providerMessageId,
     ): Message {
-        return Message::create([
-            'team_id' => $channel->team_id,
-            'contact_id' => $contact->getKey(),
+        return Message::firstOrCreate([
             'channel_id' => $channel->getKey(),
             'direction' => MessageDirection::Outgoing,
-            'payload_type' => 'text',
             'provider_message_id' => $providerMessageId,
+        ], [
+            'team_id' => $channel->team_id,
+            'contact_id' => $contact->getKey(),
+            'payload_type' => 'text',
             'content' => $content,
             'delivery_status' => MessageDeliveryStatus::Sent,
         ]);

@@ -39,6 +39,20 @@ class Channel extends Model
     /** @use HasFactory<ChannelFactory> */
     use BelongsToTeam, HasFactory, HasUuids;
 
+    protected static function booted(): void
+    {
+        static::deleting(function (Channel $channel): void {
+            $channel->messages()
+                ->whereNotNull('media_path')
+                ->orderBy('id')
+                ->chunkById(100, function (Collection $messages): void {
+                    foreach ($messages as $message) {
+                        $message->delete();
+                    }
+                });
+        });
+    }
+
     /**
      * Get the Agent that responds in this channel.
      *

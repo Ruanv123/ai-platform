@@ -1,8 +1,10 @@
 {
-    "event": "CONNECTION",
-    "instance": "local-development",
     "data": {
-        "state": "close",
-        "type": "LoggedOut"
-    }
+        "OnConnect": false,
+        "Reason": 401
+    },
+    "event": "LoggedOut",
+    "instanceId": "11111111-1111-4111-8111-111111111111",
+    "instanceName": "local-development",
+    "instanceToken": "fixture-instance-token"
 }

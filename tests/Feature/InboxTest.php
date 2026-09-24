@@ -202,17 +202,23 @@ it('keeps paused incoming messages pending and serializes a generated response a
     $contact = Contact::factory()->for($team)->create();
     $agent = Agent::factory()->for($team)->create();
     $channel = Channel::factory()->for($team)->connected()->create(['agent_id' => $agent->id]);
+    $agentConversations = app(AgentConversationService::class);
+    $state = $agentConversations->pauseAndAssign($contact, $channel, $user);
+    $team->update(['agent_pause_duration_minutes' => 15]);
+    $this->travel(5)->minutes();
     $message = Message::factory()->for($contact)->for($channel)->create([
         'direction' => MessageDirection::Incoming,
         'is_responded' => false,
         'content' => 'Ainda preciso de ajuda.',
     ]);
-    $agentConversations = app(AgentConversationService::class);
-    $agentConversations->pauseAndAssign($contact, $channel, $user);
 
     app(IncomingMessageResponseDispatcher::class)->dispatch($channel, $message);
     Queue::assertNotPushed(RespondToWhatsAppMessage::class);
     Queue::assertNotPushed(RunFlowTurn::class);
+
+    $state->refresh();
+    expect($state->last_activity_at->toDateTimeString())->toBe(now()->toDateTimeString())
+        ->and($state->expires_at->toDateTimeString())->toBe(now()->addMinutes(30)->toDateTimeString());
 
     $ranResponse = false;
     expect($agentConversations->runIfUnpaused($channel, $contact, function () use (&$ranResponse): void {
@@ -468,6 +474,32 @@ it('pauses and assigns a direct Agent before sending the first human message', f
         ->and($incoming->fresh()->is_responded)->toBeTrue();
 });
 
+it('renews the configured pause snapshot after a successful human reply', function () {
+    Http::fake([
+        'graph.facebook.com/*' => Http::response(['messages' => [['id' => 'direct-human-renewed-1']]]),
+    ]);
+    $user = User::factory()->withTeam()->create();
+    $team = $user->company();
+    $contact = Contact::factory()->for($team)->create();
+    $agent = Agent::factory()->for($team)->create();
+    $channel = Channel::factory()->for($team)->connected()->create(['agent_id' => $agent->id]);
+    WhatsAppPhoneNumber::factory()->for($channel)->withAccount()->create();
+    Message::factory()->for($contact)->for($channel)->incoming()->create(['content' => 'Preciso de ajuda.']);
+    $state = app(AgentConversationService::class)->pauseAndAssign($contact, $channel, $user);
+    $team->update(['agent_pause_duration_minutes' => 15]);
+    $this->travel(5)->minutes();
+
+    $this->actingAs($user)
+        ->post(route('inbox.messages.store', ['contact' => $contact, 'channel' => $channel]), [
+            'content' => 'Estou cuidando disso.',
+        ])
+        ->assertRedirect(route('inbox.show', ['contact' => $contact, 'channel' => $channel]));
+
+    $state->refresh();
+    expect($state->last_activity_at->toDateTimeString())->toBe(now()->toDateTimeString())
+        ->and($state->expires_at->toDateTimeString())->toBe(now()->addMinutes(30)->toDateTimeString());
+});
+
 it('keeps the direct Agent paused and shows a failed human message when the provider rejects it', function () {
     Http::fake([
         'graph.facebook.com/*' => Http::response(['error' => ['message' => 'Indisponível']], 500),
@@ -550,6 +582,122 @@ it('keeps a direct human text failure visible when the WhatsApp care window is c
         'content' => 'Ainda posso responder?',
         'delivery_status' => 'failed',
         'sent_by_user_id' => $user->id,
+    ]);
+});
+
+it('devolves an assigned direct conversation after a successful return response', function () {
+    Queue::fake();
+    Http::fake([
+        'graph.facebook.com/*' => Http::response(['messages' => [['id' => 'returned-agent-message-1']]]),
+    ]);
+    $user = User::factory()->withTeam()->create();
+    $team = $user->company();
+    $contact = Contact::factory()->for($team)->create();
+    $agent = Agent::factory()->for($team)->create();
+    $channel = Channel::factory()->for($team)->connected()->create(['agent_id' => $agent->id]);
+    WhatsAppPhoneNumber::factory()->for($channel)->withAccount()->create();
+    $incoming = Message::factory()->for($contact)->for($channel)->incoming()->create([
+        'content' => 'Qual é o horário de funcionamento?',
+    ]);
+    $agentConversations = app(AgentConversationService::class);
+    $agentConversations->pauseAndAssign($contact, $channel, $user);
+
+    $this->actingAs($user)
+        ->post(route('inbox.return', ['contact' => $contact, 'channel' => $channel]))
+        ->assertRedirect(route('inbox.show', ['contact' => $contact, 'channel' => $channel]));
+
+    Queue::assertPushed(RespondToWhatsAppMessage::class, fn (RespondToWhatsAppMessage $job): bool => $job->returnFromPause);
+    $state = AgentConversationState::withoutGlobalScopes()->firstOrFail();
+    expect($state->is_paused)->toBeTrue()
+        ->and($state->return_action)->toBe('returned');
+
+    expect($agentConversations->beginReturnAttempt($channel, $contact, $incoming))->toBeTrue()
+        ->and($agentConversations->completeReturnResponse($channel, $contact, $incoming, 'Abrimos das 9h às 18h.'))->toBeTrue()
+        ->and($incoming->fresh()->is_responded)->toBeTrue()
+        ->and(AgentConversationState::withoutGlobalScopes()->firstOrFail()->is_paused)->toBeFalse()
+        ->and(AgentConversationState::withoutGlobalScopes()->firstOrFail()->assigned_user_id)->toBeNull();
+
+    $this->assertDatabaseHas('messages', [
+        'provider_message_id' => 'returned-agent-message-1',
+        'content' => 'Abrimos das 9h às 18h.',
+        'delivery_status' => 'sent',
+    ]);
+    expect(AgentConversationAudit::withoutGlobalScopes()->orderBy('id')->pluck('action')->all())->toBe(['paused', 'returned']);
+});
+
+it('keeps a failed return paused and does not repeat the same failed response', function () {
+    Queue::fake();
+    Http::fake([
+        'graph.facebook.com/*' => Http::response(['error' => ['message' => 'Indisponível']], 500),
+    ]);
+    $user = User::factory()->withTeam()->create();
+    $team = $user->company();
+    $contact = Contact::factory()->for($team)->create();
+    $agent = Agent::factory()->for($team)->create();
+    $channel = Channel::factory()->for($team)->connected()->create(['agent_id' => $agent->id]);
+    WhatsAppPhoneNumber::factory()->for($channel)->withAccount()->create();
+    $incoming = Message::factory()->for($contact)->for($channel)->incoming()->create(['content' => 'Preciso de ajuda.']);
+    $agentConversations = app(AgentConversationService::class);
+    $agentConversations->pauseAndAssign($contact, $channel, $user);
+
+    $this->actingAs($user)
+        ->post(route('inbox.return', ['contact' => $contact, 'channel' => $channel]));
+    $agentConversations->beginReturnAttempt($channel, $contact, $incoming);
+    expect($agentConversations->completeReturnResponse($channel, $contact, $incoming, 'Resposta automática.'))->toBeFalse()
+        ->and(AgentConversationState::withoutGlobalScopes()->firstOrFail()->is_paused)->toBeTrue()
+        ->and(AgentConversationState::withoutGlobalScopes()->firstOrFail()->assigned_user_id)->toBe($user->id)
+        ->and($incoming->fresh()->is_responded)->toBeFalse();
+
+    $this->assertDatabaseHas('messages', [
+        'content' => 'Resposta automática.',
+        'delivery_status' => 'failed',
+        'failure_reason' => 'provider_error',
+    ]);
+    $this->actingAs($user)
+        ->post(route('inbox.return', ['contact' => $contact, 'channel' => $channel]));
+    Queue::assertPushed(RespondToWhatsAppMessage::class, 1);
+
+    $newIncoming = Message::factory()->for($contact)->for($channel)->incoming()->create([
+        'content' => 'Ainda está indisponível?',
+    ]);
+    app(IncomingMessageResponseDispatcher::class)->dispatch($channel, $newIncoming);
+    Queue::assertPushed(RespondToWhatsAppMessage::class, fn (RespondToWhatsAppMessage $job): bool => $job->returnFromPause);
+
+    $this->actingAs($user)
+        ->post(route('inbox.return', ['contact' => $contact, 'channel' => $channel]));
+    Queue::assertPushed(RespondToWhatsAppMessage::class, 2);
+    Http::assertSentCount(1);
+});
+
+it('expires paused direct conversations once and records a WhatsApp window failure without calling Meta', function () {
+    Queue::fake();
+    Http::fake();
+    $user = User::factory()->withTeam()->create();
+    $team = $user->company();
+    $contact = Contact::factory()->for($team)->create();
+    $agent = Agent::factory()->for($team)->create();
+    $channel = Channel::factory()->for($team)->connected()->create(['agent_id' => $agent->id]);
+    WhatsAppPhoneNumber::factory()->for($channel)->withAccount()->create();
+    $incoming = Message::factory()->for($contact)->for($channel)->incoming()->create([
+        'created_at' => now()->subDay()->subMinute(),
+    ]);
+    $agentConversations = app(AgentConversationService::class);
+    $state = $agentConversations->pauseAndAssign($contact, $channel, $user);
+    $state->forceFill(['expires_at' => now()->subMinute()])->save();
+
+    $this->artisan('agents:resume-expired')->assertSuccessful();
+    $this->artisan('agents:resume-expired')->assertSuccessful();
+    Queue::assertPushed(RespondToWhatsAppMessage::class, 1);
+    expect(AgentConversationState::withoutGlobalScopes()->firstOrFail()->return_action)->toBe('expired');
+
+    $agentConversations->beginReturnAttempt($channel, $contact, $incoming);
+    expect($agentConversations->completeReturnResponse($channel, $contact, $incoming, 'Ainda posso ajudar?'))->toBeFalse()
+        ->and(AgentConversationState::withoutGlobalScopes()->firstOrFail()->is_paused)->toBeTrue();
+    Http::assertNothingSent();
+    $this->assertDatabaseHas('messages', [
+        'content' => 'Ainda posso ajudar?',
+        'delivery_status' => 'failed',
+        'failure_reason' => 'customer_care_window_closed',
     ]);
 });
 

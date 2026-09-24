@@ -15,6 +15,7 @@ function fakeEvolutionGo(): void
     config([
         'services.evolution.base_url' => 'https://evolution.test',
         'services.evolution.api_key' => 'admin-key',
+        'services.evolution.webhook_url' => null,
     ]);
 
     Http::fake([
@@ -61,6 +62,22 @@ it('creates the instance on Evolution Go and stores the Channel as not configure
         && $request['webhookUrl'] === route('webhooks.whatsapp-test'));
 });
 
+it('registers the configured webhook URL when the app is not reachable through its own URL', function () {
+    app()->instance('env', 'local');
+    $this->withoutMiddleware(PreventRequestForgery::class);
+    fakeEvolutionGo();
+    config(['services.evolution.webhook_url' => 'http://host.docker.internal:8000/webhooks/whatsapp-test']);
+    $user = User::factory()->withTeam()->create();
+
+    $this->actingAs($user)->post(
+        route('channels.whatsapp-test.store'),
+        ['name' => 'local-development', 'agent_id' => null],
+    )->assertRedirect(route('channels.whatsapp-test.edit'));
+
+    Http::assertSent(fn ($request): bool => $request->url() === 'https://evolution.test/instance/connect'
+        && $request['webhookUrl'] === 'http://host.docker.internal:8000/webhooks/whatsapp-test');
+});
+
 it('does not create a Channel when Evolution Go refuses the instance', function () {
     app()->instance('env', 'local');
     $this->withoutMiddleware(PreventRequestForgery::class);
@@ -83,8 +100,14 @@ it('does not create a Channel when Evolution Go refuses the instance', function 
     expect($user->company()->channels()->where('type', ChannelType::WhatsAppTest)->exists())->toBeFalse();
 });
 
-it('renders a saved WhatsApp test connection with its QR code and without exposing its secret', function () {
+it('fetches the QR code live from Evolution Go instead of the database and without exposing the secret', function () {
     app()->instance('env', 'local');
+    fakeEvolutionGo();
+    $qrcode = 'data:image/png;base64,'.base64_encode("\x89PNG\r\n\x1a\nlive");
+    Http::fake([
+        'evolution.test/instance/status' => Http::response(['data' => ['Connected' => true, 'LoggedIn' => false]]),
+        'evolution.test/instance/qr' => Http::response(['data' => ['Qrcode' => $qrcode, 'Code' => '2@abc']]),
+    ]);
     $user = User::factory()->withTeam()->create();
     $channel = Channel::factory()
         ->for($user->company())
@@ -93,7 +116,7 @@ it('renders a saved WhatsApp test connection with its QR code and without exposi
         'instance_name' => 'canal_'.$user->company()->getKey(),
         'name' => 'local-development',
         'access_token' => 'evolution-secret',
-        'qrcode' => 'data:image/png;base64,abc123',
+        'qrcode' => 'data:image/png;base64,stale',
     ]);
 
     $response = $this->actingAs($user)->get(route('channels.whatsapp-test.edit'));
@@ -102,10 +125,71 @@ it('renders a saved WhatsApp test connection with its QR code and without exposi
         ->component('channels/whatsapp-test')
         ->where('whatsappTest.id', $channel->id)
         ->where('whatsappTest.name', 'local-development')
-        ->where('whatsappTest.qrcode', 'data:image/png;base64,abc123')
+        ->where('whatsappTest.qrcode', $qrcode)
         ->missing('whatsappTest.accessToken')
         ->missing('whatsappTest.access_token')
     );
+    Http::assertSent(fn ($request): bool => $request->url() === 'https://evolution.test/instance/qr'
+        && $request->method() === 'GET'
+        && $request->header('apikey') === ['evolution-secret']);
+});
+
+it('renders without a QR code when Evolution Go fails or returns no image', function (callable $fake) {
+    app()->instance('env', 'local');
+    fakeEvolutionGo();
+    Http::fake([
+        'evolution.test/instance/status' => Http::response(['data' => ['LoggedIn' => false]]),
+        'evolution.test/instance/qr' => $fake(),
+    ]);
+    $user = User::factory()->withTeam()->create();
+    $channel = Channel::factory()
+        ->for($user->company())
+        ->create(['type' => ChannelType::WhatsAppTest]);
+    WhatsAppTestConnection::factory()->for($channel)->create();
+
+    $response = $this->actingAs($user)->get(route('channels.whatsapp-test.edit'));
+
+    $response->assertOk()->assertInertia(fn (Assert $page) => $page
+        ->where('whatsappTest.qrcode', null)
+    );
+})->with([
+    'server error' => [fn () => Http::response(['error' => 'boom'], 500)],
+    'not an image' => [fn () => Http::response(['data' => ['Qrcode' => base64_encode('not an image')]])],
+    'empty' => [fn () => Http::response(['data' => []])],
+]);
+
+it('marks the Channel as connected without requesting a QR code when the session is already logged in', function () {
+    app()->instance('env', 'local');
+    fakeEvolutionGo();
+    Http::fake([
+        'evolution.test/instance/status' => Http::response(['data' => ['Connected' => true, 'LoggedIn' => true]]),
+    ]);
+    $user = User::factory()->withTeam()->create();
+    $channel = Channel::factory()
+        ->for($user->company())
+        ->create(['type' => ChannelType::WhatsAppTest, 'status' => ChannelStatus::NotConfigured]);
+    WhatsAppTestConnection::factory()->for($channel)->create();
+
+    $response = $this->actingAs($user)->get(route('channels.whatsapp-test.edit'));
+
+    $response->assertOk()->assertInertia(fn (Assert $page) => $page->where('whatsappTest.qrcode', null));
+    expect($channel->fresh()->status)->toBe(ChannelStatus::Connected);
+    Http::assertNotSent(fn ($request): bool => str_ends_with($request->url(), '/instance/qr'));
+});
+
+it('does not ask Evolution Go for a QR code once the Channel is connected', function () {
+    app()->instance('env', 'local');
+    fakeEvolutionGo();
+    $user = User::factory()->withTeam()->create();
+    $channel = Channel::factory()
+        ->for($user->company())
+        ->create(['type' => ChannelType::WhatsAppTest, 'status' => ChannelStatus::Connected]);
+    WhatsAppTestConnection::factory()->for($channel)->create();
+
+    $response = $this->actingAs($user)->get(route('channels.whatsapp-test.edit'));
+
+    $response->assertOk()->assertInertia(fn (Assert $page) => $page->where('whatsappTest.qrcode', null));
+    Http::assertNotSent(fn ($request): bool => str_ends_with($request->url(), '/instance/qr'));
 });
 
 it('only lets updating the linked Agent after the Channel exists', function () {

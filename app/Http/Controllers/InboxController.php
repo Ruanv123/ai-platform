@@ -89,7 +89,11 @@ final class InboxController extends Controller
         Channel $channel,
         HumanInboxService $inbox,
     ): RedirectResponse {
-        $inbox->returnToBot($contact, $channel);
+        $isDirectAgentConversation = $inbox->returnToBot($contact, $channel, $request->user());
+
+        if ($isDirectAgentConversation) {
+            return to_route('inbox.show', [$contact, $channel]);
+        }
 
         return to_route('inbox.index');
     }
@@ -566,6 +570,8 @@ final class InboxController extends Controller
                 && app(AgentConversationService::class)->canPause($contact, $channel),
             'canTakeOver' => $execution === null && ($agentState?->is_paused ?? false)
                 && $agentState?->assigned_user_id !== $request->user()->getKey(),
+            'canReturn' => $execution === null && ($agentState?->is_paused ?? false)
+                && $agentState?->assigned_user_id === $request->user()->getKey(),
             'canWrite' => $execution !== null
                 ? $execution->human_assigned_user_id === $request->user()->getKey()
                 : app(AgentConversationService::class)->canPause($contact, $channel)
@@ -604,6 +610,13 @@ final class InboxController extends Controller
                     'channel' => $message->channel->type->label(),
                     'createdAt' => $message->created_at?->toIso8601String(),
                     'deliveryStatus' => $message->delivery_status?->value,
+                    'failureReason' => $message->failure_reason,
+                    'mediaAvailable' => $message->media_available ?? false,
+                    'mediaUrl' => $message->media_available === true && filled($message->media_path)
+                        ? route('inbox.messages.media', [$message->contact_id, $message->channel_id, $message->getKey()])
+                        : null,
+                    'mediaFilename' => $message->media_filename,
+                    'mediaMimeType' => $message->media_mime_type,
                 ];
             })->values(),
             'currentPage' => $messages->currentPage(),

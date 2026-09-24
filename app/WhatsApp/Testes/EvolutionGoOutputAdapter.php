@@ -100,14 +100,7 @@ final class EvolutionGoOutputAdapter extends AbstractWhatsAppOutputAdapter
     private function providerMessageId(array $payload): ?string
     {
         foreach ([
-            'key.id',
-            'data.key.id',
-            'messages.0.id',
-            'data.messages.0.id',
-            'messageId',
-            'data.messageId',
-            'id',
-            'data.id',
+            'data.Info.ID',
         ] as $path) {
             $value = data_get($payload, $path);
 

@@ -24,6 +24,10 @@ final class EvolutionGoUnsupportedStrategy extends EvolutionGoMessageStrategy
      */
     protected function content(Channel $channel, array $payload): ?string
     {
+        if (str_contains(strtolower($this->rawMessageType($payload) ?? ''), 'sticker')) {
+            return 'Figurinha não exibida';
+        }
+
         return $this->textContent($payload);
     }
 }

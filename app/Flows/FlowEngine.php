@@ -1340,6 +1340,7 @@ final class FlowEngine
                 'provider_message_id' => null,
                 'content' => $content,
                 'delivery_status' => MessageDeliveryStatus::Failed,
+                'failure_reason' => 'customer_care_window_closed',
             ]);
 
             return false;

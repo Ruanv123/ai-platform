@@ -6,6 +6,7 @@ use App\Enums\MessageDirection;
 use App\Models\Channel;
 use App\WhatsApp\IncomingMessageResponseDispatcher;
 use App\WhatsApp\Media\IncomingMediaResolver;
+use App\WhatsApp\Media\IncomingMediaStorage;
 use App\WhatsApp\Oficial\Strategies\MetaAudioStrategy;
 use App\WhatsApp\Oficial\Strategies\MetaDocumentStrategy;
 use App\WhatsApp\Oficial\Strategies\MetaImageStrategy;
@@ -20,6 +21,7 @@ final class MetaEventProcessor
     public function __construct(
         private readonly IncomingMediaResolver $mediaResolver,
         private readonly MetaMediaDownloader $mediaDownloader,
+        private readonly IncomingMediaStorage $mediaStorage,
         private readonly IncomingMessageResponseDispatcher $responseDispatcher,
     ) {}
 
@@ -47,12 +49,12 @@ final class MetaEventProcessor
         }
 
         return match (data_get($payload, 'entry.0.changes.0.value.messages.0.type')) {
-            'text' => new MetaTextStrategy($this->mediaResolver, $this->mediaDownloader),
-            'image' => new MetaImageStrategy($this->mediaResolver, $this->mediaDownloader),
-            'audio' => new MetaAudioStrategy($this->mediaResolver, $this->mediaDownloader),
-            'video' => new MetaVideoStrategy($this->mediaResolver, $this->mediaDownloader),
-            'document' => new MetaDocumentStrategy($this->mediaResolver, $this->mediaDownloader),
-            default => new MetaUnsupportedStrategy($this->mediaResolver, $this->mediaDownloader),
+            'text' => new MetaTextStrategy($this->mediaResolver, $this->mediaDownloader, $this->mediaStorage),
+            'image' => new MetaImageStrategy($this->mediaResolver, $this->mediaDownloader, $this->mediaStorage),
+            'audio' => new MetaAudioStrategy($this->mediaResolver, $this->mediaDownloader, $this->mediaStorage),
+            'video' => new MetaVideoStrategy($this->mediaResolver, $this->mediaDownloader, $this->mediaStorage),
+            'document' => new MetaDocumentStrategy($this->mediaResolver, $this->mediaDownloader, $this->mediaStorage),
+            default => new MetaUnsupportedStrategy($this->mediaResolver, $this->mediaDownloader, $this->mediaStorage),
         };
     }
 }

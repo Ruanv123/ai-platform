@@ -43,6 +43,11 @@ return [
     'evolution' => [
         'base_url' => env('EVOLUTION_API_URL'),
         'api_key' => env('EVOLUTION_API_KEY'),
+        'webhook_url' => env('EVOLUTION_WEBHOOK_URL'),
+        'test_allowed_phones' => array_values(array_filter(array_map(
+            'trim',
+            explode(',', (string) env('EVOLUTION_TEST_ALLOWED_PHONES', '')),
+        ))),
     ],
 
     'google' => [

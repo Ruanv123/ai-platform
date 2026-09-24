@@ -75,12 +75,15 @@ final class MetaMediaDownloader
     {
         $extension = match ($mimeType) {
             'audio/ogg' => 'ogg',
+            'audio/mp4' => 'm4a',
             'audio/mpeg' => 'mp3',
             'application/pdf' => 'pdf',
             'application/vnd.openxmlformats-officedocument.wordprocessingml.document' => 'docx',
             'text/plain' => 'txt',
             'image/jpeg' => 'jpg',
             'image/webp' => 'webp',
+            'video/3gpp' => '3gp',
+            'video/mp4' => 'mp4',
             default => 'bin',
         };
 

@@ -6,26 +6,29 @@ use App\Enums\MessageDeliveryStatus;
 use App\Enums\MessageDirection;
 use App\Models\Channel;
 use App\Models\Message;
+use Illuminate\Support\Str;
 
 final class EvolutionGoReadReceiptStrategy extends EvolutionGoMessageStrategy
 {
     /**
-     * Update the outgoing message named by the provider receipt.
+     * Mark the outgoing messages the Contact read or played, as named by the provider receipt.
      *
      * @param  array<string, mixed>  $payload
      */
     public function handle(Channel $channel, array $payload): ?Message
     {
-        $providerMessageId = $this->providerMessageId($payload);
+        $messageIds = collect((array) data_get($payload, 'data.MessageIDs'))
+            ->filter(fn (mixed $id): bool => is_string($id) && filled($id))
+            ->values();
 
-        if ($providerMessageId === null) {
+        if ($messageIds->isEmpty() || ! in_array(Str::lower((string) data_get($payload, 'data.Type')), ['read', 'played'], true)) {
             return null;
         }
 
         Message::query()
             ->where('channel_id', $channel->getKey())
             ->where('direction', MessageDirection::Outgoing)
-            ->where('provider_message_id', $providerMessageId)
+            ->whereIn('provider_message_id', $messageIds)
             ->update([
                 'delivery_status' => MessageDeliveryStatus::Read,
             ]);

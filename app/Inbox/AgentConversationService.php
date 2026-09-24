@@ -6,6 +6,7 @@ use App\Enums\ChannelStatus;
 use App\Enums\MessageDeliveryStatus;
 use App\Enums\MessageDirection;
 use App\Events\HumanConversationUpdated;
+use App\Jobs\RespondToWhatsAppMessage;
 use App\Models\AgentConversationAudit;
 use App\Models\AgentConversationState;
 use App\Models\Channel;
@@ -62,6 +63,223 @@ final class AgentConversationService
             ->exists();
     }
 
+    public function recordActivityWhilePaused(Contact $contact, Channel $channel, Message $incomingMessage): bool
+    {
+        $returnAction = null;
+        $wasPaused = DB::transaction(function () use ($contact, $channel, $incomingMessage, &$returnAction): bool {
+            $state = $this->lockExistingState($contact, $channel);
+            if ($state === null || ! $state->is_paused) {
+                return false;
+            }
+
+            $this->renewPause($state);
+
+            if ($state->return_requested_at !== null
+                && $state->return_started_at === null
+                && $state->return_attempted_message_id !== $incomingMessage->getKey()) {
+                $returnAction = $state->return_action ?? 'returned';
+                $state->forceFill([
+                    'return_requested_at' => now(),
+                    'return_attempted_message_id' => $incomingMessage->getKey(),
+                ])->save();
+            }
+
+            HumanConversationUpdated::dispatch($state->team_id, $state->contact_id, $state->channel_id, 'activity');
+
+            return true;
+        });
+
+        if ($wasPaused && $returnAction !== null) {
+            RespondToWhatsAppMessage::dispatch(
+                $channel->getKey(),
+                (int) $contact->getKey(),
+                returnFromPause: true,
+                returnAction: $returnAction,
+            );
+        }
+
+        return $wasPaused;
+    }
+
+    public function returnToAgent(Contact $contact, Channel $channel, User $user): void
+    {
+        $this->requestReturn($contact, $channel, $user, 'returned');
+    }
+
+    public function returnExpired(Contact $contact, Channel $channel): void
+    {
+        $this->requestReturn($contact, $channel, null, 'expired');
+    }
+
+    public function beginReturnAttempt(Channel $channel, Contact $contact, Message $pendingMessage): bool
+    {
+        return DB::transaction(function () use ($channel, $contact, $pendingMessage): bool {
+            $state = $this->lockExistingState($contact, $channel);
+            if ($state === null
+                || ! $state->is_paused
+                || $state->return_requested_at === null
+                || $state->return_started_at !== null
+                || $state->return_attempted_message_id !== $pendingMessage->getKey()) {
+                return false;
+            }
+
+            $state->forceFill(['return_started_at' => now()])->save();
+
+            return true;
+        });
+    }
+
+    public function completeReturnWithoutResponse(Channel $channel, Contact $contact): void
+    {
+        DB::transaction(function () use ($channel, $contact): void {
+            $state = $this->lockExistingState($contact, $channel);
+            if ($state === null || ! $state->is_paused || $state->return_requested_at === null) {
+                return;
+            }
+
+            $pendingMessage = $this->latestPendingIncomingMessage($contact, $channel);
+            if ($pendingMessage !== null && ! $this->hasSuccessfulReplyAfter($contact, $channel, $pendingMessage)) {
+                return;
+            }
+
+            $this->markPendingIncomingMessagesAsResponded($contact, $channel);
+            $this->clearPause($state, $state->return_requested_by_user_id, $state->return_action ?? 'returned');
+        });
+    }
+
+    public function completeReturnResponse(
+        Channel $channel,
+        Contact $contact,
+        Message $pendingMessage,
+        string $content,
+    ): bool {
+        $retryWithLatestMessage = false;
+        $completed = DB::transaction(function () use ($channel, $contact, $pendingMessage, $content, &$retryWithLatestMessage): bool {
+            $state = $this->lockExistingState($contact, $channel);
+            if ($state === null
+                || ! $state->is_paused
+                || $state->return_started_at === null
+                || $state->return_attempted_message_id !== $pendingMessage->getKey()) {
+                return false;
+            }
+
+            $latestPendingMessage = $this->latestPendingIncomingMessage($contact, $channel);
+            if ($latestPendingMessage === null) {
+                $this->clearPause($state, $state->return_requested_by_user_id, $state->return_action ?? 'returned');
+
+                return true;
+            }
+
+            if ($latestPendingMessage->isNot($pendingMessage)) {
+                $state->forceFill([
+                    'return_attempted_message_id' => $latestPendingMessage->getKey(),
+                    'return_started_at' => null,
+                    'return_requested_at' => now(),
+                ])->save();
+                $retryWithLatestMessage = true;
+
+                return false;
+            }
+
+            if ($this->hasSuccessfulReplyAfter($contact, $channel, $latestPendingMessage)) {
+                $this->markPendingIncomingMessagesAsResponded($contact, $channel);
+                $this->clearPause($state, $state->return_requested_by_user_id, $state->return_action ?? 'returned');
+
+                return true;
+            }
+
+            if ($this->customerCareWindow->hasExpired($channel, $latestPendingMessage)) {
+                $this->recordFailedAgentResponse($channel, $contact, $content, 'customer_care_window_closed');
+                $state->forceFill(['return_started_at' => null])->save();
+                HumanConversationUpdated::dispatch($state->team_id, $state->contact_id, $state->channel_id, 'failed');
+
+                return false;
+            }
+
+            try {
+                $this->outputAdapterFactory->make($channel)->sendText($channel, $contact, $content);
+            } catch (Throwable $exception) {
+                report($exception);
+                $this->recordFailedAgentResponse($channel, $contact, $content, 'provider_error');
+                $state->forceFill(['return_started_at' => null])->save();
+                HumanConversationUpdated::dispatch($state->team_id, $state->contact_id, $state->channel_id, 'failed');
+
+                return false;
+            }
+
+            $this->markPendingIncomingMessagesAsResponded($contact, $channel);
+            $this->clearPause($state, $state->return_requested_by_user_id, $state->return_action ?? 'returned');
+
+            return true;
+        });
+
+        if ($retryWithLatestMessage) {
+            RespondToWhatsAppMessage::dispatch(
+                $channel->getKey(),
+                (int) $contact->getKey(),
+                returnFromPause: true,
+            );
+        }
+
+        return $completed;
+    }
+
+    public function recordFailedReturnAttempt(
+        string|int $channelId,
+        int $contactId,
+        ?int $pendingMessageId,
+        ?Throwable $exception,
+    ): void {
+        $channel = Channel::withoutGlobalScopes()->find($channelId);
+        $contact = $channel === null
+            ? null
+            : Contact::withoutGlobalScopes()->whereKey($contactId)->where('team_id', $channel->team_id)->first();
+        if ($channel === null || $contact === null || $pendingMessageId === null) {
+            return;
+        }
+
+        $retryWithLatestMessage = false;
+        DB::transaction(function () use ($channel, $contact, $pendingMessageId, &$retryWithLatestMessage): void {
+            $state = $this->lockExistingState($contact, $channel);
+            if ($state === null
+                || ! $state->is_paused
+                || $state->return_attempted_message_id !== $pendingMessageId) {
+                return;
+            }
+
+            $this->recordFailedAgentResponse(
+                $channel,
+                $contact,
+                'O Agente não conseguiu responder. A Pausa da IA e a atribuição foram mantidas.',
+                'agent_response_failed',
+            );
+            $state->forceFill(['return_started_at' => null])->save();
+
+            $latestPendingMessage = $this->latestPendingIncomingMessage($contact, $channel);
+            if ($latestPendingMessage !== null && $latestPendingMessage->getKey() !== $pendingMessageId) {
+                $state->forceFill([
+                    'return_requested_at' => now(),
+                    'return_attempted_message_id' => $latestPendingMessage->getKey(),
+                ])->save();
+                $retryWithLatestMessage = true;
+            }
+
+            HumanConversationUpdated::dispatch($state->team_id, $state->contact_id, $state->channel_id, 'failed');
+        });
+
+        if ($retryWithLatestMessage) {
+            RespondToWhatsAppMessage::dispatch(
+                $channel->getKey(),
+                (int) $contact->getKey(),
+                returnFromPause: true,
+            );
+        }
+
+        if ($exception !== null) {
+            report($exception);
+        }
+    }
+
     public function runIfUnpaused(Channel $channel, Contact $contact, callable $action): bool
     {
         return DB::transaction(function () use ($channel, $contact, $action): bool {
@@ -98,6 +316,11 @@ final class AgentConversationService
                     'expires_at' => $now->copy()->addMinutes($durationMinutes),
                     'pause_duration_minutes' => $durationMinutes,
                     'last_activity_at' => $now,
+                    'return_requested_at' => null,
+                    'return_started_at' => null,
+                    'return_requested_by_user_id' => null,
+                    'return_attempted_message_id' => null,
+                    'return_action' => null,
                 ])->save();
 
                 $this->recordAudit($state, null, $user->getKey(), $user->getKey(), 'paused');
@@ -133,6 +356,11 @@ final class AgentConversationService
             $state->forceFill([
                 'assigned_user_id' => $user->getKey(),
                 'last_activity_at' => now(),
+                'return_requested_at' => null,
+                'return_started_at' => null,
+                'return_requested_by_user_id' => null,
+                'return_attempted_message_id' => null,
+                'return_action' => null,
             ])->save();
 
             $this->recordAudit($state, $previousAssigneeId, $user->getKey(), $user->getKey(), 'taken_over');
@@ -181,6 +409,7 @@ final class AgentConversationService
                     $user,
                     $type,
                     $content,
+                    'customer_care_window_closed',
                 );
             }
 
@@ -198,13 +427,18 @@ final class AgentConversationService
                     $user,
                     $type,
                     $type === 'template' ? $this->templateContent($template, $parameters) : $content,
+                    'provider_error',
                 );
             }
 
             $message->forceFill(['sent_by_user_id' => $user->getKey()])->save();
+            $this->renewPause($state);
             $state->forceFill([
-                'last_activity_at' => now(),
-                'expires_at' => now()->addMinutes((int) $state->pause_duration_minutes),
+                'return_requested_at' => null,
+                'return_started_at' => null,
+                'return_requested_by_user_id' => null,
+                'return_attempted_message_id' => null,
+                'return_action' => null,
             ])->save();
             $this->markPendingIncomingMessagesAsResponded($contact, $channel);
             HumanConversationUpdated::dispatch($state->team_id, $state->contact_id, $state->channel_id, 'message');
@@ -225,10 +459,26 @@ final class AgentConversationService
             'expires_at' => $now->copy()->addMinutes($durationMinutes),
             'pause_duration_minutes' => $durationMinutes,
             'last_activity_at' => $now,
+            'return_requested_at' => null,
+            'return_started_at' => null,
+            'return_requested_by_user_id' => null,
+            'return_attempted_message_id' => null,
+            'return_action' => null,
         ])->save();
 
         $this->recordAudit($state, null, $user->getKey(), $user->getKey(), 'paused');
         HumanConversationUpdated::dispatch($state->team_id, $state->contact_id, $state->channel_id, 'paused');
+    }
+
+    private function renewPause(AgentConversationState $state): void
+    {
+        $now = now();
+        $durationMinutes = max(1, (int) $state->pause_duration_minutes);
+
+        $state->forceFill([
+            'last_activity_at' => $now,
+            'expires_at' => $now->copy()->addMinutes($durationMinutes),
+        ])->save();
     }
 
     private function lastIncomingMessage(Contact $contact, Channel $channel): ?Message
@@ -247,6 +497,7 @@ final class AgentConversationService
         User $user,
         string $type,
         string $content,
+        string $failureReason,
     ): Message {
         $message = Message::create([
             'team_id' => $channel->team_id,
@@ -258,11 +509,141 @@ final class AgentConversationService
             'sent_by_user_id' => $user->getKey(),
             'content' => $content,
             'delivery_status' => MessageDeliveryStatus::Failed,
+            'failure_reason' => $failureReason,
         ]);
 
         HumanConversationUpdated::dispatch($channel->team_id, $contact->getKey(), (string) $channel->getKey(), 'failed');
 
         return $message;
+    }
+
+    private function requestReturn(Contact $contact, Channel $channel, ?User $user, string $action): void
+    {
+        $shouldDispatch = DB::transaction(function () use ($contact, $channel, $user, $action): bool {
+            $state = $this->lockExistingState($contact, $channel);
+            if ($state === null || ! $state->is_paused) {
+                return false;
+            }
+
+            if ($user !== null && $state->assigned_user_id !== $user->getKey()) {
+                throw new ConflictHttpException('Somente a pessoa responsável pode devolver esta conversa ao Agente.');
+            }
+
+            if ($action === 'expired' && ($state->expires_at === null || $state->expires_at->isFuture())) {
+                return false;
+            }
+
+            $pendingMessage = $this->latestPendingIncomingMessage($contact, $channel);
+            if ($pendingMessage === null) {
+                $this->clearPause($state, $user?->getKey(), $action);
+
+                return false;
+            }
+
+            if ($this->hasSuccessfulReplyAfter($contact, $channel, $pendingMessage)) {
+                $this->markPendingIncomingMessagesAsResponded($contact, $channel);
+                $this->clearPause($state, $user?->getKey(), $action);
+
+                return false;
+            }
+
+            if ($state->return_attempted_message_id === $pendingMessage->getKey()) {
+                return false;
+            }
+
+            $state->forceFill([
+                'return_requested_at' => now(),
+                'return_started_at' => null,
+                'return_requested_by_user_id' => $user?->getKey(),
+                'return_attempted_message_id' => $pendingMessage->getKey(),
+                'return_action' => $action,
+            ])->save();
+            HumanConversationUpdated::dispatch($state->team_id, $state->contact_id, $state->channel_id, 'return_requested');
+
+            return true;
+        });
+
+        if ($shouldDispatch) {
+            RespondToWhatsAppMessage::dispatch(
+                $channel->getKey(),
+                (int) $contact->getKey(),
+                returnFromPause: true,
+                returnAction: $action,
+            );
+        }
+    }
+
+    private function clearPause(AgentConversationState $state, ?int $actorUserId, string $action): void
+    {
+        $previousAssigneeId = $state->assigned_user_id;
+        $state->forceFill([
+            'is_paused' => false,
+            'assigned_user_id' => null,
+            'paused_at' => null,
+            'expires_at' => null,
+            'pause_duration_minutes' => null,
+            'last_activity_at' => null,
+            'return_requested_at' => null,
+            'return_started_at' => null,
+            'return_requested_by_user_id' => null,
+            'return_attempted_message_id' => null,
+            'return_action' => null,
+        ])->save();
+
+        $this->recordAudit($state, $previousAssigneeId, null, $actorUserId, $action);
+        HumanConversationUpdated::dispatch($state->team_id, $state->contact_id, $state->channel_id, $action);
+    }
+
+    private function recordFailedAgentResponse(
+        Channel $channel,
+        Contact $contact,
+        string $content,
+        string $failureReason,
+    ): Message {
+        return Message::create([
+            'team_id' => $channel->team_id,
+            'contact_id' => $contact->getKey(),
+            'channel_id' => $channel->getKey(),
+            'direction' => MessageDirection::Outgoing,
+            'payload_type' => 'text',
+            'provider_message_id' => null,
+            'content' => $content,
+            'delivery_status' => MessageDeliveryStatus::Failed,
+            'failure_reason' => $failureReason,
+        ]);
+    }
+
+    private function latestPendingIncomingMessage(Contact $contact, Channel $channel): ?Message
+    {
+        return $contact->messages()
+            ->where('channel_id', $channel->getKey())
+            ->where('direction', MessageDirection::Incoming)
+            ->where('is_responded', false)
+            ->latest('created_at')
+            ->latest('id')
+            ->first();
+    }
+
+    private function hasSuccessfulReplyAfter(Contact $contact, Channel $channel, Message $incoming): bool
+    {
+        $outgoing = $contact->messages()
+            ->where('channel_id', $channel->getKey())
+            ->where('direction', MessageDirection::Outgoing)
+            ->whereIn('delivery_status', [
+                MessageDeliveryStatus::Sent,
+                MessageDeliveryStatus::Delivered,
+                MessageDeliveryStatus::Read,
+            ])
+            ->latest('created_at')
+            ->latest('id')
+            ->first();
+
+        if ($outgoing === null || $outgoing->created_at === null || $incoming->created_at === null) {
+            return false;
+        }
+
+        return $outgoing->created_at->greaterThan($incoming->created_at)
+            || ($outgoing->created_at->equalTo($incoming->created_at) && $outgoing->getKey() > $incoming->getKey());
     }
 
     /** @param list<string> $parameters */
@@ -311,6 +692,16 @@ final class AgentConversationService
             ->where('channel_id', $channel->getKey())
             ->lockForUpdate()
             ->firstOrFail();
+    }
+
+    private function lockExistingState(Contact $contact, Channel $channel): ?AgentConversationState
+    {
+        return AgentConversationState::withoutGlobalScopes()
+            ->where('team_id', $channel->team_id)
+            ->where('contact_id', $contact->getKey())
+            ->where('channel_id', $channel->getKey())
+            ->lockForUpdate()
+            ->first();
     }
 
     private function recordAudit(

@@ -19,7 +19,7 @@ type CompanyTeam = Pick<
     | 'phone'
     | 'publicEmail'
     | 'address'
->;
+> & { agentPauseDurationMinutes: number };
 
 type Props = {
     team: CompanyTeam;
@@ -187,6 +187,44 @@ export default function Company({ team, segments, canUpdate }: Props) {
                                     <InputError message={errors.address} />
                                 </div>
 
+                                <div className="grid gap-2">
+                                    <Label>Prazo da Pausa da IA</Label>
+                                    <p className="text-muted-foreground text-sm">
+                                        O prazo reinicia quando uma mensagem chega ou é enviada com sucesso durante o atendimento humano.
+                                    </p>
+                                    <div className="grid gap-3 sm:grid-cols-2">
+                                        <div className="grid gap-2">
+                                            <Label htmlFor="agent_pause_duration_hours">Horas</Label>
+                                            <Input
+                                                id="agent_pause_duration_hours"
+                                                name="agent_pause_duration_hours"
+                                                type="number"
+                                                min="0"
+                                                max="24"
+                                                step="1"
+                                                defaultValue={Math.floor(team.agentPauseDurationMinutes / 60)}
+                                                required
+                                            />
+                                            <InputError message={errors.agent_pause_duration_hours} />
+                                        </div>
+                                        <div className="grid gap-2">
+                                            <Label htmlFor="agent_pause_duration_minutes_part">Minutos</Label>
+                                            <Input
+                                                id="agent_pause_duration_minutes_part"
+                                                name="agent_pause_duration_minutes_part"
+                                                type="number"
+                                                min="0"
+                                                max="59"
+                                                step="1"
+                                                defaultValue={team.agentPauseDurationMinutes % 60}
+                                                required
+                                            />
+                                            <InputError message={errors.agent_pause_duration_minutes_part} />
+                                            <InputError message={errors.agent_pause_duration_minutes} />
+                                        </div>
+                                    </div>
+                                </div>
+
                                 <div className="flex items-center gap-4">
                                     <Button
                                         type="submit"
@@ -252,6 +290,10 @@ export default function Company({ team, segments, canUpdate }: Props) {
                             label="Endereço"
                             value={team.address || 'Não informado'}
                             preserveWhitespace
+                        />
+                        <CompanyDetail
+                            label="Prazo da Pausa da IA"
+                            value={`${Math.floor(team.agentPauseDurationMinutes / 60)} h ${team.agentPauseDurationMinutes % 60} min`}
                         />
                     </div>
                 </div>

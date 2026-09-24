@@ -113,6 +113,81 @@ it('updates the matching outgoing message when the test provider sends a read re
     $this->assertDatabaseCount('messages', 1);
 });
 
+it('records a message typed on the paired phone to someone else as outgoing history', function () {
+    createWhatsAppTestWebhookChannel();
+    $payload = whatsappTestWebhookFixture('message-text');
+    $payload['data']['Info']['IsFromMe'] = true;
+    $payload['data']['Info']['Sender'] = '11313078092023@lid';
+    $payload['data']['Info']['Chat'] = '5511999999999@s.whatsapp.net';
+
+    $this->postJson(route('webhooks.whatsapp-test'), $payload)->assertOk();
+
+    $this->assertDatabaseHas('messages', [
+        'provider_message_id' => 'test-message-text-1',
+        'direction' => MessageDirection::Outgoing->value,
+    ]);
+});
+
+it('ignores group messages instead of creating a Contact for them', function () {
+    createWhatsAppTestWebhookChannel();
+    $payload = whatsappTestWebhookFixture('message-text');
+    $payload['data']['Info']['Chat'] = '120363430751518641@g.us';
+    $payload['data']['Info']['IsGroup'] = true;
+    $payload['data']['Info']['SenderAlt'] = '233522270871781@lid';
+
+    $this->postJson(route('webhooks.whatsapp-test'), $payload)->assertOk();
+
+    $this->assertDatabaseCount('messages', 0);
+    $this->assertDatabaseCount('contacts', 0);
+});
+
+it('resolves the Contact phone from the alternate JID when the chat is addressed by an opaque lid', function () {
+    createWhatsAppTestWebhookChannel();
+    $incoming = whatsappTestWebhookFixture('message-text');
+    $incoming['data']['Info']['Chat'] = '11313078092023@lid';
+    $incoming['data']['Info']['Sender'] = '11313078092023@lid';
+    $incoming['data']['Info']['SenderAlt'] = '5511999999999@s.whatsapp.net';
+    $sent = whatsappTestWebhookFixture('send-message');
+    $sent['data']['Info']['Chat'] = '11313078092023@lid';
+    $sent['data']['Info']['RecipientAlt'] = '5511999999999@s.whatsapp.net';
+
+    $this->postJson(route('webhooks.whatsapp-test'), $incoming)->assertOk();
+    $this->postJson(route('webhooks.whatsapp-test'), $sent)->assertOk();
+
+    $this->assertDatabaseCount('contacts', 1);
+    $this->assertDatabaseHas('contacts', ['phone' => '5511999999999', 'name' => 'Ana Souza']);
+    $this->assertDatabaseCount('messages', 2);
+});
+
+it('marks every message named by a read receipt and ignores receipts that are not reads', function () {
+    $channel = createWhatsAppTestWebhookChannel();
+    $contact = Contact::factory()->for($channel->team)->create(['phone' => '5511999999999']);
+    $messages = collect(['sent-1', 'sent-2'])->map(fn (string $id): Message => Message::factory()
+        ->for($contact)
+        ->for($channel)
+        ->outgoing()
+        ->create(['provider_message_id' => $id, 'delivery_status' => MessageDeliveryStatus::Sent]));
+    $delivered = whatsappTestWebhookFixture('read-receipt');
+    $delivered['data']['MessageIDs'] = ['sent-1', 'sent-2'];
+    $delivered['data']['Type'] = 'delivered';
+    $read = $delivered;
+    $read['data']['Type'] = 'read';
+
+    $this->postJson(route('webhooks.whatsapp-test'), $delivered)->assertOk();
+    expect($messages->every(fn (Message $message): bool => $message->fresh()->delivery_status === MessageDeliveryStatus::Sent))->toBeTrue();
+
+    $this->postJson(route('webhooks.whatsapp-test'), $read)->assertOk();
+    expect($messages->every(fn (Message $message): bool => $message->fresh()->delivery_status === MessageDeliveryStatus::Read))->toBeTrue();
+});
+
+it('rejects a webhook for an instance it does not know, using the native instance name', function () {
+    createWhatsAppTestWebhookChannel();
+    $payload = whatsappTestWebhookFixture('message-text');
+    $payload['instanceName'] = 'someone-else';
+
+    $this->postJson(route('webhooks.whatsapp-test'), $payload)->assertForbidden();
+});
+
 it('registers unsupported test message types with their raw provider type', function () {
     createWhatsAppTestWebhookChannel();
 
@@ -137,15 +212,15 @@ it('does not register the same provider message twice', function () {
     $this->assertDatabaseCount('contacts', 1);
 });
 
-it('stores the QR code pushed for the pairing session', function () {
+it('ignores the QR code pushed for the pairing session since it is read live from Evolution Go', function () {
     $channel = createWhatsAppTestWebhookChannel();
 
     $response = $this->postJson(route('webhooks.whatsapp-test'), whatsappTestWebhookFixture('qrcode'));
 
     $response->assertOk();
-    expect($channel->whatsappTestConnection->fresh()->qrcode)
-        ->toBe('data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=');
-    expect($channel->fresh()->status)->toBe(ChannelStatus::NotConfigured);
+    expect($channel->whatsappTestConnection->fresh()->qrcode)->toBeNull()
+        ->and($channel->fresh()->status)->toBe(ChannelStatus::NotConfigured);
+    $this->assertDatabaseCount('messages', 0);
 });
 
 it('connects the Channel and clears the QR code once the session pairs', function () {
@@ -173,13 +248,13 @@ it('marks the Channel in error when the pairing session logs out', function () {
 it('uses the provider timestamp when messages arrive out of order', function () {
     $channel = createWhatsAppTestWebhookChannel();
     $latestPayload = whatsappTestWebhookFixture('message-text');
-    $latestPayload['data']['key']['id'] = 'test-message-latest';
-    $latestPayload['data']['messageTimestamp'] = 1760000100;
-    $latestPayload['data']['message']['conversation'] = 'Mensagem mais nova';
+    $latestPayload['data']['Info']['ID'] = 'test-message-latest';
+    $latestPayload['data']['Info']['Timestamp'] = '2025-10-09T08:55:00Z';
+    $latestPayload['data']['Message']['conversation'] = 'Mensagem mais nova';
     $oldPayload = whatsappTestWebhookFixture('message-text');
-    $oldPayload['data']['key']['id'] = 'test-message-old';
-    $oldPayload['data']['messageTimestamp'] = 1760000000;
-    $oldPayload['data']['message']['conversation'] = 'Mensagem mais antiga';
+    $oldPayload['data']['Info']['ID'] = 'test-message-old';
+    $oldPayload['data']['Info']['Timestamp'] = '2025-10-09T08:53:20Z';
+    $oldPayload['data']['Message']['conversation'] = 'Mensagem mais antiga';
 
     $this->postJson(route('webhooks.whatsapp-test'), $latestPayload)->assertOk();
     $this->postJson(route('webhooks.whatsapp-test'), $oldPayload)->assertOk();

@@ -19,6 +19,6 @@ final class EvolutionGoVideoStrategy extends EvolutionGoMessageStrategy
      */
     protected function content(Channel $channel, array $payload): string
     {
-        return $this->videoContent($payload);
+        return $this->videoContent($channel, $payload);
     }
 }

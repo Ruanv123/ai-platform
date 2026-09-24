@@ -30,6 +30,11 @@ class AgentConversationStateFactory extends Factory
             'expires_at' => null,
             'pause_duration_minutes' => null,
             'last_activity_at' => null,
+            'return_requested_at' => null,
+            'return_started_at' => null,
+            'return_requested_by_user_id' => null,
+            'return_attempted_message_id' => null,
+            'return_action' => null,
         ];
     }
 }

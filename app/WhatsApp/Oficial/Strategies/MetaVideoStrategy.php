@@ -15,6 +15,6 @@ final class MetaVideoStrategy extends MetaMessageStrategy
     /** @param array<string, mixed> $payload */
     protected function content(Channel $channel, array $payload): string
     {
-        return $this->videoContent($payload);
+        return $this->videoContent($channel, $payload);
     }
 }

@@ -77,7 +77,7 @@ it('records a provider text response for each WhatsApp channel', function (Chann
     Http::fake([
         $sendUrl => Http::response($channelType === ChannelType::WhatsApp
             ? ['messages' => [['id' => $providerMessageId]]]
-            : ['key' => ['id' => $providerMessageId]]),
+            : ['data' => ['Info' => ['ID' => $providerMessageId]]]),
     ]);
 
     $outgoingMessage = $adapter->sendText($channel, $contact, 'Resposta do Agente.');

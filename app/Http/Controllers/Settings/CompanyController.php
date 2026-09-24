@@ -33,6 +33,7 @@ class CompanyController extends Controller
                 'phone' => $team->phone,
                 'publicEmail' => $team->public_email,
                 'address' => $team->address,
+                'agentPauseDurationMinutes' => $team->agent_pause_duration_minutes,
             ],
             'segments' => TeamSegment::options(),
             'canUpdate' => $request->user()->can('update', $team),
@@ -48,7 +49,11 @@ class CompanyController extends Controller
 
         abort_if(! $team, 404);
 
-        $team->update($request->validated());
+        $validated = $request->safe()->except([
+            'agent_pause_duration_hours',
+            'agent_pause_duration_minutes_part',
+        ]);
+        $team->update($validated);
 
         Inertia::flash('toast', ['type' => 'success', 'message' => 'Dados da Empresa atualizados.']);
 

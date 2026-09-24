@@ -1,16 +1,35 @@
 {
-    "event": "SEND_MESSAGE",
-    "instance": "local-development",
     "data": {
-        "key": {
-            "remoteJid": "5511999999999@s.whatsapp.net",
-            "fromMe": true,
-            "id": "test-message-send-1"
+        "Info": {
+            "AddressingMode": "",
+            "BroadcastListOwner": "",
+            "Category": "",
+            "Chat": "5511999999999@s.whatsapp.net",
+            "Edit": "",
+            "ID": "test-message-send-1",
+            "IsFromMe": true,
+            "IsGroup": false,
+            "MediaType": "",
+            "Multicast": false,
+            "PushName": "ruan",
+            "RecipientAlt": "",
+            "Sender": "5531999990000:45@s.whatsapp.net",
+            "SenderAlt": "",
+            "ServerID": 0,
+            "Timestamp": "2025-10-09T08:53:25Z",
+            "Type": "Conversation",
+            "DeviceSentMeta": null
         },
-        "message": {
+        "IsBotInvoke": false,
+        "IsEdit": false,
+        "IsEphemeral": false,
+        "IsViewOnce": false,
+        "Message": {
             "conversation": "Resposta enviada pelo Agente."
-        },
-        "messageType": "conversation",
-        "messageTimestamp": 1760000005
-    }
+        }
+    },
+    "event": "SendMessage",
+    "instanceId": "11111111-1111-4111-8111-111111111111",
+    "instanceName": "local-development",
+    "instanceToken": "fixture-instance-token"
 }

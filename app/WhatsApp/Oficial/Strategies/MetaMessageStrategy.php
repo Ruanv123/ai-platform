@@ -7,15 +7,23 @@ use App\Models\Channel;
 use App\Models\Contact;
 use App\Models\Message;
 use App\WhatsApp\Media\IncomingMediaResolver;
+use App\WhatsApp\Media\IncomingMediaStorage;
 use App\WhatsApp\Oficial\MetaMediaDownloader;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\DB;
 use Throwable;
 
 abstract class MetaMessageStrategy implements MetaStrategy
 {
+    /** @var array{contents: string, mime_type: string|null, filename: string}|null */
+    private ?array $originalMedia = null;
+
+    private bool $mediaWasExpected = false;
+
     public function __construct(
         protected readonly IncomingMediaResolver $mediaResolver,
         protected readonly MetaMediaDownloader $mediaDownloader,
+        protected readonly IncomingMediaStorage $mediaStorage,
     ) {}
 
     /**
@@ -48,6 +56,7 @@ abstract class MetaMessageStrategy implements MetaStrategy
 
         $contact->save();
 
+        $content = $this->content($channel, $payload);
         $message = new Message([
             'team_id' => $channel->team_id,
             'contact_id' => $contact->getKey(),
@@ -55,7 +64,7 @@ abstract class MetaMessageStrategy implements MetaStrategy
             'direction' => MessageDirection::Incoming,
             'payload_type' => $this->eventType($payload),
             'provider_message_id' => $providerMessageId,
-            'content' => $this->content($channel, $payload),
+            'content' => $content,
         ]);
         $timestamp = $this->providerTimestamp($messageData);
 
@@ -63,7 +72,10 @@ abstract class MetaMessageStrategy implements MetaStrategy
             $message->created_at = $timestamp;
         }
 
-        $message->save();
+        DB::transaction(function () use ($message): void {
+            $message->save();
+            $this->persistOriginalMedia($message);
+        });
 
         return $message;
     }
@@ -89,6 +101,7 @@ abstract class MetaMessageStrategy implements MetaStrategy
         string $type,
         ?string $caption,
     ): ?string {
+        $this->mediaWasExpected = true;
         $media = $this->message($payload)[$type] ?? null;
 
         if (! is_array($media)) {
@@ -108,6 +121,7 @@ abstract class MetaMessageStrategy implements MetaStrategy
                 $this->stringValue($media, 'filename'),
                 $this->stringValue($media, 'mime_type'),
             );
+            $this->originalMedia = $downloaded;
 
             return $this->mediaResolver->withCaption(
                 $caption,
@@ -121,11 +135,49 @@ abstract class MetaMessageStrategy implements MetaStrategy
     /**
      * @param  array<string, mixed>  $payload
      */
-    protected function videoContent(array $payload): string
+    protected function videoContent(Channel $channel, array $payload): string
     {
+        $this->mediaWasExpected = true;
+
+        try {
+            $media = $this->message($payload)['video'] ?? null;
+            $mediaId = is_array($media) ? $this->stringValue($media, 'id') : null;
+
+            if ($mediaId !== null) {
+                $this->originalMedia = $this->mediaDownloader->download(
+                    $channel,
+                    $mediaId,
+                    $this->stringValue($media, 'filename'),
+                    $this->stringValue($media, 'mime_type'),
+                );
+            }
+        } catch (Throwable) {
+            $this->originalMedia = null;
+        }
+
         return $this->mediaResolver->videoWarning(
             $this->stringValue($this->message($payload), 'video.caption'),
         );
+    }
+
+    private function persistOriginalMedia(Message $message): void
+    {
+        if (! $this->mediaWasExpected) {
+            return;
+        }
+
+        if ($this->originalMedia === null) {
+            $this->mediaStorage->markUnavailable($message);
+
+            return;
+        }
+
+        try {
+            $this->mediaStorage->store($message, $this->originalMedia);
+        } catch (Throwable $exception) {
+            report($exception);
+            $this->mediaStorage->markUnavailable($message);
+        }
     }
 
     /**

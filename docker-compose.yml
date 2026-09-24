@@ -37,6 +37,8 @@ services:
             WEBHOOK_FILES: 'true'
             CONNECT_ON_STARTUP: 'true'
             OS_NAME: Evolution GO
+        extra_hosts:
+            - 'host.docker.internal:host-gateway'
         ports:
             - '${EVOLUTION_PORT:-8080}:8080'
         volumes:

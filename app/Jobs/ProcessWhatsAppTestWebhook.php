@@ -11,6 +11,7 @@ use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
+use Illuminate\Support\Str;
 
 class ProcessWhatsAppTestWebhook implements ShouldBeUnique, ShouldQueue
 {
@@ -40,17 +41,18 @@ class ProcessWhatsAppTestWebhook implements ShouldBeUnique, ShouldQueue
         $processor->process($channel, $this->payload);
     }
 
+    /**
+     * Deduplicate redelivered Message and Receipt events; state events carry no identity and are never deduplicated.
+     */
     public function uniqueId(): string
     {
-        $providerMessageId = data_get($this->payload, 'data.key.id')
-            ?? data_get($this->payload, 'data.message.key.id')
-            ?? data_get($this->payload, 'data.messageId')
-            ?? data_get($this->payload, 'data.message_id')
-            ?? data_get($this->payload, 'data.id');
+        $identity = data_get($this->payload, 'data.Info.ID')
+            ?? collect((array) data_get($this->payload, 'data.MessageIDs'))->filter()->sort()->implode(',')
+            ?: null;
 
-        $identity = is_scalar($providerMessageId) && filled($providerMessageId)
-            ? (string) $providerMessageId
-            : hash('sha256', json_encode($this->payload, JSON_THROW_ON_ERROR));
+        $identity = is_scalar($identity) && filled($identity)
+            ? (string) $identity
+            : Str::uuid()->toString();
 
         $event = is_scalar($this->payload['event'] ?? null)
             ? (string) $this->payload['event']

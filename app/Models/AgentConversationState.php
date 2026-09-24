@@ -21,6 +21,11 @@ use Illuminate\Support\Carbon;
  * @property Carbon|null $expires_at
  * @property int|null $pause_duration_minutes
  * @property Carbon|null $last_activity_at
+ * @property Carbon|null $return_requested_at
+ * @property Carbon|null $return_started_at
+ * @property int|null $return_requested_by_user_id
+ * @property int|null $return_attempted_message_id
+ * @property string|null $return_action
  */
 #[Fillable([
     'team_id',
@@ -32,6 +37,11 @@ use Illuminate\Support\Carbon;
     'expires_at',
     'pause_duration_minutes',
     'last_activity_at',
+    'return_requested_at',
+    'return_started_at',
+    'return_requested_by_user_id',
+    'return_attempted_message_id',
+    'return_action',
 ])]
 class AgentConversationState extends Model
 {
@@ -46,6 +56,8 @@ class AgentConversationState extends Model
             'paused_at' => 'immutable_datetime',
             'expires_at' => 'immutable_datetime',
             'last_activity_at' => 'immutable_datetime',
+            'return_requested_at' => 'immutable_datetime',
+            'return_started_at' => 'immutable_datetime',
         ];
     }
 

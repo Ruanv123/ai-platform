@@ -18,6 +18,7 @@ use App\Http\Controllers\Flows\FlowExecutionController;
 use App\Http\Controllers\Flows\FlowPlaygroundController;
 use App\Http\Controllers\Flows\FlowWebhookController;
 use App\Http\Controllers\InboxController;
+use App\Http\Controllers\InboxMediaController;
 use App\Http\Controllers\Integrations\AgendaCalendarController;
 use App\Http\Controllers\Integrations\IntegrationController;
 use App\Http\Controllers\Integrations\IntegrationWebhookFailureController;
@@ -78,6 +79,8 @@ Route::middleware(['auth', EnsureUserHasTeam::class])->group(function () {
     Route::post('atendimento/{contact}/{channel}/pause-agent', [InboxController::class, 'pauseAgent'])->name('inbox.agent.pause');
     Route::post('atendimento/{contact}/{channel}/take-over-agent', [InboxController::class, 'takeOverAgent'])->name('inbox.agent.take-over');
     Route::post('atendimento/{contact}/{channel}/messages', [InboxController::class, 'storeMessage'])->name('inbox.messages.store');
+    Route::get('atendimento/{contact}/{channel}/messages/{message}/media', [InboxMediaController::class, 'show'])
+        ->name('inbox.messages.media');
     Route::post('atendimento/{contact}/{channel}/consents', [ContactConsentController::class, 'store'])->name('inbox.consents.store');
     Route::post('atendimento/{contact}/{channel}/return', [InboxController::class, 'returnToBot'])->name('inbox.return');
 

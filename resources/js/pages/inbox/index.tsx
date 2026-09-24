@@ -62,6 +62,11 @@ type Message = {
     channel: string | null;
     createdAt: string | null;
     deliveryStatus: string | null;
+    failureReason: string | null;
+    mediaAvailable: boolean;
+    mediaUrl: string | null;
+    mediaFilename: string | null;
+    mediaMimeType: string | null;
 };
 
 type MessagePage = {
@@ -124,6 +129,7 @@ type SelectedConversation = {
     canSend: boolean;
     canPause: boolean;
     canTakeOver: boolean;
+    canReturn: boolean;
 };
 
 type Props = {
@@ -889,6 +895,16 @@ function ConversationThread({
                                 Devolver ao bot
                             </Button>
                         )}
+                        {selected.canReturn && (
+                            <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                onClick={returnConversation}
+                            >
+                                Devolver ao Agente
+                            </Button>
+                        )}
                         <Button
                             type="submit"
                             size="sm"
@@ -918,6 +934,7 @@ function ConversationThread({
 
 function MessageBubble({ message }: { message: Message }) {
     const outgoing = message.direction === 'outgoing';
+    const [mediaUnavailable, setMediaUnavailable] = useState(false);
     let content = message.content;
     if (message.payloadType === 'template' && content !== null) {
         try {
@@ -927,6 +944,13 @@ function MessageBubble({ message }: { message: Message }) {
             content = 'Template aprovado';
         }
     }
+    const isSticker = message.payloadType.toLowerCase().includes('sticker');
+    const mediaType = ['image', 'audio', 'video', 'document'].includes(
+        message.payloadType,
+    )
+        ? message.payloadType
+        : null;
+    const hasMedia = mediaType !== null;
 
     return (
         <div className={cn('flex', outgoing ? 'justify-end' : 'justify-start')}>
@@ -938,12 +962,76 @@ function MessageBubble({ message }: { message: Message }) {
                         : 'bg-background border-border/70 rounded-2xl rounded-bl-sm border',
                 )}
             >
+                {isSticker ? (
+                    <p className="text-muted-foreground text-xs italic">
+                        Figurinha não exibida
+                    </p>
+                ) : mediaType !== null && message.mediaUrl !== null && !mediaUnavailable ? (
+                    <div className="mb-2.5">
+                        {mediaType === 'image' && (
+                            <a href={message.mediaUrl} target="_blank" rel="noreferrer">
+                                <img
+                                    src={message.mediaUrl}
+                                    alt={message.mediaFilename ?? 'Imagem enviada pelo Contato'}
+                                    className="max-h-72 max-w-full rounded-lg object-contain"
+                                    onError={() => setMediaUnavailable(true)}
+                                />
+                            </a>
+                        )}
+                        {mediaType === 'audio' && (
+                            <audio
+                                controls
+                                preload="metadata"
+                                className="max-w-full"
+                                onError={() => setMediaUnavailable(true)}
+                            >
+                                <source src={message.mediaUrl} type={message.mediaMimeType ?? undefined} />
+                                Seu navegador não conseguiu reproduzir este áudio.
+                            </audio>
+                        )}
+                        {mediaType === 'video' && (
+                            <video
+                                controls
+                                preload="metadata"
+                                className="max-h-80 max-w-full rounded-lg"
+                                onError={() => setMediaUnavailable(true)}
+                            >
+                                <source src={message.mediaUrl} type={message.mediaMimeType ?? undefined} />
+                                Seu navegador não conseguiu reproduzir este vídeo.
+                            </video>
+                        )}
+                        {mediaType === 'document' && (
+                            <a
+                                href={message.mediaUrl}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="text-primary underline underline-offset-2"
+                            >
+                                {message.mediaMimeType === 'application/pdf'
+                                    ? `Abrir ${message.mediaFilename ?? 'documento'}`
+                                    : `Baixar ${message.mediaFilename ?? 'documento'}`}
+                            </a>
+                        )}
+                    </div>
+                ) : null}
+                {hasMedia &&
+                    (!message.mediaAvailable ||
+                        message.mediaUrl === null ||
+                        mediaUnavailable) && (
+                    <p className="text-muted-foreground mb-2 text-xs italic">
+                        Mídia original indisponível
+                    </p>
+                )}
                 <p className="break-words whitespace-pre-wrap">
-                    {content ?? `[${message.payloadType}]`}
+                    {isSticker ? null : content ?? `[${message.payloadType}]`}
                 </p>
                 {message.deliveryStatus === 'failed' && (
                     <span className="text-destructive mt-1 block text-[10px] font-semibold">
-                        Falha no envio · tente novamente
+                        {message.failureReason === 'customer_care_window_closed'
+                            ? 'Janela de 24 h encerrada · use um Template'
+                            : message.failureReason === 'agent_response_failed'
+                              ? 'Falha na resposta do Agente · pausa mantida'
+                              : 'Falha no envio · tente novamente'}
                     </span>
                 )}
                 <span

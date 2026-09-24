@@ -124,8 +124,14 @@ final class HumanInboxService
         });
     }
 
-    public function returnToBot(Contact $contact, Channel $channel): void
+    public function returnToBot(Contact $contact, Channel $channel, User $user): bool
     {
+        if ($this->waitingExecution($contact, $channel) === null) {
+            $this->agentConversations->returnToAgent($contact, $channel, $user);
+
+            return true;
+        }
+
         DB::transaction(function () use ($contact, $channel): void {
             $execution = $this->waitingExecution($contact, $channel, lock: true);
             if ($execution === null) {
@@ -134,6 +140,8 @@ final class HumanInboxService
 
             $this->flowEngine->returnToFlow($execution);
         });
+
+        return false;
     }
 
     public function releaseStaleAssignments(): int

@@ -6,19 +6,28 @@ use App\Enums\ChannelType;
 use App\Http\Controllers\Controller;
 use App\Jobs\ProcessWhatsAppTestWebhook;
 use App\Models\WhatsAppTestConnection;
+use App\WhatsApp\Testes\EvolutionGoWebhookFilter;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Str;
 
 class WhatsAppTestWebhookController extends Controller
 {
-    /**
-     * Receive an unsigned Evolution Go webhook for the configured instance.
-     */
+    public function __construct(
+        private readonly EvolutionGoWebhookFilter $filter,
+    ) {}
+
     public function handle(Request $request): Response
     {
-        $payload = $request->json()->all();
+        $body = $request->json()->all();
+        $event = is_scalar($body['event'] ?? null) ? Str::upper((string) $body['event']) : 'UNKNOWN';
+        $instanceName = $body['instanceName'] ?? null;
 
-        $instanceName = $payload['instance'] ?? null;
+        Log::debug('[WHATSAPP-TEST] webhook.received', [
+            'event' => $event,
+            'instance_name' => is_string($instanceName) ? $instanceName : null,
+        ]);
 
         if (! is_string($instanceName) || blank($instanceName)) {
             return response('Forbidden', 403);
@@ -30,10 +39,18 @@ class WhatsAppTestWebhookController extends Controller
             ->first();
 
         if ($connection === null || $connection->channel->type !== ChannelType::WhatsAppTest) {
+            Log::warning('[WHATSAPP-TEST] webhook.rejected', [
+                'event' => $event,
+                'instance_name' => $instanceName,
+                'reason' => 'instance_not_found',
+            ]);
+
             return response('Forbidden', 403);
         }
 
-        ProcessWhatsAppTestWebhook::dispatch($connection->channel_id, $payload);
+        if ($this->filter->shouldProcess($body)) {
+            ProcessWhatsAppTestWebhook::dispatch($connection->channel_id, $body);
+        }
 
         return response('EVENT_RECEIVED');
     }

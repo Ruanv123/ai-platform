@@ -39,11 +39,7 @@ final class EvolutionGoConnectionStrategy extends EvolutionGoMessageStrategy
      */
     private function connected(array $payload): bool
     {
-        if (data_get($payload, 'data.connected') === true) {
-            return true;
-        }
-
-        return $this->stateContains($payload, ['open', 'connected', 'pairsuccess']);
+        return in_array($this->event($payload), ['connected', 'pairsuccess'], true);
     }
 
     /**
@@ -51,24 +47,15 @@ final class EvolutionGoConnectionStrategy extends EvolutionGoMessageStrategy
      */
     private function loggedOut(array $payload): bool
     {
-        return $this->stateContains($payload, ['loggedout', 'close', 'closed']);
+        return $this->event($payload) === 'loggedout';
     }
 
     /**
      * @param  array<string, mixed>  $payload
-     * @param  list<string>  $needles
      */
-    private function stateContains(array $payload, array $needles): bool
+    private function event(array $payload): string
     {
-        foreach (['data.state', 'data.type', 'data.status'] as $path) {
-            $value = data_get($payload, $path);
-
-            if (is_string($value) && in_array(Str::lower($value), $needles, true)) {
-                return true;
-            }
-        }
-
-        return false;
+        return Str::lower((string) ($payload['event'] ?? ''));
     }
 
     /**
