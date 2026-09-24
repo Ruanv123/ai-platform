@@ -42,7 +42,12 @@ type Conversation = {
     waitingSeconds: number;
     state: 'agent' | 'flow';
     reason: { code: string; label: string } | null;
-    channel: { id: string; label: string };
+    channel: {
+        id: string;
+        label: string;
+        status: 'connected' | 'error' | 'not_configured';
+        statusLabel: string;
+    };
     assignee: { id: number; name: string } | null;
 };
 
@@ -84,7 +89,13 @@ type SelectedConversation = {
             }
         >;
     };
-    channel: { id: string; label: string };
+    channel: {
+        id: string;
+        label: string;
+        status: 'connected' | 'error' | 'not_configured';
+        statusLabel: string;
+        available: boolean;
+    };
     state: 'agent' | 'flow';
     assignee: { id: number; name: string } | null;
     reason: { code: string; label: string } | null;
@@ -106,6 +117,7 @@ type SelectedConversation = {
         remainingSeconds: number | null;
     };
     canWrite: boolean;
+    canSend: boolean;
 };
 
 type Props = {
@@ -120,10 +132,16 @@ type Props = {
         queue: string;
         assignedTo: string | number | null;
         channel: string | null;
+        state: string;
         search: string;
     };
     members: { id: number; name: string }[];
-    channels: { id: string; label: string }[];
+    channels: {
+        id: string;
+        label: string;
+        status: 'connected' | 'error' | 'not_configured';
+        statusLabel: string;
+    }[];
     selected: SelectedConversation | null;
     currentUserId: number;
 };
@@ -149,6 +167,7 @@ export default function InboxPage({
             queue: filters.queue,
             assigned_to: filters.assignedTo?.toString() || undefined,
             channel: filters.channel || undefined,
+            state: filters.state || undefined,
             search: filters.search || undefined,
             ...next,
         };
@@ -304,11 +323,26 @@ function ConversationsPanel({
                         <option value="">Todos os canais</option>
                         {channels.map((channel) => (
                             <option key={channel.id} value={channel.id}>
-                                {channel.label}
+                                {channel.status === 'connected'
+                                    ? channel.label
+                                    : `${channel.label} · ${channel.statusLabel}`}
                             </option>
                         ))}
                     </select>
                 </div>
+
+                <select
+                    value={filters.state}
+                    onChange={(event) =>
+                        onUpdateFilters({ state: event.target.value || undefined })
+                    }
+                    className="border-border/70 bg-background mt-2 h-[30px] w-full rounded-md border px-2 text-[11.5px]"
+                    aria-label="Estado da conversa"
+                >
+                    <option value="all">Todos os estados</option>
+                    <option value="agent">Agente ativo</option>
+                    <option value="flow">Fluxo transferido</option>
+                </select>
             </div>
 
             <div className="border-border/70 min-h-0 flex-1 overflow-y-auto border-t">
@@ -398,8 +432,17 @@ function ConversationsPanel({
                                         </span>
                                     )}
                                     {conversation.channel !== null && (
-                                        <span className="text-muted-foreground ml-auto text-[10.5px]">
-                                            {conversation.channel.label}
+                                        <span
+                                            className={cn(
+                                                'ml-auto text-[10.5px]',
+                                                conversation.channel.status === 'connected'
+                                                    ? 'text-muted-foreground'
+                                                    : 'text-destructive font-semibold',
+                                            )}
+                                        >
+                                            {conversation.channel.status === 'connected'
+                                                ? conversation.channel.label
+                                                : `${conversation.channel.label} · ${conversation.channel.statusLabel}`}
                                         </span>
                                     )}
                                 </div>
@@ -612,6 +655,11 @@ function ConversationThread({
                             : selected.channel.label}
                     </div>
                 </div>
+                {!selected.channel.available && (
+                    <span className="text-destructive hidden text-[11px] font-semibold sm:block">
+                        {selected.channel.statusLabel}
+                    </span>
+                )}
                 <div className="flex-1" />
                 <span className="text-muted-foreground bg-muted hidden items-center gap-1.5 rounded-md px-2.5 py-1 text-[11.5px] font-medium sm:flex">
                     <Bot className="size-3.5" />
@@ -687,7 +735,12 @@ function ConversationThread({
 
             {selected.state === 'flow' ? (
             <div className="border-border/70 bg-background shrink-0 border-t p-4">
-                {!selected.canWrite && (
+                {!selected.channel.available && (
+                    <div className="border-destructive/40 bg-destructive/10 text-foreground mb-3 rounded-lg border px-3 py-2 text-sm">
+                        Envio bloqueado: Canal {selected.channel.statusLabel.toLowerCase()}.
+                    </div>
+                )}
+                {selected.channel.available && !selected.canWrite && (
                     <div className="border-signal-attention/40 bg-signal-attention/10 text-foreground mb-3 rounded-lg border px-3 py-2 text-sm">
                         {selected.assignee === null
                             ? 'Assuma a conversa antes de escrever.'
@@ -729,7 +782,7 @@ function ConversationThread({
                                     form.setData('template', event.target.value)
                                 }
                                 placeholder="Nome do Template aprovado"
-                                disabled={!assignedToMe || form.processing}
+                                disabled={!selected.canSend || form.processing}
                             />
                             <textarea
                                 value={form.data.parameters}
@@ -741,7 +794,7 @@ function ConversationThread({
                                 }
                                 placeholder="Um parâmetro por linha (opcional)"
                                 className="border-border/70 placeholder:text-muted-foreground min-h-[60px] w-full resize-y rounded-lg border bg-transparent px-3 py-2.5 text-sm outline-none focus-visible:ring-2"
-                                disabled={!assignedToMe || form.processing}
+                                disabled={!selected.canSend || form.processing}
                             />
                         </>
                     ) : (
@@ -757,7 +810,7 @@ function ConversationThread({
                             }
                             className="border-border/70 placeholder:text-muted-foreground min-h-[60px] w-full resize-y rounded-lg border bg-transparent px-3 py-2.5 text-sm outline-none focus-visible:ring-2 disabled:cursor-not-allowed disabled:opacity-50"
                             disabled={
-                                !selected.canWrite ||
+                                !selected.canSend ||
                                 !selected.window.open ||
                                 form.processing
                             }
@@ -796,7 +849,7 @@ function ConversationThread({
                             type="submit"
                             size="sm"
                             disabled={
-                                !assignedToMe ||
+                                !selected.canSend ||
                                 form.processing ||
                                 (messageType === 'text' &&
                                     !selected.window.open)

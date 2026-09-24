@@ -1,5 +1,6 @@
 <?php
 
+use App\Enums\ChannelStatus;
 use App\Enums\ChannelType;
 use App\Enums\FlowExecutionStatus;
 use App\Enums\MessageDirection;
@@ -17,7 +18,7 @@ use Illuminate\Support\Facades\Http;
 function humanWaitingExecution(User $user, ?Contact $contact = null, ?Channel $channel = null): FlowExecution
 {
     $team = $user->company();
-    $channel ??= Channel::factory()->for($team)->create();
+    $channel ??= Channel::factory()->for($team)->connected()->create();
     $contact ??= Contact::factory()->for($team)->create([
         'human_waiting' => true,
         'human_waiting_at' => now(),
@@ -127,6 +128,69 @@ it('lists message-backed WhatsApp conversations once and opens Agent conversatio
     $this->actingAs($user)
         ->get(route('inbox.show', ['contact' => $contact, 'channel' => $emptyChannel]))
         ->assertNotFound();
+});
+
+it('filters conversations by state, responsible person, channel, and contact search', function () {
+    $user = User::factory()->withTeam()->create();
+    $team = $user->company();
+    $flowContact = Contact::factory()->for($team)->create(['name' => 'Ana Flow']);
+    $agentContact = Contact::factory()->for($team)->create(['name' => 'Bruno Agent']);
+    $flowChannel = Channel::factory()->for($team)->connected()->create();
+    $agentChannel = Channel::factory()->for($team)->connected()->create();
+    $flowExecution = humanWaitingExecution($user, $flowContact, $flowChannel);
+    $flowExecution->forceFill(['human_assigned_user_id' => $user->id])->save();
+    Message::factory()->for($flowContact)->for($flowChannel)->create(['content' => 'Fluxo']);
+    Message::factory()->for($agentContact)->for($agentChannel)->create(['content' => 'Agente']);
+
+    $this->actingAs($user)
+        ->get(route('inbox.index', [
+            'state' => 'agent',
+            'search' => 'Bruno',
+            'channel' => $agentChannel->id,
+        ]))
+        ->assertOk()
+        ->assertInertia(fn ($page) => $page
+            ->where('filters.state', 'agent')
+            ->where('conversations.total', 1)
+            ->where('conversations.data.0.contactId', $agentContact->id));
+
+    $this->actingAs($user)
+        ->get(route('inbox.index', ['state' => 'flow', 'assigned_to' => $user->id]))
+        ->assertOk()
+        ->assertInertia(fn ($page) => $page
+            ->where('conversations.total', 1)
+            ->where('conversations.data.0.contactId', $flowContact->id));
+});
+
+it('keeps unavailable channel history visible and blocks sending without calling the provider', function () {
+    Http::fake();
+    $user = User::factory()->withTeam()->create();
+    $contact = Contact::factory()->for($user->company())->create();
+    $channel = Channel::factory()->for($user->company())->error()->create();
+    $execution = humanWaitingExecution($user, $contact, $channel);
+    $execution->forceFill(['human_assigned_user_id' => $user->id])->save();
+    Message::factory()->for($contact)->for($channel)->create(['content' => 'Histórico continua disponível.']);
+
+    $this->actingAs($user)
+        ->get(route('inbox.index'))
+        ->assertOk()
+        ->assertInertia(fn ($page) => $page
+            ->where('conversations.total', 1)
+            ->where('conversations.data.0.channel.status', ChannelStatus::Error->value)
+            ->where('conversations.data.0.channel.statusLabel', ChannelStatus::Error->label()));
+
+    $this->actingAs($user)
+        ->get(route('inbox.show', inboxConversationParams($execution)))
+        ->assertOk()
+        ->assertInertia(fn ($page) => $page
+            ->where('selected.channel.available', false)
+            ->where('selected.canSend', false));
+
+    $this->actingAs($user)
+        ->post(route('inbox.messages.store', inboxConversationParams($execution)), ['content' => 'Resposta bloqueada.'])
+        ->assertStatus(409);
+
+    Http::assertNotSent(fn (Request $request): bool => str_contains($request->url(), 'graph.facebook.com'));
 });
 
 it('renders only the selected channel messages, history, and Flow execution with pagination', function () {

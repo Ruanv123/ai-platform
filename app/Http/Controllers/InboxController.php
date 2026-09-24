@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Consent\ContactConsentService;
+use App\Enums\ChannelStatus;
 use App\Enums\ChannelType;
 use App\Enums\FlowExecutionStatus;
 use App\Enums\MessageDirection;
@@ -129,6 +130,7 @@ final class InboxController extends Controller
                 'queue' => $request->string('queue', 'all')->toString(),
                 'assignedTo' => $request->input('assigned_to'),
                 'channel' => $request->input('channel'),
+                'state' => $request->string('state', 'all')->toString(),
                 'search' => $request->string('search')->toString(),
             ],
             'members' => $team->members()
@@ -140,10 +142,12 @@ final class InboxController extends Controller
             'channels' => $team->channels()
                 ->whereIn('type', $this->visibleWhatsAppTypes($request->user()))
                 ->orderBy('type')
-                ->get(['id', 'type'])
+                ->get(['id', 'type', 'status'])
                 ->map(fn (Channel $channel): array => [
                     'id' => $channel->id,
                     'label' => $channel->type->label(),
+                    'status' => $channel->status->value,
+                    'statusLabel' => $channel->status->label(),
                 ])
                 ->values(),
             'selected' => $selectedContact === null || $selectedChannel === null
@@ -274,6 +278,16 @@ final class InboxController extends Controller
         if ($channel !== '') {
             $query->where('messages.channel_id', $channel);
         }
+
+        match ($request->string('state', 'all')->toString()) {
+            'agent' => $query->whereNotExists(function (QueryBuilder $subquery): void {
+                $this->waitingExecutionSubquery($subquery);
+            }),
+            'flow' => $query->whereExists(function (QueryBuilder $subquery): void {
+                $this->waitingExecutionSubquery($subquery);
+            }),
+            default => null,
+        };
     }
 
     /** @param Builder<Message> $query */
@@ -333,6 +347,9 @@ final class InboxController extends Controller
             'channel' => [
                 'id' => $channel->id,
                 'label' => $channel->type->label(),
+                'status' => $channel->status->value,
+                'statusLabel' => $channel->status->label(),
+                'available' => $channel->status === ChannelStatus::Connected,
             ],
             'assignee' => $execution?->humanAssignee === null ? null : [
                 'id' => $execution->humanAssignee->id,
@@ -397,6 +414,9 @@ final class InboxController extends Controller
             'channel' => [
                 'id' => $channel->id,
                 'label' => $channel->type->label(),
+                'status' => $channel->status->value,
+                'statusLabel' => $channel->status->label(),
+                'available' => $channel->status === ChannelStatus::Connected,
             ],
             'state' => $execution === null ? 'agent' : 'flow',
             'assignee' => $execution?->humanAssignee === null ? null : [
@@ -422,6 +442,9 @@ final class InboxController extends Controller
                 'remainingSeconds' => $window->remainingSeconds($channel, $lastIncoming),
             ],
             'canWrite' => $execution !== null && $execution->human_assigned_user_id === $request->user()->getKey(),
+            'canSend' => $execution !== null
+                && $execution->human_assigned_user_id === $request->user()->getKey()
+                && $channel->status === ChannelStatus::Connected,
         ];
     }
 

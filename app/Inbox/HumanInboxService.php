@@ -2,6 +2,7 @@
 
 namespace App\Inbox;
 
+use App\Enums\ChannelStatus;
 use App\Enums\FlowExecutionStatus;
 use App\Enums\MessageDirection;
 use App\Events\HumanConversationUpdated;
@@ -82,6 +83,10 @@ final class HumanInboxService
             }
 
             $channel = $execution->channel;
+            if ($channel->status !== ChannelStatus::Connected) {
+                throw new ConflictHttpException('Canal indisponível. Reconecte o Canal antes de enviar uma Mensagem.');
+            }
+
             $type = (string) ($data['type'] ?? 'text');
             $content = trim((string) ($data['content'] ?? ''));
             $lastIncoming = $this->lastIncomingMessage($channel, $contact);
