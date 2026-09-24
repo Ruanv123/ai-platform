@@ -33,7 +33,7 @@ import {
 import { store as messagesStore } from '@/routes/inbox/messages';
 
 type Conversation = {
-    id: number;
+    contactId: number;
     name: string | null;
     phone: string;
     excerpt: string;
@@ -41,7 +41,7 @@ type Conversation = {
     waitingSince: string | null;
     waitingSeconds: number;
     reason: { code: string; label: string };
-    channel: { id: string; label: string } | null;
+    channel: { id: string; label: string };
     assignee: { id: number; name: string } | null;
 };
 
@@ -176,7 +176,8 @@ export default function InboxPage({
                     onSearchChange={setSearch}
                     onSubmitSearch={submitSearch}
                     onUpdateFilters={updateFilters}
-                    selectedId={selected?.contact.id ?? null}
+                    selectedContactId={selected?.contact.id ?? null}
+                    selectedChannelId={selected?.channel.id ?? null}
                     currentUserId={currentUserId}
                     className={selected !== null ? 'hidden xl:flex' : undefined}
                 />
@@ -185,7 +186,7 @@ export default function InboxPage({
                     <EmptySelection />
                 ) : (
                     <SelectedConversationView
-                        key={selected.contact.id}
+                        key={`${selected.contact.id}:${selected.channel.id}`}
                         selected={selected}
                         currentUserId={currentUserId}
                     />
@@ -205,7 +206,8 @@ function ConversationsPanel({
     onSearchChange,
     onSubmitSearch,
     onUpdateFilters,
-    selectedId,
+    selectedContactId,
+    selectedChannelId,
     currentUserId,
     className,
 }: {
@@ -218,7 +220,8 @@ function ConversationsPanel({
     onSearchChange: (value: string) => void;
     onSubmitSearch: (event: FormEvent<HTMLFormElement>) => void;
     onUpdateFilters: (next: Record<string, string | undefined>) => void;
-    selectedId: number | null;
+    selectedContactId: number | null;
+    selectedChannelId: string | null;
     currentUserId: number;
     className?: string;
 }) {
@@ -318,12 +321,17 @@ function ConversationsPanel({
                     </div>
                 ) : (
                     conversations.map((conversation) => {
-                        const isActive = conversation.id === selectedId;
+                        const isActive =
+                            conversation.contactId === selectedContactId &&
+                            conversation.channel.id === selectedChannelId;
 
                         return (
                             <Link
-                                key={conversation.id}
-                                href={inboxShow(conversation.id)}
+                                key={`${conversation.contactId}:${conversation.channel.id}`}
+                                href={inboxShow({
+                                    contact: conversation.contactId,
+                                    channel: conversation.channel.id,
+                                })}
                                 className={cn(
                                     'border-border/70 block border-b px-4 py-3 transition-colors',
                                     isActive
@@ -537,20 +545,29 @@ function ConversationThread({
                 .map((parameter) => parameter.trim())
                 .filter(Boolean),
         }));
-        form.post(messagesStore(selected.contact.id).url, {
+        form.post(messagesStore({
+            contact: selected.contact.id,
+            channel: selected.channel.id,
+        }).url, {
             preserveScroll: true,
             onSuccess: () => form.reset('content', 'template', 'parameters'),
         });
     };
 
     const takeConversation = () => {
-        router.post(take(selected.contact.id).url, undefined, {
+        router.post(take({
+            contact: selected.contact.id,
+            channel: selected.channel.id,
+        }).url, undefined, {
             preserveScroll: true,
         });
     };
 
     const returnConversation = () => {
-        router.post(returnMethod(selected.contact.id).url);
+        router.post(returnMethod({
+            contact: selected.contact.id,
+            channel: selected.channel.id,
+        }).url);
     };
 
     return (

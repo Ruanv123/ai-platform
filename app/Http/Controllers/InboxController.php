@@ -27,41 +27,46 @@ final class InboxController extends Controller
         return $this->render($request);
     }
 
-    public function show(Request $request, Contact $contact): Response
+    public function show(Request $request, Contact $contact, Channel $channel): Response
     {
-        abort_unless($this->waitingQuery()->where('contact_id', $contact->getKey())->exists(), 404);
+        abort_unless($this->waitingQuery()
+            ->where('contact_id', $contact->getKey())
+            ->where('channel_id', $channel->getKey())
+            ->exists(), 404);
 
-        return $this->render($request, $contact);
+        return $this->render($request, $contact, $channel);
     }
 
-    public function take(Request $request, Contact $contact, HumanInboxService $inbox): RedirectResponse
+    public function take(Request $request, Contact $contact, Channel $channel, HumanInboxService $inbox): RedirectResponse
     {
-        $inbox->assign($contact, $request->user());
+        $inbox->assign($contact, $channel, $request->user());
 
-        return to_route('inbox.show', $contact);
+        return to_route('inbox.show', [$contact, $channel]);
     }
 
     public function storeMessage(
         SendHumanMessageRequest $request,
         Contact $contact,
+        Channel $channel,
         HumanInboxService $inbox,
     ): RedirectResponse {
-        $inbox->send($contact, $request->user(), $request->validated());
+        $inbox->send($contact, $channel, $request->user(), $request->validated());
 
-        return to_route('inbox.show', $contact);
+        return to_route('inbox.show', [$contact, $channel]);
     }
 
     public function returnToBot(
         Request $request,
         Contact $contact,
+        Channel $channel,
         HumanInboxService $inbox,
     ): RedirectResponse {
-        $inbox->returnToBot($contact);
+        $inbox->returnToBot($contact, $channel);
 
         return to_route('inbox.index');
     }
 
-    private function render(Request $request, ?Contact $selectedContact = null): Response
+    private function render(Request $request, ?Contact $selectedContact = null, ?Channel $selectedChannel = null): Response
     {
         $team = $request->user()->company();
         abort_if($team === null, 404);
@@ -77,22 +82,43 @@ final class InboxController extends Controller
         $listQuery = clone $baseQuery;
         $this->applyQueue($listQuery, $request);
         $this->applyAssignmentFilter($listQuery, $request);
+        $latestMessageId = Message::query()
+            ->select('id')
+            ->whereColumn('messages.contact_id', 'flow_executions.contact_id')
+            ->whereColumn('messages.channel_id', 'flow_executions.channel_id')
+            ->orderByDesc('messages.created_at')
+            ->orderByDesc('messages.id')
+            ->limit(1);
+        $latestMessageAt = Message::query()
+            ->select('created_at')
+            ->whereColumn('messages.contact_id', 'flow_executions.contact_id')
+            ->whereColumn('messages.channel_id', 'flow_executions.channel_id')
+            ->orderByDesc('messages.created_at')
+            ->orderByDesc('messages.id')
+            ->limit(1);
         $conversations = $listQuery
+            ->addSelect(['inbox_latest_message_id' => $latestMessageId])
             ->with([
-                'contact.latestMessage',
+                'contact',
                 'channel',
                 'flowVersion.flow',
                 'humanAssignee',
             ])
-            ->orderByDesc('created_at')
-            ->orderByDesc('id')
+            ->orderByDesc($latestMessageAt)
+            ->orderByDesc('flow_executions.id')
             ->paginate(20)
             ->withQueryString();
 
-        $selectedExecution = $selectedContact === null
+        $latestMessages = Message::query()
+            ->whereKey($conversations->getCollection()->pluck('inbox_latest_message_id')->filter()->unique())
+            ->get()
+            ->keyBy('id');
+
+        $selectedExecution = $selectedContact === null || $selectedChannel === null
             ? null
             : $this->waitingQuery()
                 ->where('contact_id', $selectedContact->getKey())
+                ->where('channel_id', $selectedChannel->getKey())
                 ->with([
                     'contact.fieldValues.field',
                     'contact.tags',
@@ -105,7 +131,10 @@ final class InboxController extends Controller
 
         return Inertia::render('inbox/index', [
             'conversations' => [
-                'data' => $conversations->getCollection()->map(fn (FlowExecution $execution): array => $this->conversation($execution))->values(),
+                'data' => $conversations->getCollection()->map(fn (FlowExecution $execution): array => $this->conversation(
+                    $execution,
+                    $latestMessages->get($execution->inbox_latest_message_id),
+                ))->values(),
                 'currentPage' => $conversations->currentPage(),
                 'lastPage' => $conversations->lastPage(),
                 'total' => $conversations->total(),
@@ -142,7 +171,9 @@ final class InboxController extends Controller
         return FlowExecution::query()
             ->where('status', FlowExecutionStatus::Paused)
             ->where('waiting_for', 'human')
-            ->whereNotNull('contact_id');
+            ->whereNotNull('contact_id')
+            ->whereNotNull('channel_id')
+            ->whereHas('channel');
     }
 
     /** @param Builder<FlowExecution> $query */
@@ -187,27 +218,29 @@ final class InboxController extends Controller
     }
 
     /** @return array<string, mixed> */
-    private function conversation(FlowExecution $execution): array
+    private function conversation(FlowExecution $execution, ?Message $latestMessage): array
     {
         $contact = $execution->contact;
-        $latestMessage = $contact?->latestMessage;
+        $channel = $execution->channel;
+        abort_if($contact === null || $channel === null, 404);
+
         $excerpt = $latestMessage?->content;
         if (blank($excerpt)) {
             $excerpt = 'Sem Mensagens de texto.';
         }
 
         return [
-            'id' => $contact?->getKey(),
-            'name' => $contact?->name,
-            'phone' => $contact?->phone,
+            'contactId' => $contact->getKey(),
+            'name' => $contact->name,
+            'phone' => $contact->phone,
             'excerpt' => $excerpt,
             'lastMessageAt' => $latestMessage?->created_at?->toIso8601String(),
-            'waitingSince' => $contact?->human_waiting_at?->toIso8601String(),
-            'waitingSeconds' => $contact?->human_waiting_at === null ? 0 : max(0, (int) $contact->human_waiting_at->diffInSeconds(now())),
+            'waitingSince' => $execution->created_at?->toIso8601String(),
+            'waitingSeconds' => $execution->created_at === null ? 0 : max(0, (int) $execution->created_at->diffInSeconds(now())),
             'reason' => $this->reason($execution->human_transfer_reason),
-            'channel' => $execution->channel === null ? null : [
-                'id' => $execution->channel->id,
-                'label' => $execution->channel->type->label(),
+            'channel' => [
+                'id' => $channel->id,
+                'label' => $channel->type->label(),
             ],
             'assignee' => $execution->humanAssignee === null ? null : [
                 'id' => $execution->humanAssignee->id,
@@ -235,6 +268,7 @@ final class InboxController extends Controller
 
         $history = Message::query()
             ->where('contact_id', $contact->getKey())
+            ->where('channel_id', $channel->getKey())
             ->with(['sentBy', 'channel'])
             ->latest('created_at')
             ->latest('id')

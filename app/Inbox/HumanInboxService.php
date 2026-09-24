@@ -24,10 +24,11 @@ final class HumanInboxService
         private readonly FlowEngine $flowEngine,
     ) {}
 
-    public function waitingExecution(Contact $contact, bool $lock = false): ?FlowExecution
+    public function waitingExecution(Contact $contact, Channel $channel, bool $lock = false): ?FlowExecution
     {
         $query = FlowExecution::query()
             ->where('contact_id', $contact->getKey())
+            ->where('channel_id', $channel->getKey())
             ->where('status', FlowExecutionStatus::Paused)
             ->where('waiting_for', 'human')
             ->with(['contact', 'channel', 'flowVersion.flow', 'humanAssignee']);
@@ -39,10 +40,10 @@ final class HumanInboxService
         return $query->latest('created_at')->first();
     }
 
-    public function assign(Contact $contact, User $user): FlowExecution
+    public function assign(Contact $contact, Channel $channel, User $user): FlowExecution
     {
-        return DB::transaction(function () use ($contact, $user): FlowExecution {
-            $execution = $this->waitingExecution($contact, lock: true);
+        return DB::transaction(function () use ($contact, $channel, $user): FlowExecution {
+            $execution = $this->waitingExecution($contact, $channel, lock: true);
             if ($execution === null) {
                 throw new ConflictHttpException('Esta conversa não está mais aguardando atendimento.');
             }
@@ -68,10 +69,10 @@ final class HumanInboxService
     /**
      * @param  array{type?: string, content?: string, template?: string, parameters?: list<string>}  $data
      */
-    public function send(Contact $contact, User $user, array $data): Message
+    public function send(Contact $contact, Channel $channel, User $user, array $data): Message
     {
-        return DB::transaction(function () use ($contact, $user, $data): Message {
-            $execution = $this->waitingExecution($contact, lock: true);
+        return DB::transaction(function () use ($contact, $channel, $user, $data): Message {
+            $execution = $this->waitingExecution($contact, $channel, lock: true);
             if ($execution === null || $execution->channel === null) {
                 throw new ConflictHttpException('Esta conversa não está mais aguardando atendimento.');
             }
@@ -113,10 +114,10 @@ final class HumanInboxService
         });
     }
 
-    public function returnToBot(Contact $contact): void
+    public function returnToBot(Contact $contact, Channel $channel): void
     {
-        DB::transaction(function () use ($contact): void {
-            $execution = $this->waitingExecution($contact, lock: true);
+        DB::transaction(function () use ($contact, $channel): void {
+            $execution = $this->waitingExecution($contact, $channel, lock: true);
             if ($execution === null) {
                 throw new ConflictHttpException('Esta conversa não está mais aguardando atendimento.');
             }

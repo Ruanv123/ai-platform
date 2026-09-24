@@ -69,11 +69,11 @@ Route::get('dashboard', DashboardController::class)
 
 Route::middleware(['auth', EnsureUserHasTeam::class])->group(function () {
     Route::get('atendimento', [InboxController::class, 'index'])->name('inbox.index');
-    Route::get('atendimento/{contact}', [InboxController::class, 'show'])->name('inbox.show');
-    Route::post('atendimento/{contact}/take', [InboxController::class, 'take'])->name('inbox.take');
-    Route::post('atendimento/{contact}/messages', [InboxController::class, 'storeMessage'])->name('inbox.messages.store');
-    Route::post('atendimento/{contact}/consents', [ContactConsentController::class, 'store'])->name('inbox.consents.store');
-    Route::post('atendimento/{contact}/return', [InboxController::class, 'returnToBot'])->name('inbox.return');
+    Route::get('atendimento/{contact}/{channel}', [InboxController::class, 'show'])->name('inbox.show');
+    Route::post('atendimento/{contact}/{channel}/take', [InboxController::class, 'take'])->name('inbox.take');
+    Route::post('atendimento/{contact}/{channel}/messages', [InboxController::class, 'storeMessage'])->name('inbox.messages.store');
+    Route::post('atendimento/{contact}/{channel}/consents', [ContactConsentController::class, 'store'])->name('inbox.consents.store');
+    Route::post('atendimento/{contact}/{channel}/return', [InboxController::class, 'returnToBot'])->name('inbox.return');
 
     Route::resource('agents', AgentController::class)
         ->only(['index', 'store', 'edit', 'update', 'destroy'])
