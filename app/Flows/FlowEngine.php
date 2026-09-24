@@ -13,6 +13,7 @@ use App\Enums\FlowExecutionStatus;
 use App\Enums\MessageDeliveryStatus;
 use App\Enums\MessageDirection;
 use App\Events\HumanConversationUpdated;
+use App\Inbox\AgentConversationService;
 use App\Integrations\IntegrationClient;
 use App\Jobs\WakeFlowExecution;
 use App\Knowledge\AgentInstructionTemplate;
@@ -56,6 +57,7 @@ final class FlowEngine
         private readonly IntegrationClient $integrationClient,
         private readonly FlowEventBus $eventBus,
         private readonly ContactConsentService $consents,
+        private readonly AgentConversationService $agentConversations,
     ) {}
 
     public function hasActiveMessageFlows(Channel $channel): bool
@@ -80,7 +82,8 @@ final class FlowEngine
     public function handleMessage(Channel $channel, Message $message): void
     {
         $contact = $message->contact()->withoutGlobalScopes()->first();
-        if ($contact === null || $contact->human_waiting) {
+        if ($contact === null || $contact->human_waiting
+            || $this->agentConversations->isPaused($channel, (int) $contact->getKey())) {
             return;
         }
 

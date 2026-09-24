@@ -6,6 +6,12 @@ use App\Enums\FlowExecutionStatus;
 use App\Enums\MessageDirection;
 use App\Events\HumanConversationUpdated;
 use App\Events\InboxMessageCreated;
+use App\Inbox\AgentConversationService;
+use App\Jobs\RespondToWhatsAppMessage;
+use App\Jobs\RunFlowTurn;
+use App\Models\Agent;
+use App\Models\AgentConversationAudit;
+use App\Models\AgentConversationState;
 use App\Models\Channel;
 use App\Models\Contact;
 use App\Models\Flow;
@@ -14,8 +20,10 @@ use App\Models\FlowVersion;
 use App\Models\Message;
 use App\Models\User;
 use App\Models\WhatsAppPhoneNumber;
+use App\WhatsApp\IncomingMessageResponseDispatcher;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Queue;
 
 function humanWaitingExecution(User $user, ?Contact $contact = null, ?Channel $channel = null): FlowExecution
 {
@@ -130,6 +138,76 @@ it('lists message-backed WhatsApp conversations once and opens Agent conversatio
     $this->actingAs($user)
         ->get(route('inbox.show', ['contact' => $contact, 'channel' => $emptyChannel]))
         ->assertNotFound();
+});
+
+it('pauses a direct Agent conversation and records an explicit takeover', function () {
+    $user = User::factory()->withTeam()->create();
+    $team = $user->company();
+    $replacement = User::factory()->create();
+    $team->members()->attach($replacement, ['role' => 'member']);
+    $contact = Contact::factory()->for($team)->create();
+    $agent = Agent::factory()->for($team)->create();
+    $channel = Channel::factory()->for($team)->connected()->create(['agent_id' => $agent->id]);
+    Message::factory()->for($contact)->for($channel)->create(['content' => 'Preciso de ajuda.']);
+
+    $this->actingAs($user)
+        ->post(route('inbox.agent.pause', ['contact' => $contact, 'channel' => $channel]))
+        ->assertRedirect(route('inbox.show', ['contact' => $contact, 'channel' => $channel]));
+
+    $state = AgentConversationState::withoutGlobalScopes()->firstOrFail();
+    expect($state->is_paused)->toBeTrue()
+        ->and($state->assigned_user_id)->toBe($user->id)
+        ->and($state->pause_duration_minutes)->toBe(30)
+        ->and($state->expires_at->equalTo($state->paused_at->addMinutes(30)))->toBeTrue();
+
+    $this->actingAs($user)
+        ->get(route('inbox.show', ['contact' => $contact, 'channel' => $channel]))
+        ->assertOk()
+        ->assertInertia(fn ($page) => $page
+            ->where('selected.agentPaused', true)
+            ->where('selected.canPause', false)
+            ->where('selected.canTakeOver', false)
+            ->where('selected.assignee.id', $user->id));
+
+    $this->actingAs($replacement)
+        ->post(route('inbox.agent.pause', ['contact' => $contact, 'channel' => $channel]))
+        ->assertStatus(409);
+
+    $this->actingAs($replacement)
+        ->post(route('inbox.agent.take-over', ['contact' => $contact, 'channel' => $channel]))
+        ->assertRedirect(route('inbox.show', ['contact' => $contact, 'channel' => $channel]));
+
+    expect(AgentConversationState::withoutGlobalScopes()->firstOrFail()->assigned_user_id)->toBe($replacement->id)
+        ->and(AgentConversationAudit::withoutGlobalScopes()->orderBy('id')->pluck('action')->all())->toBe(['paused', 'taken_over'])
+        ->and(AgentConversationAudit::withoutGlobalScopes()->orderBy('id')->pluck('previous_user_id')->all())->toBe([null, $user->id])
+        ->and(AgentConversationAudit::withoutGlobalScopes()->orderBy('id')->pluck('new_user_id')->all())->toBe([$user->id, $replacement->id]);
+});
+
+it('keeps paused incoming messages pending and serializes a generated response against the pause', function () {
+    Queue::fake();
+    $user = User::factory()->withTeam()->create();
+    $team = $user->company();
+    $contact = Contact::factory()->for($team)->create();
+    $agent = Agent::factory()->for($team)->create();
+    $channel = Channel::factory()->for($team)->connected()->create(['agent_id' => $agent->id]);
+    $message = Message::factory()->for($contact)->for($channel)->create([
+        'direction' => MessageDirection::Incoming,
+        'is_responded' => false,
+        'content' => 'Ainda preciso de ajuda.',
+    ]);
+    $agentConversations = app(AgentConversationService::class);
+    $agentConversations->pauseAndAssign($contact, $channel, $user);
+
+    app(IncomingMessageResponseDispatcher::class)->dispatch($channel, $message);
+    Queue::assertNotPushed(RespondToWhatsAppMessage::class);
+    Queue::assertNotPushed(RunFlowTurn::class);
+
+    $ranResponse = false;
+    expect($agentConversations->runIfUnpaused($channel, $contact, function () use (&$ranResponse): void {
+        $ranResponse = true;
+    }))->toBeFalse()
+        ->and($ranResponse)->toBeFalse()
+        ->and($message->fresh()->is_responded)->toBeFalse();
 });
 
 it('filters conversations by state, responsible person, channel, and contact search', function () {

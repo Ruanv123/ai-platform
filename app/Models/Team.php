@@ -28,6 +28,7 @@ use Illuminate\Support\Carbon;
  * @property string|null $phone
  * @property string|null $public_email
  * @property string|null $address
+ * @property int $agent_pause_duration_minutes
  * @property string $slug
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
@@ -64,6 +65,7 @@ use Illuminate\Support\Carbon;
     'phone',
     'public_email',
     'address',
+    'agent_pause_duration_minutes',
     'slug',
 ])]
 class Team extends Model
@@ -263,6 +265,7 @@ class Team extends Model
     {
         return [
             'business_hours' => 'array',
+            'agent_pause_duration_minutes' => 'integer',
         ];
     }
 

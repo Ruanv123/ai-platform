@@ -71,6 +71,8 @@ Route::middleware(['auth', EnsureUserHasTeam::class])->group(function () {
     Route::get('atendimento', [InboxController::class, 'index'])->name('inbox.index');
     Route::get('atendimento/{contact}/{channel}', [InboxController::class, 'show'])->name('inbox.show');
     Route::post('atendimento/{contact}/{channel}/take', [InboxController::class, 'take'])->name('inbox.take');
+    Route::post('atendimento/{contact}/{channel}/pause-agent', [InboxController::class, 'pauseAgent'])->name('inbox.agent.pause');
+    Route::post('atendimento/{contact}/{channel}/take-over-agent', [InboxController::class, 'takeOverAgent'])->name('inbox.agent.take-over');
     Route::post('atendimento/{contact}/{channel}/messages', [InboxController::class, 'storeMessage'])->name('inbox.messages.store');
     Route::post('atendimento/{contact}/{channel}/consents', [ContactConsentController::class, 'store'])->name('inbox.consents.store');
     Route::post('atendimento/{contact}/{channel}/return', [InboxController::class, 'returnToBot'])->name('inbox.return');

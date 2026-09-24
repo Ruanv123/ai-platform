@@ -30,6 +30,7 @@ import {
     show as inboxShow,
     take,
 } from '@/routes/inbox';
+import { pause as pauseAgent, takeOver as takeOverAgent } from '@/routes/inbox/agent';
 import { store as messagesStore } from '@/routes/inbox/messages';
 
 type Conversation = {
@@ -41,6 +42,7 @@ type Conversation = {
     waitingSince: string | null;
     waitingSeconds: number;
     state: 'agent' | 'flow';
+    agentPaused: boolean;
     reason: { code: string; label: string } | null;
     channel: {
         id: string;
@@ -97,6 +99,8 @@ type SelectedConversation = {
         available: boolean;
     };
     state: 'agent' | 'flow';
+    agentPaused: boolean;
+    agentPauseExpiresAt: string | null;
     assignee: { id: number; name: string } | null;
     reason: { code: string; label: string } | null;
     execution: {
@@ -118,6 +122,8 @@ type SelectedConversation = {
     };
     canWrite: boolean;
     canSend: boolean;
+    canPause: boolean;
+    canTakeOver: boolean;
 };
 
 type Props = {
@@ -341,6 +347,7 @@ function ConversationsPanel({
                 >
                     <option value="all">Todos os estados</option>
                     <option value="agent">Agente ativo</option>
+                    <option value="paused">Pausa da IA</option>
                     <option value="flow">Fluxo transferido</option>
                 </select>
             </div>
@@ -392,7 +399,7 @@ function ConversationsPanel({
                                 <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
                                     {conversation.state === 'agent' ? (
                                         <span className="bg-signal-live/10 text-signal-live rounded-md px-1.5 py-0.5 text-[10px] font-semibold">
-                                            Agente ativo
+                                            {conversation.agentPaused ? 'Pausa da IA' : 'Agente ativo'}
                                         </span>
                                     ) : (
                                         <>
@@ -629,6 +636,20 @@ function ConversationThread({
         }).url);
     };
 
+    const pauseAgentConversation = () => {
+        router.post(pauseAgent({
+            contact: selected.contact.id,
+            channel: selected.channel.id,
+        }).url, undefined, { preserveScroll: true });
+    };
+
+    const takeOverAgentConversation = () => {
+        router.post(takeOverAgent({
+            contact: selected.contact.id,
+            channel: selected.channel.id,
+        }).url, undefined, { preserveScroll: true });
+    };
+
     return (
         <section className="flex min-h-0 min-w-0 flex-1 flex-col">
             <header className="border-border/70 flex h-[60px] shrink-0 items-center gap-3 border-b px-5">
@@ -663,8 +684,22 @@ function ConversationThread({
                 <div className="flex-1" />
                 <span className="text-muted-foreground bg-muted hidden items-center gap-1.5 rounded-md px-2.5 py-1 text-[11.5px] font-medium sm:flex">
                     <Bot className="size-3.5" />
-                    {selected.state === 'flow' ? 'Fluxo transferido' : 'Agente ativo'}
+                    {selected.state === 'flow'
+                        ? 'Fluxo transferido'
+                        : selected.agentPaused
+                          ? 'Pausa da IA'
+                          : 'Agente ativo'}
                 </span>
+                {selected.canPause && (
+                    <Button size="sm" onClick={pauseAgentConversation}>
+                        Pausar Agente e assumir
+                    </Button>
+                )}
+                {selected.canTakeOver && (
+                    <Button size="sm" onClick={takeOverAgentConversation}>
+                        Assumir conversa
+                    </Button>
+                )}
                 {selected.state === 'flow' && selected.assignee === null && (
                     <Button size="sm" onClick={takeConversation}>
                         Assumir conversa
@@ -715,7 +750,9 @@ function ConversationThread({
                         <Bot className="text-signal-attention size-3.5" />
                         {selected.state === 'flow' && selected.execution !== null
                             ? `O Fluxo ${selected.execution.flowName} transferiu esta conversa para atendimento humano`
-                            : 'O Agente está conduzindo esta conversa'}
+                            : selected.agentPaused
+                              ? 'O Agente está pausado nesta conversa'
+                              : 'O Agente está conduzindo esta conversa'}
                     </span>
                 </div>
 
@@ -863,7 +900,9 @@ function ConversationThread({
             </div>
             ) : (
                 <div className="border-border/70 bg-background text-muted-foreground shrink-0 border-t px-4 py-3 text-center text-xs">
-                    Conversa em modo de leitura enquanto o Agente atende.
+                    {selected.agentPaused
+                        ? `Agente pausado${selected.agentPauseExpiresAt ? ` até ${formatDate(selected.agentPauseExpiresAt)}` : ''}. Envio humano disponível em breve.`
+                        : 'Conversa em modo de leitura enquanto o Agente atende.'}
                 </div>
             )}
         </section>
@@ -1040,7 +1079,9 @@ function ContactPanel({ selected }: { selected: SelectedConversation }) {
                         Atendimento
                     </div>
                     <div className="border-border/70 rounded-lg border p-3 text-xs">
-                        Agente ativo neste Canal.
+                        {selected.agentPaused
+                            ? 'Pausa da IA ativa neste Canal.'
+                            : 'Agente ativo neste Canal.'}
                     </div>
                 </div>
             )}

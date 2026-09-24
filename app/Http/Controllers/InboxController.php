@@ -8,7 +8,9 @@ use App\Enums\ChannelType;
 use App\Enums\FlowExecutionStatus;
 use App\Enums\MessageDirection;
 use App\Http\Requests\SendHumanMessageRequest;
+use App\Inbox\AgentConversationService;
 use App\Inbox\HumanInboxService;
+use App\Models\AgentConversationState;
 use App\Models\Channel;
 use App\Models\Contact;
 use App\Models\FlowExecution;
@@ -44,6 +46,28 @@ final class InboxController extends Controller
     public function take(Request $request, Contact $contact, Channel $channel, HumanInboxService $inbox): RedirectResponse
     {
         $inbox->assign($contact, $channel, $request->user());
+
+        return to_route('inbox.show', [$contact, $channel]);
+    }
+
+    public function pauseAgent(
+        Request $request,
+        Contact $contact,
+        Channel $channel,
+        AgentConversationService $conversations,
+    ): RedirectResponse {
+        $conversations->pauseAndAssign($contact, $channel, $request->user());
+
+        return to_route('inbox.show', [$contact, $channel]);
+    }
+
+    public function takeOverAgent(
+        Request $request,
+        Contact $contact,
+        Channel $channel,
+        AgentConversationService $conversations,
+    ): RedirectResponse {
+        $conversations->takeOver($contact, $channel, $request->user());
 
         return to_route('inbox.show', [$contact, $channel]);
     }
@@ -97,6 +121,7 @@ final class InboxController extends Controller
             ->withQueryString();
 
         $executionsByConversation = $this->waitingExecutionsFor($conversations);
+        $agentStatesByConversation = $this->agentStatesFor($conversations);
 
         $selectedExecution = $selectedContact === null || $selectedChannel === null
             ? null
@@ -112,6 +137,9 @@ final class InboxController extends Controller
                 ])
                 ->latest('created_at')
                 ->first();
+        $selectedAgentState = $selectedContact === null || $selectedChannel === null
+            ? null
+            : app(AgentConversationService::class)->stateFor($selectedContact, $selectedChannel);
 
         $selectedContact?->loadMissing(['fieldValues.field', 'tags']);
 
@@ -120,6 +148,7 @@ final class InboxController extends Controller
                 'data' => $conversations->getCollection()->map(fn (Message $message): array => $this->conversation(
                     $message,
                     $executionsByConversation->get($this->conversationKey($message->contact_id, $message->channel_id)),
+                    $agentStatesByConversation->get($this->conversationKey($message->contact_id, $message->channel_id)),
                 ))->values(),
                 'currentPage' => $conversations->currentPage(),
                 'lastPage' => $conversations->lastPage(),
@@ -152,7 +181,7 @@ final class InboxController extends Controller
                 ->values(),
             'selected' => $selectedContact === null || $selectedChannel === null
                 ? null
-                : $this->selectedConversation($selectedContact, $selectedChannel, $selectedExecution, $request),
+                : $this->selectedConversation($selectedContact, $selectedChannel, $selectedExecution, $selectedAgentState, $request),
             'currentUserId' => $request->user()->getKey(),
         ]);
     }
@@ -207,14 +236,24 @@ final class InboxController extends Controller
     /** @param Builder<Message> $query */
     private function countWaitingConversations(Builder $query, bool $unassigned = false, ?int $userId = null): int
     {
-        $query->whereExists(function (QueryBuilder $subquery) use ($unassigned, $userId): void {
-            $this->waitingExecutionSubquery($subquery);
+        $query->where(function (Builder $query) use ($unassigned, $userId): void {
+            $query->whereExists(function (QueryBuilder $subquery) use ($unassigned, $userId): void {
+                $this->waitingExecutionSubquery($subquery);
 
-            if ($unassigned) {
-                $subquery->whereNull('flow_executions.human_assigned_user_id');
-            } elseif ($userId !== null) {
-                $subquery->where('flow_executions.human_assigned_user_id', $userId);
-            }
+                if ($unassigned) {
+                    $subquery->whereNull('flow_executions.human_assigned_user_id');
+                } elseif ($userId !== null) {
+                    $subquery->where('flow_executions.human_assigned_user_id', $userId);
+                }
+            })->orWhereExists(function (QueryBuilder $subquery) use ($unassigned, $userId): void {
+                $this->agentPauseSubquery($subquery);
+
+                if ($unassigned) {
+                    $subquery->whereNull('agent_conversation_states.assigned_user_id');
+                } elseif ($userId !== null) {
+                    $subquery->where('agent_conversation_states.assigned_user_id', $userId);
+                }
+            });
         });
 
         return $query->count();
@@ -244,6 +283,32 @@ final class InboxController extends Controller
             ));
     }
 
+    /** @return Collection<int, AgentConversationState> */
+    private function agentStatesFor(LengthAwarePaginator $conversations): Collection
+    {
+        $messages = $conversations->getCollection();
+        if ($messages->isEmpty()) {
+            return new Collection;
+        }
+
+        return AgentConversationState::withoutGlobalScopes()
+            ->where('team_id', $messages->first()->team_id)
+            ->where(function (Builder $query) use ($messages): void {
+                foreach ($messages as $message) {
+                    $query->orWhere(function (Builder $pairQuery) use ($message): void {
+                        $pairQuery->where('contact_id', $message->contact_id)
+                            ->where('channel_id', $message->channel_id);
+                    });
+                }
+            })
+            ->with('assignedUser')
+            ->get()
+            ->keyBy(fn (AgentConversationState $state): string => $this->conversationKey(
+                (int) $state->contact_id,
+                (string) $state->channel_id,
+            ));
+    }
+
     private function conversationKey(int $contactId, string $channelId): string
     {
         return $contactId.':'.$channelId;
@@ -258,6 +323,16 @@ final class InboxController extends Controller
             ->whereColumn('flow_executions.channel_id', 'messages.channel_id')
             ->where('flow_executions.status', FlowExecutionStatus::Paused->value)
             ->where('flow_executions.waiting_for', 'human');
+    }
+
+    private function agentPauseSubquery(QueryBuilder $query): void
+    {
+        $query->selectRaw('1')
+            ->from('agent_conversation_states')
+            ->whereColumn('agent_conversation_states.team_id', 'messages.team_id')
+            ->whereColumn('agent_conversation_states.contact_id', 'messages.contact_id')
+            ->whereColumn('agent_conversation_states.channel_id', 'messages.channel_id')
+            ->where('agent_conversation_states.is_paused', true);
     }
 
     /** @param Builder<Message> $query */
@@ -280,9 +355,20 @@ final class InboxController extends Controller
         }
 
         match ($request->string('state', 'all')->toString()) {
-            'agent' => $query->whereNotExists(function (QueryBuilder $subquery): void {
-                $this->waitingExecutionSubquery($subquery);
-            }),
+            'agent' => $query
+                ->whereNotExists(function (QueryBuilder $subquery): void {
+                    $this->waitingExecutionSubquery($subquery);
+                })
+                ->whereNotExists(function (QueryBuilder $subquery): void {
+                    $this->agentPauseSubquery($subquery);
+                }),
+            'paused' => $query
+                ->whereNotExists(function (QueryBuilder $subquery): void {
+                    $this->waitingExecutionSubquery($subquery);
+                })
+                ->whereExists(function (QueryBuilder $subquery): void {
+                    $this->agentPauseSubquery($subquery);
+                }),
             'flow' => $query->whereExists(function (QueryBuilder $subquery): void {
                 $this->waitingExecutionSubquery($subquery);
             }),
@@ -294,14 +380,24 @@ final class InboxController extends Controller
     private function applyQueue(Builder $query, Request $request): void
     {
         match ($request->string('queue', 'all')->toString()) {
-            'mine' => $query->whereExists(function (QueryBuilder $subquery) use ($request): void {
-                $this->waitingExecutionSubquery($subquery);
-                $subquery->where('flow_executions.human_assigned_user_id', $request->user()->getKey());
+            'mine' => $query->where(function (Builder $query) use ($request): void {
+                $query->whereExists(function (QueryBuilder $subquery) use ($request): void {
+                    $this->waitingExecutionSubquery($subquery);
+                    $subquery->where('flow_executions.human_assigned_user_id', $request->user()->getKey());
+                })->orWhereExists(function (QueryBuilder $subquery) use ($request): void {
+                    $this->agentPauseSubquery($subquery);
+                    $subquery->where('agent_conversation_states.assigned_user_id', $request->user()->getKey());
+                });
             }),
             'all' => null,
-            default => $query->whereExists(function (QueryBuilder $subquery): void {
-                $this->waitingExecutionSubquery($subquery);
-                $subquery->whereNull('flow_executions.human_assigned_user_id');
+            default => $query->where(function (Builder $query): void {
+                $query->whereExists(function (QueryBuilder $subquery): void {
+                    $this->waitingExecutionSubquery($subquery);
+                    $subquery->whereNull('flow_executions.human_assigned_user_id');
+                })->orWhereExists(function (QueryBuilder $subquery): void {
+                    $this->agentPauseSubquery($subquery);
+                    $subquery->whereNull('agent_conversation_states.assigned_user_id');
+                });
             }),
         };
     }
@@ -311,20 +407,30 @@ final class InboxController extends Controller
     {
         $assignedTo = $request->input('assigned_to');
         if ($assignedTo === 'unassigned') {
-            $query->whereNotExists(function (QueryBuilder $subquery): void {
-                $this->waitingExecutionSubquery($subquery);
-                $subquery->whereNotNull('flow_executions.human_assigned_user_id');
+            $query->where(function (Builder $query): void {
+                $query->whereExists(function (QueryBuilder $subquery): void {
+                    $this->waitingExecutionSubquery($subquery);
+                    $subquery->whereNull('flow_executions.human_assigned_user_id');
+                })->orWhereExists(function (QueryBuilder $subquery): void {
+                    $this->agentPauseSubquery($subquery);
+                    $subquery->whereNull('agent_conversation_states.assigned_user_id');
+                });
             });
         } elseif (is_numeric($assignedTo)) {
-            $query->whereExists(function (QueryBuilder $subquery) use ($assignedTo): void {
-                $this->waitingExecutionSubquery($subquery);
-                $subquery->where('flow_executions.human_assigned_user_id', (int) $assignedTo);
+            $query->where(function (Builder $query) use ($assignedTo): void {
+                $query->whereExists(function (QueryBuilder $subquery) use ($assignedTo): void {
+                    $this->waitingExecutionSubquery($subquery);
+                    $subquery->where('flow_executions.human_assigned_user_id', (int) $assignedTo);
+                })->orWhereExists(function (QueryBuilder $subquery) use ($assignedTo): void {
+                    $this->agentPauseSubquery($subquery);
+                    $subquery->where('agent_conversation_states.assigned_user_id', (int) $assignedTo);
+                });
             });
         }
     }
 
     /** @return array<string, mixed> */
-    private function conversation(Message $latestMessage, ?FlowExecution $execution): array
+    private function conversation(Message $latestMessage, ?FlowExecution $execution, ?AgentConversationState $agentState): array
     {
         $contact = $latestMessage->contact;
         $channel = $latestMessage->channel;
@@ -343,6 +449,7 @@ final class InboxController extends Controller
             'waitingSince' => $execution?->created_at?->toIso8601String(),
             'waitingSeconds' => $latestMessage->created_at === null ? 0 : max(0, (int) $latestMessage->created_at->diffInSeconds(now())),
             'state' => $execution === null ? 'agent' : 'flow',
+            'agentPaused' => $execution === null && $agentState?->is_paused === true,
             'reason' => $execution === null ? null : $this->reason($execution->human_transfer_reason),
             'channel' => [
                 'id' => $channel->id,
@@ -351,16 +458,24 @@ final class InboxController extends Controller
                 'statusLabel' => $channel->status->label(),
                 'available' => $channel->status === ChannelStatus::Connected,
             ],
-            'assignee' => $execution?->humanAssignee === null ? null : [
+            'assignee' => $execution?->humanAssignee !== null ? [
                 'id' => $execution->humanAssignee->id,
                 'name' => $execution->humanAssignee->name,
-            ],
+            ] : ($execution === null && $agentState?->assignedUser !== null ? [
+                'id' => $agentState->assignedUser->id,
+                'name' => $agentState->assignedUser->name,
+            ] : null),
         ];
     }
 
     /** @return array<string, mixed> */
-    private function selectedConversation(Contact $contact, Channel $channel, ?FlowExecution $execution, Request $request): array
-    {
+    private function selectedConversation(
+        Contact $contact,
+        Channel $channel,
+        ?FlowExecution $execution,
+        ?AgentConversationState $agentState,
+        Request $request,
+    ): array {
         $messages = Message::query()
             ->where('contact_id', $contact->getKey())
             ->where('channel_id', $channel->getKey())
@@ -419,10 +534,16 @@ final class InboxController extends Controller
                 'available' => $channel->status === ChannelStatus::Connected,
             ],
             'state' => $execution === null ? 'agent' : 'flow',
-            'assignee' => $execution?->humanAssignee === null ? null : [
+            'agentPaused' => $execution === null && $agentState?->is_paused === true,
+            'agentPauseExpiresAt' => $agentState?->expires_at?->toIso8601String(),
+            'agentPauseDurationMinutes' => $agentState?->pause_duration_minutes,
+            'assignee' => $execution?->humanAssignee !== null ? [
                 'id' => $execution->humanAssignee->id,
                 'name' => $execution->humanAssignee->name,
-            ],
+            ] : ($execution === null && $agentState?->assignedUser !== null ? [
+                'id' => $agentState->assignedUser->id,
+                'name' => $agentState->assignedUser->name,
+            ] : null),
             'reason' => $execution === null ? null : $this->reason($execution->human_transfer_reason),
             'execution' => $execution === null || $flow === null ? null : [
                 'id' => $execution->id,
@@ -441,6 +562,10 @@ final class InboxController extends Controller
                 'expiresAt' => $expiresAt?->toIso8601String(),
                 'remainingSeconds' => $window->remainingSeconds($channel, $lastIncoming),
             ],
+            'canPause' => $execution === null && ! ($agentState?->is_paused ?? false)
+                && app(AgentConversationService::class)->canPause($contact, $channel),
+            'canTakeOver' => $execution === null && ($agentState?->is_paused ?? false)
+                && $agentState?->assigned_user_id !== $request->user()->getKey(),
             'canWrite' => $execution !== null && $execution->human_assigned_user_id === $request->user()->getKey(),
             'canSend' => $execution !== null
                 && $execution->human_assigned_user_id === $request->user()->getKey()

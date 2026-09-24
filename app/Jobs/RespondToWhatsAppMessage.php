@@ -5,6 +5,7 @@ namespace App\Jobs;
 use App\Ai\Agents\WhatsAppAgent;
 use App\Enums\MessageDeliveryStatus;
 use App\Enums\MessageDirection;
+use App\Inbox\AgentConversationService;
 use App\Knowledge\AgentInstructionTemplate;
 use App\Knowledge\KnowledgeBaseSearch;
 use App\Models\Channel;
@@ -80,6 +81,7 @@ class RespondToWhatsAppMessage implements ShouldQueue
         KnowledgeBaseSearch $knowledgeBaseSearch,
         WhatsAppOutputAdapterFactory $outputAdapterFactory,
         WhatsAppCustomerCareWindow $customerCareWindow,
+        AgentConversationService $agentConversations,
     ): void {
         $channel = Channel::query()
             ->with(['agent.collections', 'agent.schedulableCalendars.integration'])
@@ -95,6 +97,10 @@ class RespondToWhatsAppMessage implements ShouldQueue
             ->first();
 
         if ($contact === null) {
+            return;
+        }
+
+        if ($agentConversations->isPaused($channel, (int) $contact->getKey())) {
             return;
         }
 
@@ -135,14 +141,24 @@ class RespondToWhatsAppMessage implements ShouldQueue
             throw new RuntimeException('O Agente não retornou conteúdo para enviar ao Contato.');
         }
 
-        if ($customerCareWindow->hasExpired($channel, $lastPendingMessage)) {
-            $this->recordUndeliveredResponse($channel, $contact, $content, $pendingMessages);
+        $agentConversations->runIfUnpaused($channel, $contact, function () use (
+            $channel,
+            $contact,
+            $content,
+            $pendingMessages,
+            $lastPendingMessage,
+            $customerCareWindow,
+            $outputAdapterFactory,
+        ): void {
+            if ($customerCareWindow->hasExpired($channel, $lastPendingMessage)) {
+                $this->recordUndeliveredResponse($channel, $contact, $content, $pendingMessages);
 
-            return;
-        }
+                return;
+            }
 
-        $outputAdapterFactory->make($channel)->sendText($channel, $contact, $content);
-        $this->markAsResponded($pendingMessages);
+            $outputAdapterFactory->make($channel)->sendText($channel, $contact, $content);
+            $this->markAsResponded($pendingMessages);
+        });
     }
 
     /**
