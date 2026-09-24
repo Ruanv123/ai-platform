@@ -169,6 +169,18 @@ it('pauses a direct Agent conversation and records an explicit takeover', functi
             ->where('selected.canTakeOver', false)
             ->where('selected.assignee.id', $user->id));
 
+    $this->actingAs($user)
+        ->get(route('inbox.index', ['state' => 'paused', 'assigned_to' => $user->id]))
+        ->assertOk()
+        ->assertInertia(fn ($page) => $page
+            ->where('conversations.total', 1)
+            ->where('conversations.data.0.agentPaused', true));
+
+    $this->actingAs($replacement)
+        ->get(route('inbox.show', ['contact' => $contact, 'channel' => $channel]))
+        ->assertOk()
+        ->assertInertia(fn ($page) => $page->where('selected.canTakeOver', true));
+
     $this->actingAs($replacement)
         ->post(route('inbox.agent.pause', ['contact' => $contact, 'channel' => $channel]))
         ->assertStatus(409);
@@ -423,6 +435,136 @@ it('sends a human message through the conversation channel and records its sende
         'content' => 'Vou ajudar você.',
         'sent_by_user_id' => $user->id,
     ]);
+});
+
+it('pauses and assigns a direct Agent before sending the first human message', function () {
+    Http::fake([
+        'graph.facebook.com/*' => Http::response(['messages' => [['id' => 'direct-human-message-1']]]),
+    ]);
+    $user = User::factory()->withTeam()->create();
+    $contact = Contact::factory()->for($user->company())->create();
+    $agent = Agent::factory()->for($user->company())->create();
+    $channel = Channel::factory()->for($user->company())->connected()->create(['agent_id' => $agent->id]);
+    WhatsAppPhoneNumber::factory()->for($channel)->withAccount()->create();
+    $incoming = Message::factory()->for($contact)->for($channel)->incoming()->create([
+        'content' => 'Quero falar com alguém.',
+    ]);
+
+    $this->actingAs($user)
+        ->post(route('inbox.messages.store', ['contact' => $contact, 'channel' => $channel]), [
+            'content' => 'Vou ajudar você.',
+        ])
+        ->assertRedirect(route('inbox.show', ['contact' => $contact, 'channel' => $channel]));
+
+    $this->assertDatabaseHas('messages', [
+        'contact_id' => $contact->id,
+        'channel_id' => $channel->id,
+        'content' => 'Vou ajudar você.',
+        'sent_by_user_id' => $user->id,
+        'delivery_status' => 'sent',
+    ]);
+    expect(AgentConversationState::withoutGlobalScopes()->firstOrFail()->is_paused)->toBeTrue()
+        ->and(AgentConversationState::withoutGlobalScopes()->firstOrFail()->assigned_user_id)->toBe($user->id)
+        ->and($incoming->fresh()->is_responded)->toBeTrue();
+});
+
+it('keeps the direct Agent paused and shows a failed human message when the provider rejects it', function () {
+    Http::fake([
+        'graph.facebook.com/*' => Http::response(['error' => ['message' => 'Indisponível']], 500),
+    ]);
+    $user = User::factory()->withTeam()->create();
+    $contact = Contact::factory()->for($user->company())->create();
+    $agent = Agent::factory()->for($user->company())->create();
+    $channel = Channel::factory()->for($user->company())->connected()->create(['agent_id' => $agent->id]);
+    WhatsAppPhoneNumber::factory()->for($channel)->withAccount()->create();
+    Message::factory()->for($contact)->for($channel)->incoming()->create(['content' => 'Preciso de ajuda.']);
+
+    $this->actingAs($user)
+        ->post(route('inbox.messages.store', ['contact' => $contact, 'channel' => $channel]), [
+            'content' => 'Vou ajudar você.',
+        ])
+        ->assertRedirect(route('inbox.show', ['contact' => $contact, 'channel' => $channel]));
+
+    expect(AgentConversationState::withoutGlobalScopes()->firstOrFail()->is_paused)->toBeTrue()
+        ->and(AgentConversationState::withoutGlobalScopes()->firstOrFail()->assigned_user_id)->toBe($user->id);
+    $this->assertDatabaseHas('messages', [
+        'contact_id' => $contact->id,
+        'channel_id' => $channel->id,
+        'content' => 'Vou ajudar você.',
+        'sent_by_user_id' => $user->id,
+        'delivery_status' => 'failed',
+    ]);
+});
+
+it('allows a direct human Template after the WhatsApp care window has expired', function () {
+    Http::fake([
+        'graph.facebook.com/*' => Http::response(['messages' => [['id' => 'direct-human-template-1']]]),
+    ]);
+    $user = User::factory()->withTeam()->create();
+    $contact = Contact::factory()->for($user->company())->create();
+    $agent = Agent::factory()->for($user->company())->create();
+    $channel = Channel::factory()->for($user->company())->connected()->create(['agent_id' => $agent->id]);
+    WhatsAppPhoneNumber::factory()->for($channel)->withAccount()->create();
+    Message::factory()->for($contact)->for($channel)->incoming()->create([
+        'created_at' => now()->subDay()->subMinute(),
+    ]);
+
+    $this->actingAs($user)
+        ->post(route('inbox.messages.store', ['contact' => $contact, 'channel' => $channel]), [
+            'type' => 'template',
+            'template' => 'reengagement',
+            'parameters' => ['Maria'],
+        ])
+        ->assertRedirect(route('inbox.show', ['contact' => $contact, 'channel' => $channel]));
+
+    Http::assertSent(fn (Request $request): bool => $request->data()['type'] === 'template'
+        && $request->data()['template']['name'] === 'reengagement');
+    expect(AgentConversationState::withoutGlobalScopes()->firstOrFail()->is_paused)->toBeTrue();
+    $this->assertDatabaseHas('messages', [
+        'provider_message_id' => 'direct-human-template-1',
+        'sent_by_user_id' => $user->id,
+        'delivery_status' => 'sent',
+    ]);
+});
+
+it('keeps a direct human text failure visible when the WhatsApp care window is closed', function () {
+    Http::fake();
+    $user = User::factory()->withTeam()->create();
+    $contact = Contact::factory()->for($user->company())->create();
+    $agent = Agent::factory()->for($user->company())->create();
+    $channel = Channel::factory()->for($user->company())->connected()->create(['agent_id' => $agent->id]);
+    WhatsAppPhoneNumber::factory()->for($channel)->withAccount()->create();
+    Message::factory()->for($contact)->for($channel)->incoming()->create([
+        'created_at' => now()->subDay()->subMinute(),
+    ]);
+
+    $this->actingAs($user)
+        ->post(route('inbox.messages.store', ['contact' => $contact, 'channel' => $channel]), [
+            'content' => 'Ainda posso responder?',
+        ])
+        ->assertRedirect(route('inbox.show', ['contact' => $contact, 'channel' => $channel]));
+
+    Http::assertNothingSent();
+    expect(AgentConversationState::withoutGlobalScopes()->firstOrFail()->is_paused)->toBeTrue();
+    $this->assertDatabaseHas('messages', [
+        'content' => 'Ainda posso responder?',
+        'delivery_status' => 'failed',
+        'sent_by_user_id' => $user->id,
+    ]);
+});
+
+it('opens a visible WhatsApp test conversation from the inbox', function () {
+    $user = User::factory()->withTeam()->create(['is_platform_admin' => true]);
+    $contact = Contact::factory()->for($user->company())->create();
+    $channel = Channel::factory()->for($user->company())->create(['type' => ChannelType::WhatsAppTest]);
+    $message = Message::factory()->for($contact)->for($channel)->create(['content' => 'Mensagem de teste.']);
+
+    $this->actingAs($user)
+        ->get(route('inbox.show', ['contact' => $contact, 'channel' => $channel]))
+        ->assertOk()
+        ->assertInertia(fn ($page) => $page
+            ->where('selected.channel.id', $channel->id)
+            ->where('selected.messages.data.0.id', $message->id));
 });
 
 it('marks an expired execution as failed when a person returns it to the bot', function () {

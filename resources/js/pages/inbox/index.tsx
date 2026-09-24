@@ -770,7 +770,7 @@ function ConversationThread({
                 <HistoryPanel history={selected.history} />
             </div>
 
-            {selected.state === 'flow' ? (
+            {selected.state === 'flow' || selected.canWrite ? (
             <div className="border-border/70 bg-background shrink-0 border-t p-4">
                 {!selected.channel.available && (
                     <div className="border-destructive/40 bg-destructive/10 text-foreground mb-3 rounded-lg border px-3 py-2 text-sm">
@@ -782,6 +782,11 @@ function ConversationThread({
                         {selected.assignee === null
                             ? 'Assuma a conversa antes de escrever.'
                             : `${selected.assignee.name} está atendendo esta conversa. Você precisa assumir antes de escrever.`}
+                    </div>
+                )}
+                {selected.state === 'agent' && !selected.agentPaused && (
+                    <div className="border-signal-attention/40 bg-signal-attention/10 text-foreground mb-3 rounded-lg border px-3 py-2 text-sm">
+                        Enviar uma Mensagem pausará o Agente e atribuirá a conversa a você.
                     </div>
                 )}
                 <form onSubmit={sendMessage} className="grid gap-2">
@@ -874,14 +879,16 @@ function ConversationThread({
                             </span>
                         )}
                         <span className="flex-1" />
-                        <Button
-                            type="button"
-                            variant="outline"
-                            size="sm"
-                            onClick={returnConversation}
-                        >
-                            Devolver ao bot
-                        </Button>
+                        {selected.state === 'flow' && (
+                            <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                onClick={returnConversation}
+                            >
+                                Devolver ao bot
+                            </Button>
+                        )}
                         <Button
                             type="submit"
                             size="sm"
@@ -911,6 +918,15 @@ function ConversationThread({
 
 function MessageBubble({ message }: { message: Message }) {
     const outgoing = message.direction === 'outgoing';
+    let content = message.content;
+    if (message.payloadType === 'template' && content !== null) {
+        try {
+            const template = JSON.parse(content) as { template?: string };
+            content = template.template ? `Template aprovado: ${template.template}` : 'Template aprovado';
+        } catch {
+            content = 'Template aprovado';
+        }
+    }
 
     return (
         <div className={cn('flex', outgoing ? 'justify-end' : 'justify-start')}>
@@ -923,8 +939,13 @@ function MessageBubble({ message }: { message: Message }) {
                 )}
             >
                 <p className="break-words whitespace-pre-wrap">
-                    {message.content ?? `[${message.payloadType}]`}
+                    {content ?? `[${message.payloadType}]`}
                 </p>
+                {message.deliveryStatus === 'failed' && (
+                    <span className="text-destructive mt-1 block text-[10px] font-semibold">
+                        Falha no envio · tente novamente
+                    </span>
+                )}
                 <span
                     className={cn(
                         'mt-1.5 block text-[10px]',

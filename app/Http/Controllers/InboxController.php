@@ -566,10 +566,17 @@ final class InboxController extends Controller
                 && app(AgentConversationService::class)->canPause($contact, $channel),
             'canTakeOver' => $execution === null && ($agentState?->is_paused ?? false)
                 && $agentState?->assigned_user_id !== $request->user()->getKey(),
-            'canWrite' => $execution !== null && $execution->human_assigned_user_id === $request->user()->getKey(),
-            'canSend' => $execution !== null
-                && $execution->human_assigned_user_id === $request->user()->getKey()
-                && $channel->status === ChannelStatus::Connected,
+            'canWrite' => $execution !== null
+                ? $execution->human_assigned_user_id === $request->user()->getKey()
+                : app(AgentConversationService::class)->canPause($contact, $channel)
+                    && (! ($agentState?->is_paused ?? false)
+                        || $agentState?->assigned_user_id === $request->user()->getKey()),
+            'canSend' => $channel->status === ChannelStatus::Connected
+                && ($execution !== null
+                    ? $execution->human_assigned_user_id === $request->user()->getKey()
+                    : app(AgentConversationService::class)->canPause($contact, $channel)
+                        && (! ($agentState?->is_paused ?? false)
+                            || $agentState?->assigned_user_id === $request->user()->getKey())),
         ];
     }
 

@@ -23,6 +23,7 @@ final class HumanInboxService
         private readonly WhatsAppOutputAdapterFactory $outputAdapterFactory,
         private readonly WhatsAppCustomerCareWindow $customerCareWindow,
         private readonly FlowEngine $flowEngine,
+        private readonly AgentConversationService $agentConversations,
     ) {}
 
     public function waitingExecution(Contact $contact, Channel $channel, bool $lock = false): ?FlowExecution
@@ -72,6 +73,10 @@ final class HumanInboxService
      */
     public function send(Contact $contact, Channel $channel, User $user, array $data): Message
     {
+        if ($this->waitingExecution($contact, $channel) === null) {
+            return $this->agentConversations->send($contact, $channel, $user, $data);
+        }
+
         return DB::transaction(function () use ($contact, $channel, $user, $data): Message {
             $execution = $this->waitingExecution($contact, $channel, lock: true);
             if ($execution === null || $execution->channel === null) {

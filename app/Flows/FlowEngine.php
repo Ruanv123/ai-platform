@@ -70,6 +70,14 @@ final class FlowEngine
         return $this->messageFlows($channel)->whereIn('status', ['published', 'paused'])->exists();
     }
 
+    public function hasNonTrivialManagedMessageFlows(Channel $channel): bool
+    {
+        return $this->messageFlows($channel)
+            ->whereIn('status', ['published', 'paused'])
+            ->where('is_trivial', false)
+            ->exists();
+    }
+
     /** @return Builder<Flow> */
     private function messageFlows(Channel $channel): Builder
     {
@@ -750,7 +758,20 @@ final class FlowEngine
             $traceData = $this->aiTraceData($prompt, $response, $config, $execution->variables);
             $text = trim($response->text);
             if ($text !== '') {
-                $this->sendText($execution, $text, allowOutsideWindow: false);
+                $channel = $execution->channel;
+                $contact = $execution->contact;
+                if ($channel === null || $contact === null) {
+                    throw new RuntimeException('O Fluxo precisa de Canal e Contato para enviar Mensagens.');
+                }
+
+                $sentWhileActive = $this->agentConversations->runIfUnpaused(
+                    $channel,
+                    $contact,
+                    fn (): bool => $this->sendText($execution, $text, allowOutsideWindow: false),
+                );
+                if (! $sentWhileActive) {
+                    return ['finish' => true, 'reason' => 'agent_paused', 'trace_data' => $traceData];
+                }
             }
             if ($message !== null) {
                 $message->forceFill(['is_responded' => true])->save();

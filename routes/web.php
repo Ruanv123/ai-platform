@@ -45,10 +45,14 @@ Route::post('webhooks/flows/{channelId}/{event}', [FlowWebhookController::class,
     ->name('webhooks.flows');
 
 Route::bind('channel', function (string $value): Channel {
-    return Channel::query()
-        ->whereKey($value)
-        ->where('type', ChannelType::WhatsApp)
-        ->firstOrFail();
+    $query = Channel::query()->whereKey($value);
+    if (request()->routeIs('inbox.*')) {
+        $query->whereIn('type', [ChannelType::WhatsApp, ChannelType::WhatsAppTest]);
+    } else {
+        $query->where('type', ChannelType::WhatsApp);
+    }
+
+    return $query->firstOrFail();
 });
 
 Route::bind('whatsappTestChannel', function (string $value): Channel {
