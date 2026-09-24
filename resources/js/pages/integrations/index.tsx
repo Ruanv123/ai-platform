@@ -229,7 +229,7 @@ function StatusBadge({ status, label }: { status: string; label: string }) {
         <Badge
             variant={
                 status === 'connected'
-                    ? 'default'
+                    ? 'success'
                     : status === 'error'
                       ? 'destructive'
                       : 'secondary'

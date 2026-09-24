@@ -1,7 +1,6 @@
 import { Link, usePage } from '@inertiajs/react';
 import {
     Bot,
-    Brain,
     LayoutGrid,
     MessageSquare,
     Plug,
@@ -54,30 +53,34 @@ export function AppSidebar() {
             icon: LayoutGrid,
         },
         {
-            title: 'Agentes',
-            href: agents(),
-            icon: Bot,
-        },
-        {
             title: 'Atendimento',
             href: inbox(),
             icon: MessageSquare,
             badge: props.pendingHumanCount,
         },
         {
+            title: 'Agentes',
+            href: agents(),
+            icon: Bot,
+            items: [
+                {
+                    title: 'Agentes',
+                    href: agents(),
+                },
+                {
+                    title: 'Base de conhecimento',
+                    href: collections(),
+                },
+                {
+                    title: 'Canais',
+                    href: channels(),
+                },
+            ],
+        },
+        {
             title: 'Fluxos',
             href: flows(),
             icon: Workflow,
-        },
-        {
-            title: 'Base de conhecimento',
-            href: collections(),
-            icon: Brain,
-        },
-        {
-            title: 'Canais',
-            href: channels(),
-            icon: MessageSquare,
         },
         ...(props.hasOfficialWhatsApp
             ? [
@@ -88,6 +91,9 @@ export function AppSidebar() {
                   },
               ]
             : []),
+    ];
+
+    const secondaryNavItems: NavItem[] = [
         {
             title: 'Integrações',
             href: integrations(),
@@ -126,6 +132,7 @@ export function AppSidebar() {
 
             <SidebarContent>
                 <NavMain items={mainNavItems} />
+                <NavMain items={secondaryNavItems} label="Administração" />
             </SidebarContent>
 
             <SidebarFooter>
