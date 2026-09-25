@@ -1,6 +1,9 @@
 <?php
 
+use App\Consent\ContactConsentService;
 use App\Enums\ChannelType;
+use App\Enums\ConsentAction;
+use App\Enums\ConsentPurpose;
 use App\Enums\MessageDeliveryStatus;
 use App\Enums\MessageDirection;
 use App\Jobs\RespondToWhatsAppMessage;
@@ -263,3 +266,162 @@ it('updates the matching outgoing message delivery status', function (
     expect($message->fresh()->delivery_status)->toBe(MessageDeliveryStatus::Read);
     $this->assertDatabaseCount('messages', 1);
 })->with('WhatsApp webhook channels');
+
+it('only advances official delivery status when webhook events arrive out of order', function () {
+    $channel = createWhatsAppConformanceChannel(ChannelType::WhatsApp);
+    $contact = Contact::factory()->for($channel->team)->create();
+    $message = Message::factory()
+        ->for($contact)
+        ->for($channel)
+        ->outgoing()
+        ->create([
+            'provider_message_id' => 'official-outgoing-progress',
+            'delivery_status' => MessageDeliveryStatus::Sent,
+        ]);
+    $payload = whatsappConformanceFixture('oficial', 'delivery-status');
+    $payload['entry'][0]['changes'][0]['value']['statuses'][0]['id'] = $message->provider_message_id;
+
+    foreach ([
+        'delivered' => MessageDeliveryStatus::Delivered,
+        'sent' => MessageDeliveryStatus::Delivered,
+        'read' => MessageDeliveryStatus::Read,
+        'delivered_after_read' => MessageDeliveryStatus::Read,
+    ] as $status => $expectedStatus) {
+        $payload['entry'][0]['changes'][0]['value']['statuses'][0]['status'] = str_replace('_after_read', '', $status);
+
+        postWhatsAppConformanceWebhook(
+            $this,
+            ChannelType::WhatsApp,
+            'webhooks.whatsapp.app-proprio',
+            $payload,
+        )->assertOk();
+
+        expect($message->fresh()->delivery_status)->toBe($expectedStatus);
+    }
+});
+
+it('records a translated failure reason and Meta code for official failed statuses', function (int $failureCode, string $failureReason) {
+    $channel = createWhatsAppConformanceChannel(ChannelType::WhatsApp);
+    $contact = Contact::factory()->for($channel->team)->create();
+    $message = Message::factory()
+        ->for($contact)
+        ->for($channel)
+        ->outgoing()
+        ->create([
+            'provider_message_id' => 'official-outgoing-failed-'.$failureCode,
+            'delivery_status' => MessageDeliveryStatus::Delivered,
+        ]);
+    $payload = whatsappConformanceFixture('oficial', 'delivery-status');
+    $payload['entry'][0]['changes'][0]['value']['statuses'][0] = [
+        'id' => $message->provider_message_id,
+        'status' => 'failed',
+        'errors' => [['code' => $failureCode]],
+    ];
+
+    postWhatsAppConformanceWebhook(
+        $this,
+        ChannelType::WhatsApp,
+        'webhooks.whatsapp.app-proprio',
+        $payload,
+    )->assertOk();
+
+    expect($message->fresh()->delivery_status)->toBe(MessageDeliveryStatus::Failed)
+        ->and($message->fresh()->failure_code)->toBe($failureCode)
+        ->and($message->fresh()->failure_reason)->toBe($failureReason);
+})->with([
+    'closed 24 hour window' => [131047, 'Janela de atendimento de 24 horas encerrada.'],
+    'recipient cannot receive messages' => [131026, 'Este número não pode receber mensagens pelo WhatsApp.'],
+    'media rejected' => [131053, 'A Meta recusou a mídia enviada.'],
+    'marketing blocked' => [131050, 'Contato bloqueou mensagens de marketing.'],
+    'unknown failure' => [999999, 'Não foi possível entregar esta mensagem pelo WhatsApp.'],
+]);
+
+it('revokes marketing consent when Meta reports a marketing block', function () {
+    $channel = createWhatsAppConformanceChannel(ChannelType::WhatsApp);
+    $contact = Contact::factory()->for($channel->team)->create();
+    $consent = app(ContactConsentService::class);
+    $consent->grant($contact, ConsentPurpose::Marketing, 'settings');
+    $message = Message::factory()
+        ->for($contact)
+        ->for($channel)
+        ->outgoing()
+        ->create([
+            'provider_message_id' => 'official-marketing-block',
+            'delivery_status' => MessageDeliveryStatus::Sent,
+        ]);
+    $payload = whatsappConformanceFixture('oficial', 'delivery-status');
+    $payload['entry'][0]['changes'][0]['value']['statuses'][0] = [
+        'id' => $message->provider_message_id,
+        'status' => 'failed',
+        'errors' => [['code' => 131050]],
+    ];
+
+    postWhatsAppConformanceWebhook(
+        $this,
+        ChannelType::WhatsApp,
+        'webhooks.whatsapp.app-proprio',
+        $payload,
+    )->assertOk();
+
+    expect($consent->isGranted($contact, ConsentPurpose::Marketing))->toBeFalse();
+    $this->assertDatabaseHas('contact_consents', [
+        'team_id' => $channel->team_id,
+        'contact_id' => $contact->id,
+        'purpose' => ConsentPurpose::Marketing->value,
+        'action' => ConsentAction::Revoked->value,
+        'source' => 'meta_webhook',
+    ]);
+});
+
+it('ignores official pricing status updates', function () {
+    $channel = createWhatsAppConformanceChannel(ChannelType::WhatsApp);
+    $contact = Contact::factory()->for($channel->team)->create();
+    $message = Message::factory()
+        ->for($contact)
+        ->for($channel)
+        ->outgoing()
+        ->create([
+            'provider_message_id' => 'official-outgoing-pricing',
+            'delivery_status' => MessageDeliveryStatus::Sent,
+        ]);
+    $payload = whatsappConformanceFixture('oficial', 'delivery-status');
+    $payload['entry'][0]['changes'][0]['value']['statuses'][0]['id'] = $message->provider_message_id;
+    $payload['entry'][0]['changes'][0]['value']['statuses'][0]['status'] = 'pricing';
+
+    postWhatsAppConformanceWebhook(
+        $this,
+        ChannelType::WhatsApp,
+        'webhooks.whatsapp.app-proprio',
+        $payload,
+    )->assertOk();
+
+    expect($message->fresh()->delivery_status)->toBe(MessageDeliveryStatus::Sent);
+});
+
+it('does not replace a failed test message with a read receipt', function () {
+    $channel = createWhatsAppConformanceChannel(ChannelType::WhatsAppTest);
+    $contact = Contact::factory()->for($channel->team)->create();
+    $message = Message::factory()
+        ->for($contact)
+        ->for($channel)
+        ->outgoing()
+        ->create([
+            'provider_message_id' => 'test-outgoing-failed',
+            'delivery_status' => MessageDeliveryStatus::Failed,
+            'failure_code' => 131047,
+            'failure_reason' => 'Janela de atendimento de 24 horas encerrada.',
+        ]);
+    $payload = whatsappConformanceFixture('testes', 'delivery-status');
+    $payload['data']['MessageIDs'] = [$message->provider_message_id];
+
+    postWhatsAppConformanceWebhook(
+        $this,
+        ChannelType::WhatsAppTest,
+        'webhooks.whatsapp-test',
+        $payload,
+    )->assertOk();
+
+    expect($message->fresh()->delivery_status)->toBe(MessageDeliveryStatus::Failed)
+        ->and($message->fresh()->failure_code)->toBe(131047)
+        ->and($message->fresh()->failure_reason)->toBe('Janela de atendimento de 24 horas encerrada.');
+});

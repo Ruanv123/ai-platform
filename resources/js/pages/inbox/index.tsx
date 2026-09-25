@@ -136,6 +136,16 @@ type SelectedConversation = {
     canReturn: boolean;
 };
 
+function failureReasonLabel(failureReason: string | null): string {
+    const translatedReasons: Record<string, string> = {
+        customer_care_window_closed: 'Janela de 24 h encerrada · use um Template',
+        agent_response_failed: 'Falha na resposta do Agente · pausa mantida',
+        provider_error: 'Falha no envio · tente novamente',
+    };
+
+    return translatedReasons[failureReason ?? ''] ?? failureReason ?? 'Falha no envio · tente novamente';
+}
+
 type Props = {
     conversations: {
         data: Conversation[];
@@ -1211,11 +1221,7 @@ function MessageBubble({ message }: { message: Message }) {
                 </p>
                 {message.deliveryStatus === 'failed' && (
                     <span className="text-destructive mt-1 block text-[10px] font-semibold">
-                        {message.failureReason === 'customer_care_window_closed'
-                            ? 'Janela de 24 h encerrada · use um Template'
-                            : message.failureReason === 'agent_response_failed'
-                              ? 'Falha na resposta do Agente · pausa mantida'
-                              : 'Falha no envio · tente novamente'}
+                        {failureReasonLabel(message.failureReason)}
                     </span>
                 )}
                 <span

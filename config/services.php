@@ -38,6 +38,12 @@ return [
     'whatsapp' => [
         'graph_api_version' => env('WHATSAPP_GRAPH_API_VERSION', 'v23.0'),
         'graph_api_url' => env('WHATSAPP_GRAPH_API_URL', 'https://graph.facebook.com'),
+        'platform' => [
+            'app_id' => env('WHATSAPP_PLATFORM_APP_ID'),
+            'app_secret' => env('WHATSAPP_PLATFORM_APP_SECRET'),
+            'config_id' => env('WHATSAPP_PLATFORM_CONFIG_ID'),
+            'webhook_verify_token' => env('WHATSAPP_PLATFORM_WEBHOOK_VERIFY_TOKEN'),
+        ],
     ],
 
     'evolution' => [
