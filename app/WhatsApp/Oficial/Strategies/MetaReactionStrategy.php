@@ -10,6 +10,11 @@ final class MetaReactionStrategy implements MetaStrategy
 {
     public function __construct(private readonly MessageReactionUpdater $reactionUpdater) {}
 
+    public function shouldDispatchResponse(): bool
+    {
+        return false;
+    }
+
     public function handle(Channel $channel, array $payload): ?Message
     {
         $reaction = data_get($payload, 'entry.0.changes.0.value.messages.0.reaction');
