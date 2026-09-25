@@ -14,6 +14,7 @@ use App\Models\Message;
 use App\Models\User;
 use App\Models\WhatsAppAccount;
 use App\Models\WhatsAppPhoneNumber;
+use App\Models\WhatsAppTemplate;
 use App\Models\WhatsAppTestConnection;
 use Illuminate\Http\Client\Request;
 use Illuminate\Http\UploadedFile;
@@ -230,6 +231,158 @@ it('accepts supported audio attachment formats through the conversation route', 
     'MP4' => [UploadedFile::fake()->create('gravacao.mp4', 1, 'video/mp4'), false],
     'M4A' => [UploadedFile::fake()->create('gravacao.m4a', 1, 'audio/mp4'), false],
 ]);
+
+it('uploads a recipient file and sends it in an approved media header template', function () {
+    Storage::fake('whatsapp_media');
+    Http::preventStrayRequests();
+    Http::fake([
+        'graph.facebook.com/*' => Http::sequence()
+            ->push(['id' => 'recipient-header-media-id'])
+            ->push(['messages' => [['id' => 'media-header-template-message-id']]]),
+    ]);
+    $user = User::factory()->withTeam()->create(['is_platform_admin' => true]);
+    $execution = mediaSendingExecution($user, ChannelType::WhatsApp);
+    $account = $execution->channel->whatsappPhoneNumber->whatsappAccount;
+    $template = WhatsAppTemplate::factory()->for($account, 'account')->create([
+        'name' => 'exame_pronto',
+    ]);
+    $template->components()->create([
+        'type' => 'header',
+        'format' => 'image',
+        'media_handle' => 'template-example-handle',
+        'position' => 0,
+    ]);
+    $file = UploadedFile::fake()->create('exame.png', 1, 'image/png');
+
+    $this->actingAs($user)
+        ->post(route('inbox.take', inboxConversationParams($execution)))
+        ->assertRedirect(route('inbox.show', inboxConversationParams($execution)));
+
+    $this->actingAs($user)
+        ->post(route('inbox.messages.store', inboxConversationParams($execution)), [
+            'type' => 'template',
+            'template' => $template->name,
+            'parameters' => ['Ana'],
+            'media' => $file,
+        ])
+        ->assertRedirect(route('inbox.show', inboxConversationParams($execution)));
+
+    $message = Message::query()
+        ->where('provider_message_id', 'media-header-template-message-id')
+        ->firstOrFail();
+    expect($message->payload_type)->toBe('template')
+        ->and($message->media_filename)->toBe('exame.png')
+        ->and($message->media_available)->toBeTrue();
+    Storage::disk('whatsapp_media')->assertExists($message->media_path);
+    Http::assertSent(fn (Request $request): bool => str_ends_with($request->url(), '/media')
+        && $request->isMultipart()
+        && $request->hasFile('file', null, 'exame.png'));
+    Http::assertSent(fn (Request $request): bool => str_ends_with($request->url(), '/messages')
+        && $request->data()['template']['components'][0] === [
+            'type' => 'header',
+            'parameters' => [[
+                'type' => 'image',
+                'image' => ['id' => 'recipient-header-media-id'],
+            ]],
+        ]);
+});
+
+it('sends a media header template through a direct Agent conversation', function () {
+    Storage::fake('whatsapp_media');
+    Http::preventStrayRequests();
+    Http::fake([
+        'graph.facebook.com/*' => Http::sequence()
+            ->push(['id' => 'direct-recipient-header-media-id'])
+            ->push(['messages' => [['id' => 'direct-media-header-template-id']]]),
+    ]);
+    $user = User::factory()->withTeam()->create();
+    $team = $user->company();
+    $agent = Agent::factory()->for($team)->create();
+    $channel = Channel::factory()->for($team)->connected()->create(['agent_id' => $agent->getKey()]);
+    $account = WhatsAppAccount::factory()->for($team, 'team')->create([
+        'access_token' => 'direct-template-media-token',
+    ]);
+    $phoneNumber = WhatsAppPhoneNumber::factory()->for($channel)->for($account, 'whatsappAccount')->create([
+        'phone_number_id' => 'direct-template-media-phone-id',
+    ]);
+    $contact = Contact::factory()->for($team)->create();
+    Message::factory()->for($contact)->for($channel)->incoming()->create(['created_at' => now()]);
+    $template = WhatsAppTemplate::factory()->for($account, 'account')->create([
+        'name' => 'direct_exame_pronto',
+    ]);
+    $template->components()->create([
+        'type' => 'header',
+        'format' => 'document',
+        'media_handle' => 'document-template-example-handle',
+        'position' => 0,
+    ]);
+    $file = UploadedFile::fake()->create('exame.pdf', 1, 'application/pdf');
+
+    $this->actingAs($user)
+        ->post(route('inbox.messages.store', ['contact' => $contact, 'channel' => $channel]), [
+            'type' => 'template',
+            'template' => $template->name,
+            'parameters' => ['Ana'],
+            'media' => $file,
+        ])
+        ->assertRedirect(route('inbox.show', ['contact' => $contact, 'channel' => $channel]));
+
+    $message = Message::query()
+        ->where('provider_message_id', 'direct-media-header-template-id')
+        ->firstOrFail();
+    expect($message->payload_type)->toBe('template')
+        ->and($message->media_filename)->toBe('exame.pdf')
+        ->and($message->media_available)->toBeTrue();
+    Storage::disk('whatsapp_media')->assertExists($message->media_path);
+    Http::assertSent(fn (Request $request): bool => $request->url() === 'https://graph.facebook.com/v23.0/'.$phoneNumber->phone_number_id.'/media'
+        && $request->isMultipart()
+        && $request->hasFile('file', null, 'exame.pdf'));
+    Http::assertSent(fn (Request $request): bool => $request->url() === 'https://graph.facebook.com/v23.0/'.$phoneNumber->phone_number_id.'/messages'
+        && $request->data()['template']['components'][0] === [
+            'type' => 'header',
+            'parameters' => [[
+                'type' => 'document',
+                'document' => [
+                    'id' => 'direct-recipient-header-media-id',
+                    'filename' => 'exame.pdf',
+                ],
+            ]],
+        ]);
+});
+
+it('shows synchronized video header templates and blocks sending them', function () {
+    Http::preventStrayRequests();
+    $user = User::factory()->withTeam()->create(['is_platform_admin' => true]);
+    $execution = mediaSendingExecution($user, ChannelType::WhatsApp);
+    $account = $execution->channel->whatsappPhoneNumber->whatsappAccount;
+    $template = WhatsAppTemplate::factory()->for($account, 'account')->create([
+        'name' => 'video_apresentacao',
+    ]);
+    $template->components()->create([
+        'type' => 'header',
+        'format' => 'video',
+        'media_handle' => 'video-template-example-handle',
+        'position' => 0,
+    ]);
+
+    $this->actingAs($user)
+        ->get(route('inbox.show', inboxConversationParams($execution)))
+        ->assertInertia(fn ($page) => $page
+            ->where('selected.templates.0.name', 'video_apresentacao')
+            ->where('selected.templates.0.headerType', 'VIDEO'));
+
+    $this->actingAs($user)
+        ->post(route('inbox.take', inboxConversationParams($execution)))
+        ->assertRedirect(route('inbox.show', inboxConversationParams($execution)));
+    $this->actingAs($user)
+        ->post(route('inbox.messages.store', inboxConversationParams($execution)), [
+            'type' => 'template',
+            'template' => $template->name,
+        ])
+        ->assertSessionHasErrors(['template' => 'O envio de Templates com cabeçalho de vídeo ainda não está disponível.']);
+
+    Http::assertNothingSent();
+});
 
 it('rejects an unsupported outgoing media format before contacting WhatsApp', function (string $type, string $message) {
     Http::preventStrayRequests();

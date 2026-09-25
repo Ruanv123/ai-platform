@@ -9,7 +9,9 @@ use App\Models\WhatsAppTemplate;
 use App\Models\WhatsAppTemplateComponent;
 use App\Models\WhatsAppTemplateHistory;
 use App\WhatsApp\Oficial\MetaGraphApiResponseHandler;
+use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\PendingRequest;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;
@@ -57,6 +59,73 @@ final class WhatsAppTemplateService
         );
 
         return $template->fresh();
+    }
+
+    public function uploadHeaderMedia(WhatsAppAccount $account, UploadedFile $file): string
+    {
+        if (blank($account->app_id)) {
+            throw new RuntimeException('Configure o App ID da Meta na aba Conexão para enviar o exemplo de mídia.');
+        }
+
+        $mimeType = $file->getMimeType() ?: 'application/octet-stream';
+        $baseUrl = $this->graphBase();
+
+        try {
+            $session = Http::connectTimeout(3)
+                ->timeout(15)
+                ->withHeaders(['Authorization' => 'OAuth '.$account->access_token])
+                ->post($baseUrl.'/'.rawurlencode((string) $account->app_id).'/uploads?'.http_build_query([
+                    'file_length' => $file->getSize(),
+                    'file_type' => $mimeType,
+                    'file_name' => $file->getClientOriginalName(),
+                ]));
+
+            if (! $session->successful()) {
+                throw new RuntimeException('Não foi possível criar uma sessão para enviar o exemplo de mídia à Meta.');
+            }
+
+            $uploadId = $session->json('id');
+            if (! is_string($uploadId) || blank($uploadId)) {
+                throw new RuntimeException('A Meta não devolveu uma sessão válida para o exemplo de mídia.');
+            }
+
+            $filePath = $file->getRealPath();
+            if (! is_string($filePath)) {
+                throw new RuntimeException('Não foi possível ler o arquivo de exemplo enviado.');
+            }
+
+            $stream = fopen($filePath, 'rb');
+            if (! is_resource($stream)) {
+                throw new RuntimeException('Não foi possível ler o arquivo de exemplo enviado.');
+            }
+
+            try {
+                $upload = Http::connectTimeout(3)
+                    ->timeout(120)
+                    ->withHeaders([
+                        'Authorization' => 'OAuth '.$account->access_token,
+                        'file_offset' => '0',
+                        'Content-Type' => $mimeType,
+                    ])
+                    ->withBody($stream, $mimeType)
+                    ->post($baseUrl.'/'.$uploadId);
+            } finally {
+                fclose($stream);
+            }
+
+            if (! $upload->successful()) {
+                throw new RuntimeException('Não foi possível enviar o exemplo de mídia à Meta.');
+            }
+
+            $handle = $upload->json('h');
+            if (! is_string($handle) || blank($handle)) {
+                throw new RuntimeException('A Meta não devolveu uma referência válida para o exemplo de mídia.');
+            }
+
+            return $handle;
+        } catch (ConnectionException) {
+            throw new RuntimeException('Não foi possível enviar o exemplo de mídia à Meta. Verifique sua conexão e tente novamente.');
+        }
     }
 
     public function upsertFromMeta(WhatsAppAccount $account, array $remote): WhatsAppTemplate
@@ -162,6 +231,7 @@ final class WhatsAppTemplateService
     public function replaceComponents(WhatsAppTemplate $template, array $components): void
     {
         DB::transaction(function () use ($template, $components): void {
+            $existingHeader = $template->components()->where('type', 'header')->first();
             $template->components()->delete();
 
             foreach (array_values($components) as $position => $componentData) {
@@ -175,12 +245,21 @@ final class WhatsAppTemplateService
                 }
 
                 $example = is_array($componentData['example'] ?? null) ? $componentData['example'] : [];
+                $mediaHandle = $this->scalar($componentData['media_handle'] ?? $this->componentMediaHandle($example));
+                $mediaPath = $this->scalar($componentData['media_path'] ?? null);
+                if ($type === 'header'
+                    && $mediaPath === null
+                    && $mediaHandle !== null
+                    && $existingHeader?->media_handle === $mediaHandle) {
+                    $mediaPath = $existingHeader->media_path;
+                }
+
                 $component = $template->components()->create([
                     'type' => $type,
                     'format' => $this->format($componentData['format'] ?? null),
                     'text' => $this->scalar($componentData['text'] ?? null),
-                    'media_path' => null,
-                    'media_handle' => $this->componentMediaHandle($example),
+                    'media_path' => $mediaPath,
+                    'media_handle' => $mediaHandle,
                     'position' => $position,
                 ]);
 
@@ -252,6 +331,13 @@ final class WhatsAppTemplateService
             if (blank($variable['example'] ?? null)) {
                 throw new RuntimeException('Informe um exemplo para cada variável do Template.');
             }
+        }
+
+        $header = $template->componentByType('header');
+        if ($header !== null
+            && in_array($header->format, ['image', 'document'], true)
+            && blank($header->media_handle)) {
+            throw new RuntimeException('Envie um arquivo de exemplo para o cabeçalho de mídia do Template.');
         }
 
         $buttons = $template->buttonDefinitions();

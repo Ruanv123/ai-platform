@@ -19,6 +19,7 @@ type Template = {
     body: string;
     headerType: string | null;
     headerText: string | null;
+    headerMediaHandleAvailable: boolean;
     footer: string | null;
     buttons: {
         type: string;
@@ -120,6 +121,17 @@ export default function TemplateShow({ template, permissions }: Props) {
                                 </p>
                             </div>
                             <div className="bg-muted/50 max-w-md rounded-2xl p-4">
+                                {template.headerType === 'IMAGE' && (
+                                    <p className="mb-2 font-semibold">Imagem</p>
+                                )}
+                                {template.headerType === 'DOCUMENT' && (
+                                    <p className="mb-2 font-semibold">Documento</p>
+                                )}
+                                {template.headerType === 'VIDEO' && (
+                                    <p className="text-signal-attention mb-2 text-sm font-medium">
+                                        Cabeçalho de vídeo sincronizado da Meta. O envio pela conversa ainda não está disponível.
+                                    </p>
+                                )}
                                 {template.headerText && (
                                     <p className="mb-2 font-semibold">
                                         {template.headerText}
@@ -214,6 +226,11 @@ export default function TemplateShow({ template, permissions }: Props) {
                                                         template.requestedCategory
                                                     }
                                                 />
+                                                <input
+                                                    type="hidden"
+                                                    name="header_type"
+                                                    value={template.headerType ?? 'TEXT'}
+                                                />
                                                 <div className="grid gap-2">
                                                     <Label htmlFor="body">
                                                         Corpo
@@ -232,19 +249,42 @@ export default function TemplateShow({ template, permissions }: Props) {
                                                         </p>
                                                     )}
                                                 </div>
-                                                <div className="grid gap-2">
-                                                    <Label htmlFor="header">
-                                                        Cabeçalho
-                                                    </Label>
-                                                    <Input
-                                                        id="header"
-                                                        name="header_text"
-                                                        defaultValue={
-                                                            template.headerText ??
-                                                            ''
-                                                        }
-                                                    />
-                                                </div>
+                                                {template.headerType === 'IMAGE' ||
+                                                template.headerType === 'DOCUMENT' ? (
+                                                    <div className="grid gap-2">
+                                                        <Label htmlFor="header_media">
+                                                            {template.headerType === 'IMAGE'
+                                                                ? 'Novo exemplo de imagem · JPEG ou PNG · até 5 MB'
+                                                                : 'Novo exemplo de documento · PDF, DOC, DOCX, XLS, XLSX, PPT, PPTX ou TXT · até 100 MB'}
+                                                        </Label>
+                                                        <input
+                                                            id="header_media"
+                                                            name="header_media"
+                                                            type="file"
+                                                            required={!template.headerMediaHandleAvailable}
+                                                            accept={template.headerType === 'IMAGE'
+                                                                ? '.jpg,.jpeg,.png,image/jpeg,image/png'
+                                                                : '.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt'}
+                                                            className="border-input file:bg-muted file:text-foreground rounded-md border px-3 py-2 text-xs file:mr-3 file:rounded file:border-0 file:px-2 file:py-1"
+                                                        />
+                                                        {errors.header_media && (
+                                                            <p className="text-destructive text-xs">
+                                                                {errors.header_media}
+                                                            </p>
+                                                        )}
+                                                    </div>
+                                                ) : template.headerType === 'TEXT' ? (
+                                                    <div className="grid gap-2">
+                                                        <Label htmlFor="header">
+                                                            Cabeçalho
+                                                        </Label>
+                                                        <Input
+                                                            id="header"
+                                                            name="header_text"
+                                                            defaultValue={template.headerText ?? ''}
+                                                        />
+                                                    </div>
+                                                ) : null}
                                                 <div className="grid gap-2">
                                                     <Label htmlFor="footer">
                                                         Rodapé
