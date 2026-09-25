@@ -84,7 +84,7 @@ it('defers the live test Profile and reads only its supported Evolution Go field
         ->component('channels/whatsapp-test')
         ->where('activeTab', 'perfil')
         ->where('whatsappProfileCapabilities.readableFields', ['profilePicture', 'displayName', 'about'])
-        ->where('whatsappProfileCapabilities.editableFields', ['about'])
+        ->where('whatsappProfileCapabilities.editableFields', ['profilePicture', 'about'])
         ->where('whatsappProfileCapabilities.canRequestDisplayName', false)
     );
     Http::assertNothingSent();

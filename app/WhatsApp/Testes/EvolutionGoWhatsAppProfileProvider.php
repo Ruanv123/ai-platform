@@ -8,6 +8,9 @@ use App\WhatsApp\Profiles\WhatsAppProfileCapabilities;
 use App\WhatsApp\Profiles\WhatsAppProfileData;
 use App\WhatsApp\Profiles\WhatsAppProfileProvider;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Facades\URL;
+use Illuminate\Support\Str;
 use RuntimeException;
 
 final class EvolutionGoWhatsAppProfileProvider implements WhatsAppProfileProvider
@@ -18,7 +21,7 @@ final class EvolutionGoWhatsAppProfileProvider implements WhatsAppProfileProvide
     {
         return new WhatsAppProfileCapabilities(
             readableFields: ['profilePicture', 'displayName', 'about'],
-            editableFields: ['about'],
+            editableFields: ['profilePicture', 'about'],
             canRequestDisplayName: false,
         );
     }
@@ -85,6 +88,47 @@ final class EvolutionGoWhatsAppProfileProvider implements WhatsAppProfileProvide
 
     public function updateProfilePicture(Channel $channel, UploadedFile $photo): void
     {
-        throw new WhatsAppProfileException('A troca da foto ainda não está disponível para este tipo de Canal.');
+        $connection = $channel->whatsappTestConnection;
+
+        if ($connection === null) {
+            throw new WhatsAppProfileException('O Perfil do WhatsApp não está disponível para este Canal.');
+        }
+
+        $extension = match ($photo->getMimeType()) {
+            'image/jpeg' => 'jpg',
+            'image/png' => 'png',
+            default => throw new WhatsAppProfileException('A foto precisa estar no formato JPEG ou PNG.'),
+        };
+        $photoToken = Str::random(64);
+        $path = 'whatsapp-profile-photos/'.$photoToken.'.'.$extension;
+
+        try {
+            $storedPath = Storage::disk('whatsapp_media')->putFileAs(
+                'whatsapp-profile-photos',
+                $photo,
+                $photoToken.'.'.$extension,
+            );
+
+            if (! is_string($storedPath)) {
+                throw new WhatsAppProfileException('Não foi possível preparar a foto para o Evolution Go.');
+            }
+
+            $imageUrl = URL::temporarySignedRoute(
+                'channels.whatsapp-test.profile.photo.serve',
+                now()->addMinutes(5),
+                [
+                    'photoToken' => $photoToken,
+                    'extension' => $extension,
+                ],
+            );
+
+            try {
+                $this->evolutionGo->updateProfilePicture($connection->access_token, $imageUrl);
+            } catch (RuntimeException $exception) {
+                throw new WhatsAppProfileException($exception->getMessage(), 0, $exception);
+            }
+        } finally {
+            Storage::disk('whatsapp_media')->delete($path);
+        }
     }
 }
