@@ -6,6 +6,7 @@ use App\Models\Channel;
 use App\Models\Contact;
 use App\Models\Message;
 use App\Models\WhatsAppTemplate;
+use Illuminate\Http\UploadedFile;
 
 interface WhatsAppOutputAdapter
 {
@@ -13,6 +14,8 @@ interface WhatsAppOutputAdapter
      * Send one text response and register the outgoing Message.
      */
     public function sendText(Channel $channel, Contact $contact, string $content): Message;
+
+    public function sendMedia(Channel $channel, Contact $contact, UploadedFile $file, string $type): Message;
 
     /**
      * Send a provider-approved template and register the outgoing Message.
