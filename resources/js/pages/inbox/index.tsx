@@ -69,6 +69,8 @@ type Message = {
     createdAt: string | null;
     deliveryStatus: string | null;
     failureReason: string | null;
+    reactionEmoji: string | null;
+    reactedAt: string | null;
     mediaAvailable: boolean;
     mediaUrl: string | null;
     mediaFilename: string | null;
@@ -1201,12 +1203,21 @@ function MessageBubble({ message }: { message: Message }) {
         <div className={cn('flex', outgoing ? 'justify-end' : 'justify-start')}>
             <div
                 className={cn(
-                    'max-w-[62%] px-3.5 py-2.5 text-[13px] leading-relaxed',
+                    'relative max-w-[62%] px-3.5 py-2.5 text-[13px] leading-relaxed',
                     outgoing
                         ? 'bg-primary text-primary-foreground rounded-2xl rounded-br-sm'
                         : 'bg-background border-border/70 rounded-2xl rounded-bl-sm border',
                 )}
             >
+                {message.reactionEmoji !== null && (
+                    <span
+                        role="img"
+                        aria-label={`Reação: ${message.reactionEmoji}`}
+                        className="border-border/70 bg-background absolute -top-3 right-2 z-10 grid size-7 place-items-center rounded-full border px-1 text-sm leading-none shadow-sm"
+                    >
+                        {message.reactionEmoji}
+                    </span>
+                )}
                 {isSticker ? (
                     <p className="text-muted-foreground text-xs italic">
                         Figurinha não exibida

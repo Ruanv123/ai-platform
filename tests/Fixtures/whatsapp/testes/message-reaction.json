@@ -1,0 +1,42 @@
+{
+    "data": {
+        "Info": {
+            "AddressingMode": "",
+            "BroadcastListOwner": "",
+            "Category": "",
+            "Chat": "5511999999999@s.whatsapp.net",
+            "Edit": "",
+            "ID": "test-reaction-event-1",
+            "IsFromMe": false,
+            "IsGroup": false,
+            "MediaType": "",
+            "Multicast": false,
+            "PushName": "Ana Souza",
+            "RecipientAlt": "",
+            "Sender": "5511999999999@s.whatsapp.net",
+            "SenderAlt": "",
+            "ServerID": 0,
+            "Timestamp": "2025-10-09T08:53:20Z",
+            "Type": "reaction"
+        },
+        "IsBotInvoke": false,
+        "IsEdit": false,
+        "IsEphemeral": false,
+        "IsViewOnce": false,
+        "Message": {
+            "reactionMessage": {
+                "key": {
+                    "remoteJID": "5511999999999@s.whatsapp.net",
+                    "fromMe": false,
+                    "id": "test-reacted-message-1"
+                },
+                "text": "👍",
+                "senderTimestampMS": "1760000000000"
+            }
+        }
+    },
+    "event": "Message",
+    "instanceId": "11111111-1111-4111-8111-111111111111",
+    "instanceName": "local-development",
+    "instanceToken": "fixture-instance-token"
+}
