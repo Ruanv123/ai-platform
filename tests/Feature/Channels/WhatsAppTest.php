@@ -116,10 +116,12 @@ it('allows an owner to configure one WhatsApp channel with its account and numbe
 
 it('requires the Meta App ID when an owner configures an own app channel', function () {
     $user = User::factory()->withTeam()->create();
+    $details = whatsappDetails();
+    unset($details['app_id']);
 
     $response = $this->actingAs($user)->post(
         route('channels.whatsapp.store'),
-        whatsappDetails(),
+        $details,
     );
 
     $response->assertSessionHasErrors([
