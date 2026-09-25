@@ -5,11 +5,14 @@ namespace App\Http\Controllers\Channels;
 use App\Enums\ChannelStatus;
 use App\Enums\ChannelType;
 use App\Enums\WhatsAppConnectionMethod;
+use App\Exceptions\WhatsAppProfileException;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Channels\SaveWhatsAppChannelRequest;
 use App\Models\Agent;
 use App\Models\Channel;
 use App\Models\WhatsAppAccount;
+use App\WhatsApp\Oficial\MetaErrorTranslator;
+use App\WhatsApp\Profiles\WhatsAppProfileProvider;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -22,6 +25,8 @@ use Inertia\Response;
 
 class WhatsAppController extends Controller
 {
+    public function __construct(private WhatsAppProfileProvider $profileProvider) {}
+
     /**
      * Display the WhatsApp channel configuration page.
      */
@@ -37,12 +42,39 @@ class WhatsAppController extends Controller
             ->where('type', ChannelType::WhatsApp)
             ->with(['agent:id,name', 'whatsappPhoneNumber.whatsappAccount'])
             ->first();
+        $activeTab = $request->query('tab') === 'perfil' ? 'perfil' : 'conexao';
 
         return Inertia::render('channels/whatsapp', [
+            'activeTab' => $activeTab,
             'whatsapp' => $channel === null ? null : $this->toFrontend(
                 $channel,
                 $user->can('update', $channel),
             ),
+            'whatsappProfileCapabilities' => $this->profileProvider->capabilities()->toArray(),
+            'whatsappProfile' => $activeTab === 'perfil'
+                ? Inertia::defer(function () use ($channel): array {
+                    if ($channel === null || $channel->status !== ChannelStatus::Connected) {
+                        return ['state' => 'not_connected'];
+                    }
+
+                    try {
+                        return [
+                            'state' => 'ready',
+                            'data' => $this->profileProvider->read($channel)->toArray(),
+                        ];
+                    } catch (WhatsAppProfileException $exception) {
+                        Inertia::flash('toast', [
+                            'type' => 'error',
+                            'message' => $exception->getMessage(),
+                        ]);
+
+                        return [
+                            'state' => 'error',
+                            'message' => $exception->getMessage(),
+                        ];
+                    }
+                })
+                : null,
             'agents' => $team->agents()
                 ->orderBy('name')
                 ->get(['id', 'name'])
@@ -143,7 +175,7 @@ class WhatsAppController extends Controller
     /**
      * Test the saved credentials against the WhatsApp Graph API.
      */
-    public function test(Channel $channel): RedirectResponse
+    public function test(Channel $channel, MetaErrorTranslator $errorTranslator): RedirectResponse
     {
         Gate::authorize('update', $channel);
 
@@ -182,7 +214,7 @@ class WhatsAppController extends Controller
                 return to_route('channels.whatsapp.edit');
             }
 
-            $errorMessage = $this->translateMetaError($response->json('error'));
+            $errorMessage = $errorTranslator->translate($response->json('error'));
         } catch (ConnectionException) {
             $errorMessage = 'Não foi possível conectar à Meta. Verifique sua conexão e tente novamente.';
         }
@@ -279,24 +311,5 @@ class WhatsAppController extends Controller
         } while (WhatsAppAccount::query()->where('verify_token', $verifyToken)->exists());
 
         return $verifyToken;
-    }
-
-    /**
-     * Translate common Graph API failures into actionable Portuguese messages.
-     *
-     * @param  array<string, mixed>|null  $error
-     */
-    private function translateMetaError(?array $error): string
-    {
-        $code = (int) ($error['code'] ?? 0);
-        $type = (string) ($error['type'] ?? '');
-
-        return match (true) {
-            $code === 190 => 'O access token é inválido ou expirou.',
-            $code === 10 => 'O token não tem permissão para acessar este número.',
-            $code === 100 => 'O Phone Number ID ou os campos informados são inválidos.',
-            $type === 'OAuthException' => 'O access token é inválido ou expirou.',
-            default => 'A Meta recusou a conexão. Verifique as credenciais e as permissões do aplicativo.',
-        };
     }
 }

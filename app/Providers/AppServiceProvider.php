@@ -2,6 +2,9 @@
 
 namespace App\Providers;
 
+use App\Http\Controllers\Channels\WhatsAppController;
+use App\WhatsApp\Oficial\MetaWhatsAppProfileProvider;
+use App\WhatsApp\Profiles\WhatsAppProfileProvider;
 use Carbon\CarbonImmutable;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Http\JsonResponse;
@@ -19,7 +22,9 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
-        //
+        $this->app->when(WhatsAppController::class)
+            ->needs(WhatsAppProfileProvider::class)
+            ->give(MetaWhatsAppProfileProvider::class);
     }
 
     /**
