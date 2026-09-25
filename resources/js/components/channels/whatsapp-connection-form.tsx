@@ -21,6 +21,7 @@ type AgentOption = {
 export type WhatsAppChannel = {
     id: string;
     wabaId: string;
+    appId: string | null;
     phoneNumberId: string;
     accessTokenSet: boolean;
     accessTokenMasked: string | null;
@@ -90,6 +91,17 @@ export function WhatsAppConnectionForm({
                     </div>
 
                     <div className="grid gap-4 md:grid-cols-2">
+                        <div className="grid gap-2">
+                            <Label htmlFor="app_id">App ID (opcional)</Label>
+                            <Input
+                                id="app_id"
+                                name="app_id"
+                                defaultValue={whatsapp?.appId ?? ''}
+                                placeholder="ID do aplicativo da Meta"
+                                maxLength={255}
+                            />
+                            <InputError message={errors.app_id} />
+                        </div>
                         <div className="grid gap-2">
                             <Label htmlFor="access_token">
                                 Access token permanente

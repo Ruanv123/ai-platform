@@ -18,6 +18,7 @@ use Illuminate\Support\Carbon;
  * @property int $whatsapp_phone_number_id
  * @property WhatsAppConnectionMethod $method
  * @property string $waba_id
+ * @property string|null $app_id
  * @property string $access_token
  * @property string $app_secret
  * @property string $verify_token
@@ -30,6 +31,7 @@ use Illuminate\Support\Carbon;
     'whatsapp_phone_number_id',
     'method',
     'waba_id',
+    'app_id',
     'access_token',
     'app_secret',
     'verify_token',
