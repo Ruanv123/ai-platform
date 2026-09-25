@@ -6,9 +6,12 @@ use App\Enums\ChannelStatus;
 use App\Enums\ChannelType;
 use App\Enums\WhatsAppBusinessCategory;
 use App\Enums\WhatsAppConnectionMethod;
+use App\Exceptions\WhatsAppConnectionException;
 use App\Exceptions\WhatsAppProfileException;
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Channels\ConnectWhatsAppWithMetaRequest;
 use App\Http\Requests\Channels\SaveWhatsAppChannelRequest;
+use App\Http\Requests\Channels\UpdateWhatsAppAgentRequest;
 use App\Http\Requests\Channels\UpdateWhatsAppDisplayNameRequest;
 use App\Http\Requests\Channels\UpdateWhatsAppProfilePictureRequest;
 use App\Http\Requests\Channels\UpdateWhatsAppProfileTextsRequest;
@@ -19,6 +22,7 @@ use App\Models\WhatsAppAccount;
 use App\WhatsApp\Oficial\MetaErrorTranslator;
 use App\WhatsApp\Oficial\MetaGraphApiResponseHandler;
 use App\WhatsApp\Profiles\WhatsAppProfileProvider;
+use App\WhatsApp\TechProviderWhatsAppConnector;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -71,7 +75,54 @@ class WhatsAppController extends Controller
                 ->values(),
             'permissions' => $user->toTeamPermissions($team),
             'webhookUrl' => route('webhooks.whatsapp.app-proprio'),
+            'metaSignup' => [
+                'appId' => filled(config('services.whatsapp.platform.app_id'))
+                    ? (string) config('services.whatsapp.platform.app_id')
+                    : null,
+                'configId' => filled(config('services.whatsapp.platform.config_id'))
+                    ? (string) config('services.whatsapp.platform.config_id')
+                    : null,
+                'graphApiVersion' => (string) config('services.whatsapp.graph_api_version'),
+            ],
         ]);
+    }
+
+    public function connectWithMeta(
+        ConnectWhatsAppWithMetaRequest $request,
+        TechProviderWhatsAppConnector $connector,
+    ): RedirectResponse {
+        $team = $request->user()->company();
+        abort_if($team === null, 404);
+
+        try {
+            $connector->connect($team, $request->validated('code'));
+        } catch (WhatsAppConnectionException $exception) {
+            Inertia::flash('toast', [
+                'type' => 'error',
+                'message' => $exception->getMessage(),
+            ]);
+
+            return to_route('channels.whatsapp.edit');
+        }
+
+        Inertia::flash('toast', [
+            'type' => 'success',
+            'message' => 'WhatsApp conectado à Meta e Templates sincronizados.',
+        ]);
+
+        return to_route('channels.whatsapp.edit');
+    }
+
+    public function updateAgent(UpdateWhatsAppAgentRequest $request, Channel $channel): RedirectResponse
+    {
+        $channel->update(['agent_id' => $request->validated('agent_id')]);
+
+        Inertia::flash('toast', [
+            'type' => 'success',
+            'message' => 'Agente do WhatsApp atualizado com sucesso.',
+        ]);
+
+        return to_route('channels.whatsapp.edit');
     }
 
     /**
@@ -339,6 +390,10 @@ class WhatsAppController extends Controller
             'credentialsSavedAt' => $account?->created_at?->toIso8601String(),
             'lastTestedAt' => $account?->last_tested_at?->toIso8601String(),
             'webhookVerifiedAt' => $account?->webhook_verified_at?->toIso8601String(),
+            'subscribedAt' => $account?->subscribed_at?->toIso8601String(),
+            'registeredAt' => $phoneNumber?->registered_at?->toIso8601String(),
+            'nameStatus' => $phoneNumber?->name_status,
+            'messagingLimitTier' => $phoneNumber?->messaging_limit_tier,
             'agent' => $channel->agent === null ? null : [
                 'id' => $channel->agent->id,
                 'name' => $channel->agent->name,
