@@ -77,6 +77,19 @@ type Message = {
     mediaMimeType: string | null;
 };
 
+const supportedMessageTypes = new Set([
+    'text',
+    'template',
+    'image',
+    'audio',
+    'video',
+    'document',
+]);
+
+function isUnsupportedMessage(message: Message): boolean {
+    return !supportedMessageTypes.has(message.payloadType);
+}
+
 type MessagePage = {
     data: Message[];
     currentPage: number;
@@ -1182,6 +1195,7 @@ function ConversationThread({
 function MessageBubble({ message }: { message: Message }) {
     const outgoing = message.direction === 'outgoing';
     const [mediaUnavailable, setMediaUnavailable] = useState(false);
+    const unsupported = isUnsupportedMessage(message);
     let content = message.content;
     if (message.payloadType === 'template' && content !== null) {
         try {
@@ -1191,7 +1205,6 @@ function MessageBubble({ message }: { message: Message }) {
             content = 'Template aprovado';
         }
     }
-    const isSticker = message.payloadType.toLowerCase().includes('sticker');
     const mediaType = ['image', 'audio', 'video', 'document'].includes(
         message.payloadType,
     )
@@ -1218,11 +1231,7 @@ function MessageBubble({ message }: { message: Message }) {
                         {message.reactionEmoji}
                     </span>
                 )}
-                {isSticker ? (
-                    <p className="text-muted-foreground text-xs italic">
-                        Figurinha não exibida
-                    </p>
-                ) : mediaType !== null && message.mediaUrl !== null && !mediaUnavailable ? (
+                {mediaType !== null && message.mediaUrl !== null && !mediaUnavailable ? (
                     <div className="mb-2.5">
                         {mediaType === 'image' && (
                             <a href={message.mediaUrl} target="_blank" rel="noreferrer">
@@ -1279,7 +1288,9 @@ function MessageBubble({ message }: { message: Message }) {
                     </p>
                 )}
                 <p className="break-words whitespace-pre-wrap">
-                    {isSticker ? null : content ?? `[${message.payloadType}]`}
+                    {unsupported
+                        ? 'Tipo de mensagem não suportado'
+                        : content ?? `[${message.payloadType}]`}
                 </p>
                 {message.deliveryStatus === 'failed' && (
                     <span className="text-destructive mt-1 block text-[10px] font-semibold">
@@ -1318,7 +1329,9 @@ function HistoryPanel({ history }: { history: MessagePage }) {
                     >
                         <span className="truncate">
                             <strong>{message.sender}</strong> ·{' '}
-                            {message.content ?? `[${message.payloadType}]`}
+                            {isUnsupportedMessage(message)
+                                ? 'Tipo de mensagem não suportado'
+                                : message.content ?? `[${message.payloadType}]`}
                         </span>
                         <span className="text-muted-foreground shrink-0">
                             {message.channel}

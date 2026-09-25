@@ -12,8 +12,6 @@ use function Laravel\Ai\agent;
 
 final class IncomingMediaResolver
 {
-    public const VIDEO_WARNING = 'Vídeos ainda não são suportados. Envie um áudio, uma imagem, um documento ou explique o problema por texto.';
-
     public function __construct(private readonly DocumentFileExtractor $fileExtractor) {}
 
     /**
@@ -54,14 +52,6 @@ final class IncomingMediaResolver
             $caption,
             'Não foi possível processar esta mídia. O atendimento continuará com as demais mensagens.',
         );
-    }
-
-    /**
-     * Explain why a video was not sent to an AI provider.
-     */
-    public function videoWarning(?string $caption): string
-    {
-        return $this->withCaption($caption, self::VIDEO_WARNING);
     }
 
     /**

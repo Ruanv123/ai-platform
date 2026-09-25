@@ -50,7 +50,7 @@ final class EvolutionGoEventProcessor
 
         $message = $strategy->handle($channel, $payload);
 
-        if ($message?->direction === MessageDirection::Incoming) {
+        if ($message?->direction === MessageDirection::Incoming && $strategy->shouldDispatchResponse()) {
             $this->responseDispatcher->dispatch($channel, $message);
         }
     }

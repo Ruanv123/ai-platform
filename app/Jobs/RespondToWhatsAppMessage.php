@@ -239,6 +239,10 @@ class RespondToWhatsAppMessage implements ShouldQueue
 
     private function promptFor(Message $message): string
     {
+        if ($message->payload_type === 'video') {
+            return 'O Contato enviou um vídeo. Responda que você não entende vídeos e peça para ele descrever o conteúdo por texto.';
+        }
+
         return $message->content
             ?? "O Contato enviou uma mensagem do tipo {$message->payload_type}. Responda orientando-o de forma útil e clara.";
     }

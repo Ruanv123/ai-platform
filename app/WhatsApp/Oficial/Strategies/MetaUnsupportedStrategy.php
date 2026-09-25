@@ -7,6 +7,11 @@ use Illuminate\Support\Str;
 
 final class MetaUnsupportedStrategy extends MetaMessageStrategy
 {
+    public function shouldDispatchResponse(): bool
+    {
+        return false;
+    }
+
     /** @param array<string, mixed> $payload */
     protected function eventType(array $payload): string
     {
@@ -20,8 +25,6 @@ final class MetaUnsupportedStrategy extends MetaMessageStrategy
     /** @param array<string, mixed> $payload */
     protected function content(Channel $channel, array $payload): ?string
     {
-        return ($this->message($payload)['type'] ?? null) === 'sticker'
-            ? 'Figurinha não exibida'
-            : null;
+        return null;
     }
 }

@@ -39,9 +39,10 @@ final class MetaEventProcessor
             return;
         }
 
-        $message = $this->strategy($payload)->handle($channel, $payload);
+        $strategy = $this->strategy($payload);
+        $message = $strategy->handle($channel, $payload);
 
-        if ($message?->direction === MessageDirection::Incoming) {
+        if ($message?->direction === MessageDirection::Incoming && $strategy->shouldDispatchResponse()) {
             $this->responseDispatcher->dispatch($channel, $message);
         }
     }

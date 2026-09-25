@@ -261,7 +261,7 @@ it('records an explicit warning for videos', function () {
 
     $this->assertDatabaseHas('messages', [
         'payload_type' => 'video',
-        'content' => "Um vídeo do defeito.\n\nVídeos ainda não são suportados. Envie um áudio, uma imagem, um documento ou explique o problema por texto.",
+        'content' => 'Um vídeo do defeito.',
     ]);
     $message = Message::query()->where('channel_id', $channel->getKey())->firstOrFail();
     expect($message->media_available)->toBeTrue();
@@ -276,7 +276,7 @@ it('marks official and test channel stickers without storing or exposing them', 
         $this->assertDatabaseHas('messages', [
             'provider_message_id' => 'official-message-sticker-1',
             'payload_type' => 'sticker',
-            'content' => 'Figurinha não exibida',
+            'content' => null,
             'media_available' => null,
         ]);
 
@@ -288,7 +288,7 @@ it('marks official and test channel stickers without storing or exposing them', 
     $this->assertDatabaseHas('messages', [
         'provider_message_id' => 'test-message-sticker-1',
         'payload_type' => 'stickerMessage',
-        'content' => 'Figurinha não exibida',
+        'content' => null,
         'media_available' => null,
     ]);
 })->with(['official', 'test']);

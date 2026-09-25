@@ -116,7 +116,7 @@ it('creates the contact and records each core incoming message', function (
         'name' => 'Ana Souza',
     ]);
     $expectedContent = match (true) {
-        $eventType === 'video' => "{$content}\n\nVídeos ainda não são suportados. Envie um áudio, uma imagem, um documento ou explique o problema por texto.",
+        $eventType === 'video' => $content ?? 'O Contato enviou um vídeo.',
         $channelType === ChannelType::WhatsApp && in_array($eventType, ['audio', 'image', 'document'], true) => filled($content)
             ? "{$content}\n\nNão foi possível processar esta mídia. O atendimento continuará com as demais mensagens."
             : 'Não foi possível processar esta mídia. O atendimento continuará com as demais mensagens.',
@@ -321,14 +321,39 @@ it('records every message and status across entries and changes and starts a res
     expect($dispatchedContactIds)->toBe($expectedContactIds);
 });
 
-it('records an unsupported event with the raw provider type', function (
+it('records unsupported messages by raw provider type without sending them to the Agent', function (
     ChannelType $channelType,
     string $routeName,
     string $fixtureDirectory,
+    string $unsupportedType,
 ) {
     $channel = createWhatsAppConformanceChannel($channelType);
+    $agent = Agent::factory()->for($channel->team)->create(['is_active' => true]);
+    $channel->update(['agent_id' => $agent->getKey()]);
     $payload = whatsappConformanceFixture($fixtureDirectory, 'message-unsupported');
-    $expectedEventType = $channelType === ChannelType::WhatsApp ? 'sticker' : 'stickerMessage';
+    Queue::fake([RespondToWhatsAppMessage::class]);
+
+    if ($channelType === ChannelType::WhatsApp) {
+        $message = &$payload['entry'][0]['changes'][0]['value']['messages'][0];
+        $message['type'] = $unsupportedType;
+        $message[$unsupportedType] = match ($unsupportedType) {
+            'sticker' => ['id' => 'media-sticker-1'],
+            'location' => ['latitude' => -23.55, 'longitude' => -46.63],
+            'contacts' => [['name' => ['formatted_name' => 'Ana Souza']]],
+            default => ['value' => 'provider-specific payload'],
+        };
+        $expectedEventType = $unsupportedType;
+    } else {
+        $unsupportedPayload = match ($unsupportedType) {
+            'sticker' => ['stickerMessage' => ['mimetype' => 'image/webp']],
+            'location' => ['locationMessage' => ['degreesLatitude' => -23.55, 'degreesLongitude' => -46.63]],
+            'contacts' => ['contactMessage' => ['displayName' => 'Ana Souza', 'vcard' => 'BEGIN:VCARD']],
+            default => ['futureMessage' => ['value' => 'provider-specific payload']],
+        };
+        $payload['data']['Info']['MediaType'] = $unsupportedType;
+        $payload['data']['Message'] = $unsupportedPayload;
+        $expectedEventType = array_key_first($unsupportedPayload);
+    }
 
     $response = postWhatsAppConformanceWebhook($this, $channelType, $routeName, $payload);
 
@@ -337,9 +362,16 @@ it('records an unsupported event with the raw provider type', function (
         'channel_id' => $channel->id,
         'payload_type' => $expectedEventType,
         'direction' => MessageDirection::Incoming->value,
-        'content' => 'Figurinha não exibida',
+        'content' => null,
     ]);
-})->with('WhatsApp webhook channels');
+    Queue::assertNotPushed(RespondToWhatsAppMessage::class);
+    Http::assertSentCount(0);
+})->with('WhatsApp webhook channels')->with([
+    'sticker' => ['sticker'],
+    'location' => ['location'],
+    'contact card' => ['contacts'],
+    'unknown type' => ['future_message'],
+]);
 
 it('updates the matching outgoing message delivery status', function (
     ChannelType $channelType,

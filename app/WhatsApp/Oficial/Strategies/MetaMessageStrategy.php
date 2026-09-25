@@ -80,6 +80,11 @@ abstract class MetaMessageStrategy implements MetaStrategy
         return $message;
     }
 
+    public function shouldDispatchResponse(): bool
+    {
+        return true;
+    }
+
     /** @param array<string, mixed> $payload */
     abstract protected function eventType(array $payload): string;
 
@@ -155,9 +160,8 @@ abstract class MetaMessageStrategy implements MetaStrategy
             $this->originalMedia = null;
         }
 
-        return $this->mediaResolver->videoWarning(
-            $this->stringValue($this->message($payload), 'video.caption'),
-        );
+        return $this->stringValue($this->message($payload), 'video.caption')
+            ?? 'O Contato enviou um vídeo.';
     }
 
     private function persistOriginalMedia(Message $message): void
