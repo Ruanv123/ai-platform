@@ -69,7 +69,7 @@ class WhatsAppController extends Controller
                 ])
                 ->values(),
             'permissions' => $user->toTeamPermissions($team),
-            'webhookUrl' => url('/webhooks/whatsapp'),
+            'webhookUrl' => route('webhooks.whatsapp.app-proprio'),
         ]);
     }
 

@@ -35,9 +35,9 @@ use Illuminate\Support\Facades\Route;
 
 Route::inertia('/', 'welcome')->name('home');
 
-Route::match(['get', 'post'], 'webhooks/whatsapp', [WhatsAppWebhookController::class, 'handle'])
+Route::match(['get', 'post'], 'webhooks/whatsapp/app-proprio', [WhatsAppWebhookController::class, 'handle'])
     ->middleware('throttle:whatsapp-webhook')
-    ->name('webhooks.whatsapp');
+    ->name('webhooks.whatsapp.app-proprio');
 
 Route::post('webhooks/whatsapp-test', [WhatsAppTestWebhookController::class, 'handle'])
     ->name('webhooks.whatsapp-test');

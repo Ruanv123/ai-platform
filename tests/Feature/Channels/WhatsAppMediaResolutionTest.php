@@ -31,6 +31,7 @@ function createOfficialMediaChannel(): Channel
     $account = WhatsAppAccount::factory()->for($channel->team, 'team')->create([
         'app_secret' => 'media-test-secret',
         'access_token' => 'media-test-token',
+        'waba_id' => 'waba-fixture',
     ]);
     $phoneNumber = WhatsAppPhoneNumber::factory()->for($channel)->create([
         'phone_number_id' => 'official-phone-number-id',
@@ -44,7 +45,7 @@ function postOfficialMediaWebhook(TestCase $testCase, array $payload): void
 {
     $body = json_encode($payload, JSON_THROW_ON_ERROR);
 
-    $testCase->call('POST', route('webhooks.whatsapp'), [], [], [], [
+    $testCase->call('POST', route('webhooks.whatsapp.app-proprio'), [], [], [], [
         'CONTENT_TYPE' => 'application/json',
         'HTTP_X_HUB_SIGNATURE_256' => 'sha256='.hash_hmac('sha256', $body, 'media-test-secret'),
     ], $body)->assertOk();
@@ -178,7 +179,7 @@ it('stores a media failure without failing the webhook', function () {
         'graph.facebook.com/*' => Http::response(['error' => 'provider unavailable'], 503),
     ]);
 
-    $response = $this->call('POST', route('webhooks.whatsapp'), [], [], [], [
+    $response = $this->call('POST', route('webhooks.whatsapp.app-proprio'), [], [], [], [
         'CONTENT_TYPE' => 'application/json',
         'HTTP_X_HUB_SIGNATURE_256' => 'sha256='.hash_hmac(
             'sha256',

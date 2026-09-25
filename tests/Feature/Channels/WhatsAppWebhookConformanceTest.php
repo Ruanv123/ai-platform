@@ -3,6 +3,8 @@
 use App\Enums\ChannelType;
 use App\Enums\MessageDeliveryStatus;
 use App\Enums\MessageDirection;
+use App\Jobs\RespondToWhatsAppMessage;
+use App\Models\Agent;
 use App\Models\Channel;
 use App\Models\Contact;
 use App\Models\Message;
@@ -11,6 +13,7 @@ use App\Models\WhatsAppAccount;
 use App\Models\WhatsAppPhoneNumber;
 use App\Models\WhatsAppTestConnection;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Queue;
 use Illuminate\Testing\TestResponse;
 use Symfony\Component\HttpFoundation\Response;
 use Tests\TestCase;
@@ -29,8 +32,11 @@ function whatsappConformanceFixture(string $fixtureDirectory, string $fixture): 
     return json_decode($contents, true, flags: JSON_THROW_ON_ERROR);
 }
 
-function createWhatsAppConformanceChannel(ChannelType $channelType): Channel
-{
+function createWhatsAppConformanceChannel(
+    ChannelType $channelType,
+    string $wabaId = 'waba-fixture',
+    string $phoneNumberId = 'official-phone-number-id',
+): Channel {
     $channel = Channel::factory()->for(Team::factory())->create([
         'type' => $channelType,
     ]);
@@ -38,9 +44,10 @@ function createWhatsAppConformanceChannel(ChannelType $channelType): Channel
     if ($channelType === ChannelType::WhatsApp) {
         $account = WhatsAppAccount::factory()->for($channel->team, 'team')->create([
             'app_secret' => 'conformance-app-secret',
+            'waba_id' => $wabaId,
         ]);
         $phoneNumber = WhatsAppPhoneNumber::factory()->for($channel)->create([
-            'phone_number_id' => 'official-phone-number-id',
+            'phone_number_id' => $phoneNumberId,
             'whatsapp_account_id' => $account->getKey(),
         ]);
     } else {
@@ -79,7 +86,7 @@ function postWhatsAppConformanceWebhook(
 }
 
 dataset('WhatsApp webhook channels', [
-    'official WhatsApp' => [ChannelType::WhatsApp, 'webhooks.whatsapp', 'oficial'],
+    'official WhatsApp' => [ChannelType::WhatsApp, 'webhooks.whatsapp.app-proprio', 'oficial'],
     'test WhatsApp' => [ChannelType::WhatsAppTest, 'webhooks.whatsapp-test', 'testes'],
 ]);
 
@@ -139,6 +146,77 @@ it('does not record the same provider message twice', function (
     $this->assertDatabaseCount('contacts', 1);
     $this->assertDatabaseCount('messages', 1);
 })->with('WhatsApp webhook channels');
+
+it('records every message and status across entries and changes and starts a response for each contact', function () {
+    $channel = createWhatsAppConformanceChannel(ChannelType::WhatsApp);
+    $agent = Agent::factory()->for($channel->team)->create();
+    $channel->update(['agent_id' => $agent->getKey()]);
+    $secondChannel = createWhatsAppConformanceChannel(
+        ChannelType::WhatsApp,
+        'waba-fixture-second',
+        'official-phone-number-id-second',
+    );
+    $secondAgent = Agent::factory()->for($secondChannel->team)->create();
+    $secondChannel->update(['agent_id' => $secondAgent->getKey()]);
+    $secondAccount = $secondChannel->whatsappPhoneNumber->whatsappAccount;
+    $secondAccount->update(['app_secret' => 'conformance-app-secret']);
+    $statusContact = Contact::factory()->for($secondChannel->team)->create([
+        'phone' => '5511999998000',
+    ]);
+    $outgoingMessage = Message::factory()
+        ->for($statusContact)
+        ->for($secondChannel)
+        ->outgoing()
+        ->create([
+            'provider_message_id' => 'official-outgoing-message',
+            'delivery_status' => MessageDeliveryStatus::Sent,
+        ]);
+    $payload = whatsappConformanceFixture('oficial', 'multiple-events');
+    Queue::fake([RespondToWhatsAppMessage::class]);
+
+    $response = postWhatsAppConformanceWebhook(
+        $this,
+        ChannelType::WhatsApp,
+        'webhooks.whatsapp.app-proprio',
+        $payload,
+    );
+
+    $response->assertOk()->assertContent('EVENT_RECEIVED');
+    $this->assertDatabaseCount('messages', 4);
+    $this->assertDatabaseHas('messages', [
+        'channel_id' => $channel->id,
+        'provider_message_id' => 'official-message-multiple-1',
+        'content' => 'Primeira mensagem do lote.',
+    ]);
+    $this->assertDatabaseHas('messages', [
+        'channel_id' => $channel->id,
+        'provider_message_id' => 'official-message-multiple-2',
+        'content' => 'Segunda mensagem do lote.',
+    ]);
+    $this->assertDatabaseHas('messages', [
+        'channel_id' => $secondChannel->id,
+        'provider_message_id' => 'official-message-multiple-3',
+        'content' => 'Mensagem de outro entry.',
+    ]);
+    $this->assertDatabaseMissing('messages', [
+        'provider_message_id' => 'official-message-unknown-field',
+    ]);
+    expect($outgoingMessage->fresh()->delivery_status)->toBe(MessageDeliveryStatus::Read);
+
+    $expectedContactIds = Contact::query()
+        ->whereIn('phone', ['5511999999001', '5511999999002', '5511999999004'])
+        ->pluck('id')
+        ->sort()
+        ->values()
+        ->all();
+    $dispatchedContactIds = Queue::pushed(RespondToWhatsAppMessage::class)
+        ->pluck('contactId')
+        ->sort()
+        ->values()
+        ->all();
+
+    expect($dispatchedContactIds)->toBe($expectedContactIds);
+});
 
 it('records an unsupported event with the raw provider type', function (
     ChannelType $channelType,

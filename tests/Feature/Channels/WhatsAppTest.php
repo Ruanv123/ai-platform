@@ -15,6 +15,7 @@ function whatsappDetails(array $overrides = []): array
 {
     return array_merge([
         'waba_id' => '102030405060708',
+        'app_id' => '123456789012345',
         'phone_number_id' => '15551234567890',
         'access_token' => 'EAAGold-token',
         'app_secret' => 'old-app-secret',
@@ -68,6 +69,7 @@ it('renders the WhatsApp channel without returning its secrets', function () {
         ->where('whatsapp.id', $channel->id)
         ->where('whatsapp.appId', '987654321012345')
         ->where('whatsapp.status', 'connected')
+        ->where('webhookUrl', route('webhooks.whatsapp.app-proprio'))
         ->where('whatsapp.accessTokenSet', true)
         ->where('whatsapp.accessTokenMasked', '••••••••')
         ->where('whatsapp.appSecretSet', true)
@@ -110,6 +112,20 @@ it('allows an owner to configure one WhatsApp channel with its account and numbe
     expect($channel->whatsappPhoneNumber->whatsappAccount->verify_token)->toHaveLength(64)
         ->and($channel->whatsappPhoneNumber->whatsappAccount->access_token)->toBe('EAAGold-token')
         ->and($channel->whatsappPhoneNumber->whatsappAccount->app_secret)->toBe('old-app-secret');
+});
+
+it('requires the Meta App ID when an owner configures an own app channel', function () {
+    $user = User::factory()->withTeam()->create();
+
+    $response = $this->actingAs($user)->post(
+        route('channels.whatsapp.store'),
+        whatsappDetails(),
+    );
+
+    $response->assertSessionHasErrors([
+        'app_id' => 'Informe o App ID.',
+    ]);
+    $this->assertDatabaseCount('whatsapp_accounts', 0);
 });
 
 it('prevents a company from creating multiple official WhatsApp channels', function () {
