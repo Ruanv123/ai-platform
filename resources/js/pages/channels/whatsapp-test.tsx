@@ -113,6 +113,9 @@ export default function WhatsAppTest({
                             connectionUrl={connectionUrl}
                             channelId={whatsappTest?.id ?? null}
                             updateTextsUrl={updateTextsUrl}
+                            updateProfilePictureUrl={null}
+                            appId={null}
+                            requiresAppId={false}
                             canEdit={canManage}
                         />
                     ) : whatsappTest === null ? (

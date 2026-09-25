@@ -8,6 +8,7 @@ use App\WhatsApp\Profiles\WhatsAppProfileCapabilities;
 use App\WhatsApp\Profiles\WhatsAppProfileData;
 use App\WhatsApp\Profiles\WhatsAppProfileProvider;
 use Illuminate\Http\Client\ConnectionException;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Http;
 
 final class MetaWhatsAppProfileProvider implements WhatsAppProfileProvider
@@ -125,6 +126,79 @@ final class MetaWhatsAppProfileProvider implements WhatsAppProfileProvider
             }
         } catch (ConnectionException) {
             throw new WhatsAppProfileException('Não foi possível salvar o Perfil do WhatsApp. Verifique sua conexão e tente novamente.');
+        }
+    }
+
+    public function updateProfilePicture(Channel $channel, UploadedFile $photo): void
+    {
+        $phoneNumber = $channel->whatsappPhoneNumber;
+        $account = $phoneNumber?->whatsappAccount;
+
+        if ($phoneNumber === null || $account === null) {
+            throw new WhatsAppProfileException('O Perfil do WhatsApp não está disponível para este Canal.');
+        }
+
+        if (! filled($account->app_id)) {
+            throw new WhatsAppProfileException('Configure o App ID da Meta na aba Conexão para trocar a foto do Perfil do WhatsApp.');
+        }
+
+        $baseUrl = rtrim((string) config('services.whatsapp.graph_api_url'), '/').'/'.config('services.whatsapp.graph_api_version');
+        $mimeType = $photo->getMimeType() ?: 'image/jpeg';
+        $extension = $mimeType === 'image/png' ? 'png' : 'jpg';
+
+        try {
+            $session = Http::connectTimeout(3)
+                ->timeout(15)
+                ->withHeaders(['Authorization' => 'OAuth '.$account->access_token])
+                ->post($baseUrl.'/'.rawurlencode((string) $account->app_id).'/uploads?'.http_build_query([
+                    'file_length' => $photo->getSize(),
+                    'file_type' => $mimeType,
+                    'file_name' => 'whatsapp-profile.'.$extension,
+                ]));
+
+            if (! $session->successful()) {
+                throw new WhatsAppProfileException($this->errorTranslator->translate($session->json('error')));
+            }
+
+            $uploadId = $session->json('id');
+
+            if (! is_string($uploadId) || $uploadId === '') {
+                throw new WhatsAppProfileException('A Meta não devolveu uma sessão válida para enviar a foto.');
+            }
+
+            $upload = Http::connectTimeout(3)
+                ->timeout(20)
+                ->withHeaders([
+                    'Authorization' => 'OAuth '.$account->access_token,
+                    'file_offset' => '0',
+                    'Content-Type' => $mimeType,
+                ])
+                ->withBody($photo->getContent(), $mimeType)
+                ->post($baseUrl.'/'.$uploadId);
+
+            if (! $upload->successful()) {
+                throw new WhatsAppProfileException($this->errorTranslator->translate($upload->json('error')));
+            }
+
+            $handle = $upload->json('h');
+
+            if (! is_string($handle) || $handle === '') {
+                throw new WhatsAppProfileException('A Meta não devolveu uma referência válida para a foto enviada.');
+            }
+
+            $profile = Http::connectTimeout(3)
+                ->timeout(15)
+                ->withToken($account->access_token)
+                ->post($baseUrl.'/'.$phoneNumber->phone_number_id.'/whatsapp_business_profile', [
+                    'messaging_product' => 'whatsapp',
+                    'profile_picture_handle' => $handle,
+                ]);
+
+            if (! $profile->successful()) {
+                throw new WhatsAppProfileException($this->errorTranslator->translate($profile->json('error')));
+            }
+        } catch (ConnectionException) {
+            throw new WhatsAppProfileException('Não foi possível trocar a foto do Perfil do WhatsApp. Verifique sua conexão e tente novamente.');
         }
     }
 }
