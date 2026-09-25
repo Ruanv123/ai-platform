@@ -263,3 +263,16 @@ it('uses the provider timestamp when messages arrive out of order', function () 
     expect($contact->history($channel)->pluck('content')->all())
         ->toBe(['Mensagem mais antiga', 'Mensagem mais nova']);
 });
+
+it('stores provider timestamps with an offset in the application timezone', function () {
+    createWhatsAppTestWebhookChannel();
+    $payload = whatsappTestWebhookFixture('message-text');
+    $payload['data']['Info']['Timestamp'] = '2026-09-24T23:38:20-03:00';
+
+    $this->postJson(route('webhooks.whatsapp-test'), $payload)->assertOk();
+
+    $this->assertDatabaseHas('messages', [
+        'provider_message_id' => 'test-message-text-1',
+        'created_at' => '2026-09-25 02:38:20',
+    ]);
+});
