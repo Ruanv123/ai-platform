@@ -20,8 +20,20 @@ type Template = {
     headerType: string | null;
     headerText: string | null;
     footer: string | null;
-    buttons: { type: string; text?: string; url?: string }[];
-    variables: { position: number; component: string }[];
+    buttons: {
+        type: string;
+        text?: string;
+        url?: string;
+        phone_number?: string;
+        example?: string;
+    }[];
+    variables: {
+        position: number;
+        component: string;
+        example: string | null;
+        buttonIndex?: number;
+    }[];
+    qualityRating: string | null;
     rejectionReason: string | null;
     rejectionExplanation: string | null;
     accountId: number;
@@ -127,7 +139,11 @@ export default function TemplateShow({ template, permissions }: Props) {
                                                     key={`${button.text}-${index}`}
                                                     className="text-primary border-primary/20 bg-background rounded-md border px-3 py-2 text-center text-sm"
                                                 >
-                                                    {button.text ?? button.type}
+                                                    {button.text ??
+                                                        (button.type ===
+                                                        'COPY_CODE'
+                                                            ? 'Copiar código'
+                                                            : button.type)}
                                                 </div>
                                             ),
                                         )}
@@ -271,8 +287,16 @@ export default function TemplateShow({ template, permissions }: Props) {
                                     <dd>
                                         {template.assignedCategoryLabel ??
                                             'Ainda não definida'}
-                                    </dd>
-                                </div>
+                                        </dd>
+                                    </div>
+                                    {template.qualityRating && (
+                                        <div className="flex justify-between gap-3">
+                                            <dt className="text-muted-foreground">
+                                                Qualidade
+                                            </dt>
+                                            <dd>{template.qualityRating}</dd>
+                                        </div>
+                                    )}
                             </dl>
                         </section>
                         <section className="bg-card rounded-xl border p-6">
@@ -294,8 +318,16 @@ export default function TemplateShow({ template, permissions }: Props) {
                                             <span className="text-muted-foreground">
                                                 {variable.component === 'header'
                                                     ? 'Cabeçalho'
-                                                    : 'Corpo'}
+                                                    : variable.component ===
+                                                        'button'
+                                                      ? `URL do botão ${(variable.buttonIndex ?? 0) + 1}`
+                                                      : 'Corpo'}
                                             </span>
+                                            {variable.example && (
+                                                <span className="text-muted-foreground">
+                                                    {variable.example}
+                                                </span>
+                                            )}
                                         </div>
                                     ))}
                                 </div>

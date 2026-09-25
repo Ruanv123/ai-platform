@@ -34,7 +34,7 @@ type WhatsAppTemplateOption = {
     channelId: string;
     category: string;
     body: string;
-    variables: { position: number; component: string }[];
+    variables: { position: number; component: string; buttonIndex?: number }[];
 };
 
 type FlowNodePropertiesProps = {
@@ -502,7 +502,9 @@ function TemplateFields({
                                 {'}}'} ·{' '}
                                 {variable.component === 'header'
                                     ? 'cabeçalho'
-                                    : 'corpo'}
+                                    : variable.component === 'button'
+                                      ? `URL do botão ${(variable.buttonIndex ?? 0) + 1}`
+                                      : 'corpo'}
                             </span>
                             <Input
                                 value={stringValue(variables[index])}

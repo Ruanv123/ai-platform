@@ -43,12 +43,34 @@ final class MetaOutputAdapter extends AbstractWhatsAppOutputAdapter
     public function sendTemplate(Channel $channel, Contact $contact, string|WhatsAppTemplate $template, array $parameters = []): Message
     {
         $this->assertContactBelongsToChannel($channel, $contact);
+        $account = $this->account($channel);
+        $normalizedTemplate = $template instanceof WhatsAppTemplate
+            ? $template
+            : $account->templates()
+                ->where('name', $template)
+                ->where('language', 'pt_BR')
+                ->with('components.variables', 'components.buttons')
+                ->first();
         $components = [];
-        $definitions = $template instanceof WhatsAppTemplate ? $template->variableDefinitions() : [];
-        if ($template instanceof WhatsAppTemplate && $definitions !== []) {
+        $definitions = $normalizedTemplate?->variableDefinitions() ?? [];
+        if ($definitions !== []) {
             $grouped = [];
             foreach ($definitions as $index => $definition) {
                 $component = (string) ($definition['component'] ?? 'body');
+                if ($component === 'button') {
+                    $components[] = [
+                        'type' => 'button',
+                        'sub_type' => 'url',
+                        'index' => (string) ($definition['buttonIndex'] ?? 0),
+                        'parameters' => [[
+                            'type' => 'text',
+                            'text' => (string) ($parameters[$index] ?? ''),
+                        ]],
+                    ];
+
+                    continue;
+                }
+
                 $grouped[$component][] = [
                     'type' => 'text',
                     'text' => (string) ($parameters[$index] ?? ''),
@@ -70,8 +92,8 @@ final class MetaOutputAdapter extends AbstractWhatsAppOutputAdapter
                 'to' => $contact->phone,
                 'type' => 'template',
                 'template' => [
-                    'name' => $template instanceof WhatsAppTemplate ? $template->name : $template,
-                    'language' => ['code' => $template instanceof WhatsAppTemplate ? $template->language : 'pt_BR'],
+                    'name' => $normalizedTemplate?->name ?? ($template instanceof WhatsAppTemplate ? $template->name : $template),
+                    'language' => ['code' => $normalizedTemplate?->language ?? 'pt_BR'],
                     'components' => $components,
                 ],
             ],
@@ -81,7 +103,7 @@ final class MetaOutputAdapter extends AbstractWhatsAppOutputAdapter
             throw new RuntimeException('A Meta não retornou o id do Template enviado.');
         }
 
-        return $this->recordOutgoingTemplate($channel, $contact, $template, $parameters, $providerMessageId);
+        return $this->recordOutgoingTemplate($channel, $contact, $normalizedTemplate ?? $template, $parameters, $providerMessageId);
     }
 
     public function markIncomingMessageAsRead(Channel $channel, Message $message): void
