@@ -6,11 +6,13 @@ use App\Enums\TeamRole;
 use App\Models\Channel;
 use App\Models\User;
 use App\Models\WhatsAppTestConnection;
+use Illuminate\Filesystem\FilesystemAdapter;
 use Illuminate\Http\Client\Request as ClientRequest;
 use Illuminate\Http\Testing\File;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\URL;
+use Mockery;
 
 function createWhatsAppTestProfilePictureChannel(User $user, ?string $lastError = null): array
 {
@@ -191,6 +193,108 @@ it('deletes the temporary test Profile photo after Evolution Go rejects the upda
     expect(Storage::disk('whatsapp_media')->allFiles('whatsapp-profile-photos'))->toBe([])
         ->and($channel->fresh()->status)->toBe(ChannelStatus::Connected)
         ->and($channel->fresh()->last_error)->toBe('Erro anterior preservado.');
+});
+
+it('reports a storage write exception without contacting Evolution Go', function () {
+    Http::preventStrayRequests();
+    $this->withoutVite();
+    configureWhatsAppTestProfilePictureEvolution();
+    $owner = User::factory()->withTeam()->create();
+    [$channel] = createWhatsAppTestProfilePictureChannel($owner);
+    $disk = Mockery::mock(FilesystemAdapter::class);
+    $disk->shouldReceive('putFileAs')
+        ->once()
+        ->andThrow(new RuntimeException('Disk write failed.'));
+    $disk->shouldReceive('delete')->once()->andReturn(true);
+    Storage::shouldReceive('disk')->once()->with('whatsapp_media')->andReturn($disk);
+
+    $response = $this->actingAs($owner)->post(
+        route('channels.whatsapp-test.profile.photo', $channel),
+        ['photo' => File::createWithContent(
+            'profile.png',
+            createWhatsAppTestProfilePicturePng(),
+        )],
+    );
+
+    $response->assertRedirect(route('channels.whatsapp-test.edit', ['tab' => 'perfil']))
+        ->assertInertiaFlash('toast', [
+            'type' => 'error',
+            'message' => 'Não foi possível preparar a foto para o Evolution Go.',
+        ]);
+    Http::assertNothingSent();
+});
+
+it('reports a temporary photo cleanup failure after Evolution Go accepts the update', function () {
+    Http::preventStrayRequests();
+    Http::fake([
+        'evolution.test/user/profilePicture' => Http::response(['success' => true]),
+    ]);
+    $this->withoutVite();
+    configureWhatsAppTestProfilePictureEvolution();
+    $owner = User::factory()->withTeam()->create();
+    [$channel] = createWhatsAppTestProfilePictureChannel($owner);
+    $disk = Mockery::mock(FilesystemAdapter::class);
+    $disk->shouldReceive('putFileAs')
+        ->once()
+        ->andReturn('whatsapp-profile-photos/temporary.png');
+    $disk->shouldReceive('delete')
+        ->once()
+        ->with('whatsapp-profile-photos/temporary.png')
+        ->andReturn(false);
+    Storage::shouldReceive('disk')->once()->with('whatsapp_media')->andReturn($disk);
+
+    $response = $this->actingAs($owner)->post(
+        route('channels.whatsapp-test.profile.photo', $channel),
+        ['photo' => File::createWithContent(
+            'profile.png',
+            createWhatsAppTestProfilePicturePng(),
+        )],
+    );
+
+    $response->assertRedirect(route('channels.whatsapp-test.edit', ['tab' => 'perfil']))
+        ->assertInertiaFlash('toast', [
+            'type' => 'error',
+            'message' => 'A foto do Perfil do WhatsApp foi atualizada, mas não foi possível remover o arquivo temporário.',
+        ]);
+    Http::assertSent(fn (ClientRequest $request): bool => $request->url() === 'https://evolution.test/user/profilePicture'
+        && $request->method() === 'POST');
+});
+
+it('preserves the Evolution Go error when temporary photo cleanup also fails', function () {
+    Http::preventStrayRequests();
+    Http::fake([
+        'evolution.test/user/profilePicture' => Http::response([
+            'message' => 'foto recusada',
+        ], 500),
+    ]);
+    $this->withoutVite();
+    configureWhatsAppTestProfilePictureEvolution();
+    $owner = User::factory()->withTeam()->create();
+    [$channel] = createWhatsAppTestProfilePictureChannel($owner);
+    $disk = Mockery::mock(FilesystemAdapter::class);
+    $disk->shouldReceive('putFileAs')
+        ->once()
+        ->andReturn('whatsapp-profile-photos/temporary.png');
+    $disk->shouldReceive('delete')
+        ->once()
+        ->andThrow(new RuntimeException('Disk delete failed.'));
+    Storage::shouldReceive('disk')->once()->with('whatsapp_media')->andReturn($disk);
+
+    $response = $this->actingAs($owner)->post(
+        route('channels.whatsapp-test.profile.photo', $channel),
+        ['photo' => File::createWithContent(
+            'profile.png',
+            createWhatsAppTestProfilePicturePng(),
+        )],
+    );
+
+    $response->assertRedirect(route('channels.whatsapp-test.edit', ['tab' => 'perfil']))
+        ->assertInertiaFlash('toast', [
+            'type' => 'error',
+            'message' => 'O Evolution Go recusou a operação: foto recusada',
+        ]);
+    Http::assertSent(fn (ClientRequest $request): bool => $request->url() === 'https://evolution.test/user/profilePicture'
+        && $request->method() === 'POST');
 });
 
 it('forbids a Member from replacing the test Profile photo before contacting Evolution Go', function () {
