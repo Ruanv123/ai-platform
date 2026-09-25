@@ -9,6 +9,7 @@ use App\Models\WhatsAppAccount;
 use App\Models\WhatsAppTemplate;
 use App\WhatsApp\Output\AbstractWhatsAppOutputAdapter;
 use Illuminate\Http\Client\PendingRequest;
+use Illuminate\Http\Client\Response;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Http;
 use InvalidArgumentException;
@@ -16,6 +17,8 @@ use RuntimeException;
 
 final class MetaOutputAdapter extends AbstractWhatsAppOutputAdapter
 {
+    public function __construct(private readonly MetaGraphApiResponseHandler $responseHandler) {}
+
     public function sendText(Channel $channel, Contact $contact, string $content): Message
     {
         $this->assertContactBelongsToChannel($channel, $contact);
@@ -32,7 +35,9 @@ final class MetaOutputAdapter extends AbstractWhatsAppOutputAdapter
                     'body' => $content,
                 ],
             ],
-        )->throw();
+        );
+        $this->responseHandler->markChannelUnavailableForInvalidToken($response, $channel);
+        $response->throw();
         $providerMessageId = $this->providerMessageId($response->json());
 
         if ($providerMessageId === null) {
@@ -59,6 +64,7 @@ final class MetaOutputAdapter extends AbstractWhatsAppOutputAdapter
                 $this->mediaUrl($phoneNumber),
                 ['messaging_product' => 'whatsapp'],
                 $media,
+                fn (Response $response): mixed => $this->responseHandler->markChannelUnavailableForInvalidToken($response, $channel),
             );
             $mediaId = $uploadedMedia->json('id');
 
@@ -83,7 +89,9 @@ final class MetaOutputAdapter extends AbstractWhatsAppOutputAdapter
                     'type' => $type,
                     $type => $mediaContent,
                 ],
-            )->throw();
+            );
+            $this->responseHandler->markChannelUnavailableForInvalidToken($response, $channel);
+            $response->throw();
             $providerMessageId = $this->providerMessageId($response->json());
 
             if ($providerMessageId === null) {
@@ -155,7 +163,9 @@ final class MetaOutputAdapter extends AbstractWhatsAppOutputAdapter
                     'components' => $components,
                 ],
             ],
-        )->throw();
+        );
+        $this->responseHandler->markChannelUnavailableForInvalidToken($response, $channel);
+        $response->throw();
         $providerMessageId = $this->providerMessageId($response->json());
         if ($providerMessageId === null) {
             throw new RuntimeException('A Meta não retornou o id do Template enviado.');
@@ -167,20 +177,22 @@ final class MetaOutputAdapter extends AbstractWhatsAppOutputAdapter
     public function markIncomingMessageAsRead(Channel $channel, Message $message): void
     {
         $this->assertIncomingMessageBelongsToChannel($channel, $message);
-        $this->request($channel)->post(
+        $response = $this->request($channel)->post(
             $this->messagesUrl($this->phoneNumber($channel)),
             [
                 'messaging_product' => 'whatsapp',
                 'status' => 'read',
                 'message_id' => $message->provider_message_id,
             ],
-        )->throw();
+        );
+        $this->responseHandler->markChannelUnavailableForInvalidToken($response, $channel);
+        $response->throw();
     }
 
     public function sendTypingIndicator(Channel $channel, Message $message): void
     {
         $this->assertIncomingMessageBelongsToChannel($channel, $message);
-        $this->request($channel)->post(
+        $response = $this->request($channel)->post(
             $this->messagesUrl($this->phoneNumber($channel)),
             [
                 'messaging_product' => 'whatsapp',
@@ -190,7 +202,9 @@ final class MetaOutputAdapter extends AbstractWhatsAppOutputAdapter
                     'type' => 'text',
                 ],
             ],
-        )->throw();
+        );
+        $this->responseHandler->markChannelUnavailableForInvalidToken($response, $channel);
+        $response->throw();
     }
 
     private function request(Channel $channel): PendingRequest

@@ -8,6 +8,7 @@ use App\Models\WhatsAppAccount;
 use App\Models\WhatsAppTemplate;
 use App\Models\WhatsAppTemplateComponent;
 use App\Models\WhatsAppTemplateHistory;
+use App\WhatsApp\Oficial\MetaGraphApiResponseHandler;
 use Illuminate\Http\Client\PendingRequest;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
@@ -16,6 +17,8 @@ use RuntimeException;
 
 final class WhatsAppTemplateService
 {
+    public function __construct(private readonly MetaGraphApiResponseHandler $responseHandler) {}
+
     public function submit(WhatsAppTemplate $template): WhatsAppTemplate
     {
         $account = $template->account;
@@ -25,6 +28,7 @@ final class WhatsAppTemplateService
             $this->templatesUrl($account),
             $this->metaPayload($template),
         );
+        $this->responseHandler->markChannelUnavailableForInvalidToken($response, $account);
         $response->throw();
 
         $oldStatus = $template->status->value;
