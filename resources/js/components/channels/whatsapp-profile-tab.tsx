@@ -3,17 +3,34 @@ import WhatsAppProfileSkeleton from '@/components/channels/whatsapp-profile-skel
 import WhatsAppProfileView from '@/components/channels/whatsapp-profile-view';
 import type {
     WhatsAppProfileCapabilities,
+    WhatsAppProfileCategoryOption,
     WhatsAppProfileResult,
 } from '@/components/channels/whatsapp-profile-types';
 
 type Props = {
     capabilities: WhatsAppProfileCapabilities;
     connectionUrl: string;
+    channelId: string | null;
+    updateTextsUrl: string | null;
+    updateProfilePictureUrl: string | null;
+    requestDisplayNameUrl: string | null;
+    appId: string | null;
+    requiresAppId: boolean;
+    canEdit: boolean;
+    categories?: WhatsAppProfileCategoryOption[];
 };
 
 export default function WhatsAppProfileTab({
     capabilities,
     connectionUrl,
+    channelId,
+    updateTextsUrl,
+    updateProfilePictureUrl,
+    requestDisplayNameUrl,
+    appId,
+    requiresAppId,
+    canEdit,
+    categories = [],
 }: Props) {
     const { whatsappProfile } = usePage<{
         whatsappProfile?: WhatsAppProfileResult | null;
@@ -30,6 +47,14 @@ export default function WhatsAppProfileTab({
                         profile={whatsappProfile}
                         capabilities={capabilities}
                         connectionUrl={connectionUrl}
+                        channelId={channelId}
+                        updateTextsUrl={updateTextsUrl}
+                        updateProfilePictureUrl={updateProfilePictureUrl}
+                        requestDisplayNameUrl={requestDisplayNameUrl}
+                        appId={appId}
+                        requiresAppId={requiresAppId}
+                        canEdit={canEdit}
+                        categories={categories}
                     />
                 ) : (
                     <WhatsAppProfileSkeleton />

@@ -4,10 +4,15 @@ namespace App\Http\Controllers\Channels;
 
 use App\Enums\ChannelStatus;
 use App\Enums\ChannelType;
+use App\Enums\WhatsAppBusinessCategory;
 use App\Enums\WhatsAppConnectionMethod;
 use App\Exceptions\WhatsAppProfileException;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Channels\SaveWhatsAppChannelRequest;
+use App\Http\Requests\Channels\UpdateWhatsAppDisplayNameRequest;
+use App\Http\Requests\Channels\UpdateWhatsAppProfilePictureRequest;
+use App\Http\Requests\Channels\UpdateWhatsAppProfileTextsRequest;
+use App\Http\Responses\WhatsAppProfileResponse;
 use App\Models\Agent;
 use App\Models\Channel;
 use App\Models\WhatsAppAccount;
@@ -51,29 +56,9 @@ class WhatsAppController extends Controller
                 $user->can('update', $channel),
             ),
             'whatsappProfileCapabilities' => $this->profileProvider->capabilities()->toArray(),
+            'whatsappProfileCategories' => WhatsAppBusinessCategory::options(),
             'whatsappProfile' => $activeTab === 'perfil'
-                ? Inertia::defer(function () use ($channel): array {
-                    if ($channel === null || $channel->status !== ChannelStatus::Connected) {
-                        return ['state' => 'not_connected'];
-                    }
-
-                    try {
-                        return [
-                            'state' => 'ready',
-                            'data' => $this->profileProvider->read($channel)->toArray(),
-                        ];
-                    } catch (WhatsAppProfileException $exception) {
-                        Inertia::flash('toast', [
-                            'type' => 'error',
-                            'message' => $exception->getMessage(),
-                        ]);
-
-                        return [
-                            'state' => 'error',
-                            'message' => $exception->getMessage(),
-                        ];
-                    }
-                })
+                ? WhatsAppProfileResponse::deferredProfile($channel, $this->profileProvider)
                 : null,
             'agents' => $team->agents()
                 ->orderBy('name')
@@ -238,6 +223,54 @@ class WhatsAppController extends Controller
         ]);
 
         return to_route('channels.whatsapp.edit');
+    }
+
+    public function updateProfileTexts(
+        UpdateWhatsAppProfileTextsRequest $request,
+        Channel $channel,
+    ): RedirectResponse {
+        try {
+            $this->profileProvider->updateTexts($channel, $request->validated());
+        } catch (WhatsAppProfileException $exception) {
+            return WhatsAppProfileResponse::updateFailed('channels.whatsapp.edit', $exception->getMessage());
+        }
+
+        return WhatsAppProfileResponse::updateSucceeded(
+            'channels.whatsapp.edit',
+            'Perfil do WhatsApp atualizado com sucesso.',
+        );
+    }
+
+    public function updateProfilePicture(
+        UpdateWhatsAppProfilePictureRequest $request,
+        Channel $channel,
+    ): RedirectResponse {
+        try {
+            $this->profileProvider->updateProfilePicture($channel, $request->photo());
+        } catch (WhatsAppProfileException $exception) {
+            return WhatsAppProfileResponse::updateFailed('channels.whatsapp.edit', $exception->getMessage());
+        }
+
+        return WhatsAppProfileResponse::updateSucceeded(
+            'channels.whatsapp.edit',
+            'Foto do Perfil do WhatsApp atualizada com sucesso.',
+        );
+    }
+
+    public function requestDisplayName(
+        UpdateWhatsAppDisplayNameRequest $request,
+        Channel $channel,
+    ): RedirectResponse {
+        try {
+            $this->profileProvider->requestDisplayName($channel, $request->validated('name'));
+        } catch (WhatsAppProfileException $exception) {
+            return WhatsAppProfileResponse::updateFailed('channels.whatsapp.edit', $exception->getMessage());
+        }
+
+        return WhatsAppProfileResponse::updateSucceeded(
+            'channels.whatsapp.edit',
+            'Pedido de alteração do nome enviado para análise da Meta.',
+        );
     }
 
     /**

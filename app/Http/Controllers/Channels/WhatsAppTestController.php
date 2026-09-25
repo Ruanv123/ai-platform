@@ -7,6 +7,9 @@ use App\Enums\ChannelType;
 use App\Exceptions\WhatsAppProfileException;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Channels\SaveWhatsAppTestChannelRequest;
+use App\Http\Requests\Channels\UpdateWhatsAppProfilePictureRequest;
+use App\Http\Requests\Channels\UpdateWhatsAppTestProfileTextsRequest;
+use App\Http\Responses\WhatsAppProfileResponse;
 use App\Models\Agent;
 use App\Models\Channel;
 use App\Models\User;
@@ -57,28 +60,7 @@ class WhatsAppTestController extends Controller
                     : $this->toFrontend($channel, $canManage, $activeTab === 'conexao'),
             'whatsappProfileCapabilities' => $this->profileProvider->capabilities()->toArray(),
             'whatsappProfile' => $activeTab === 'perfil'
-                ? Inertia::defer(function () use ($channel): array {
-                    if ($channel === null || $channel->status !== ChannelStatus::Connected) {
-                        return ['state' => 'not_connected'];
-                    }
-
-                    try {
-                        return [
-                            'state' => 'ready',
-                            'data' => $this->profileProvider->read($channel)->toArray(),
-                        ];
-                    } catch (WhatsAppProfileException $exception) {
-                        Inertia::flash('toast', [
-                            'type' => 'error',
-                            'message' => $exception->getMessage(),
-                        ]);
-
-                        return [
-                            'state' => 'error',
-                            'message' => $exception->getMessage(),
-                        ];
-                    }
-                })
+                ? WhatsAppProfileResponse::deferredProfile($channel, $this->profileProvider)
                 : null,
             'agents' => $team
                 ->agents()
@@ -197,6 +179,38 @@ class WhatsAppTestController extends Controller
         ]);
 
         return to_route('channels.whatsapp-test.edit');
+    }
+
+    public function updateProfileTexts(
+        UpdateWhatsAppTestProfileTextsRequest $request,
+        Channel $whatsappTestChannel,
+    ): RedirectResponse {
+        try {
+            $this->profileProvider->updateTexts($whatsappTestChannel, $request->validated());
+        } catch (WhatsAppProfileException $exception) {
+            return WhatsAppProfileResponse::updateFailed('channels.whatsapp-test.edit', $exception->getMessage());
+        }
+
+        return WhatsAppProfileResponse::updateSucceeded(
+            'channels.whatsapp-test.edit',
+            'Perfil do WhatsApp atualizado com sucesso.',
+        );
+    }
+
+    public function updateProfilePicture(
+        UpdateWhatsAppProfilePictureRequest $request,
+        Channel $whatsappTestChannel,
+    ): RedirectResponse {
+        try {
+            $this->profileProvider->updateProfilePicture($whatsappTestChannel, $request->photo());
+        } catch (WhatsAppProfileException $exception) {
+            return WhatsAppProfileResponse::updateFailed('channels.whatsapp-test.edit', $exception->getMessage());
+        }
+
+        return WhatsAppProfileResponse::updateSucceeded(
+            'channels.whatsapp-test.edit',
+            'Foto do Perfil do WhatsApp atualizada com sucesso.',
+        );
     }
 
     /**
