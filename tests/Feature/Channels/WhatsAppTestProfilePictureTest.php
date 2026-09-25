@@ -85,7 +85,7 @@ it('allows an Owner and an Admin to replace the test Profile photo with an expir
 
             $download->assertOk()
                 ->assertHeader('content-type', 'image/png')
-                ->assertContent($photoBytes);
+                ->assertStreamedContent($photoBytes);
 
             return Http::response(['success' => true]);
         }
@@ -139,7 +139,7 @@ it('serves a stored test Profile photo to a guest only through its valid signed 
     $this->get($imageUrl)
         ->assertOk()
         ->assertHeader('content-type', 'image/jpeg')
-        ->assertContent('profile-photo-bytes');
+        ->assertStreamedContent('profile-photo-bytes');
 });
 
 it('rejects a test Profile photo request without a signature or after the signature expires', function () {
