@@ -23,6 +23,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
     'verify_token',
     'webhook_verified_at',
     'subscribed_at',
+    'templates_synced_at',
     'ban_state',
     'review_status',
     'last_tested_at',
@@ -65,6 +66,7 @@ class WhatsAppAccount extends Model
             'app_secret' => 'encrypted',
             'webhook_verified_at' => 'datetime',
             'subscribed_at' => 'datetime',
+            'templates_synced_at' => 'datetime',
             'last_tested_at' => 'datetime',
         ];
     }

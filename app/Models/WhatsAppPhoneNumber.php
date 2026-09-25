@@ -20,6 +20,8 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
     'messaging_limit_tier',
     'registration_pin',
     'registered_at',
+    'details_synced_at',
+    'registration_pin_required',
 ])]
 #[Hidden(['registration_pin'])]
 
@@ -50,6 +52,8 @@ class WhatsAppPhoneNumber extends Model
         return [
             'registration_pin' => 'encrypted',
             'registered_at' => 'datetime',
+            'details_synced_at' => 'datetime',
+            'registration_pin_required' => 'boolean',
         ];
     }
 }

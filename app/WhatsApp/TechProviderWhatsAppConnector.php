@@ -39,17 +39,59 @@ final class TechProviderWhatsAppConnector
         [$wabaId, $phoneNumberId] = $this->discoverAssets($accessToken, $appId, $appSecret);
         [$channel, $account, $phoneNumber] = $this->connectionRecords($team, $wabaId, $phoneNumberId, $accessToken);
 
+        return $this->completeConnection($channel, $account, $phoneNumber);
+    }
+
+    public function retry(Team $team, ?string $pin = null): Channel
+    {
+        $channel = $team->channels()
+            ->where('type', ChannelType::WhatsApp)
+            ->with('whatsappPhoneNumber.whatsappAccount')
+            ->first();
+        $phoneNumber = $channel?->whatsappPhoneNumber;
+        $account = $phoneNumber?->whatsappAccount;
+
+        if ($channel === null
+            || $account === null
+            || $phoneNumber === null
+            || $account->connection_method !== WhatsAppConnectionMethod::TechProvider) {
+            throw new WhatsAppConnectionException('Não há uma conexão da Meta pendente para tentar novamente.');
+        }
+
+        if ($account->subscribed_at !== null
+            && $phoneNumber->registered_at !== null
+            && $phoneNumber->details_synced_at !== null
+            && $account->templates_synced_at !== null) {
+            throw new WhatsAppConnectionException('Esta conexão já concluiu todas as etapas. Autorize novamente com a Meta para atualizar o token.');
+        }
+
+        return $this->completeConnection($channel, $account, $phoneNumber, $pin);
+    }
+
+    private function completeConnection(
+        Channel $channel,
+        WhatsAppAccount $account,
+        WhatsAppPhoneNumber $phoneNumber,
+        ?string $pin = null,
+    ): Channel {
         try {
             if ($account->subscribed_at === null) {
                 $this->subscribeToWaba($account);
             }
 
             if ($phoneNumber->registered_at === null) {
-                $this->registerPhoneNumber($phoneNumber, $account);
+                $this->registerPhoneNumber($phoneNumber, $account, $pin);
             }
 
-            $this->syncPhoneNumberDetails($phoneNumber, $account);
-            $this->templateSynchronizer->sync($account);
+            if ($phoneNumber->details_synced_at === null) {
+                $this->syncPhoneNumberDetails($phoneNumber, $account);
+            }
+
+            if ($account->templates_synced_at === null) {
+                $this->templateSynchronizer->sync($account);
+                $account->update(['templates_synced_at' => now()]);
+            }
+
             $channel->update([
                 'status' => ChannelStatus::Connected,
                 'last_error' => null,
@@ -263,21 +305,42 @@ final class TechProviderWhatsAppConnector
         $account->update(['subscribed_at' => now()]);
     }
 
-    private function registerPhoneNumber(WhatsAppPhoneNumber $phoneNumber, WhatsAppAccount $account): void
-    {
-        $pin = $phoneNumber->registration_pin ?? str_pad((string) random_int(0, 999999), 6, '0', STR_PAD_LEFT);
-        $phoneNumber->update(['registration_pin' => $pin]);
+    private function registerPhoneNumber(
+        WhatsAppPhoneNumber $phoneNumber,
+        WhatsAppAccount $account,
+        ?string $pin,
+    ): void {
+        if ($phoneNumber->registration_pin_required && $pin === null) {
+            throw new WhatsAppConnectionException('Informe o PIN de confirmação em duas etapas para continuar.');
+        }
+
+        $registrationPin = $pin
+            ?? $phoneNumber->registration_pin
+            ?? str_pad((string) random_int(0, 999999), 6, '0', STR_PAD_LEFT);
+        $phoneNumber->update(['registration_pin' => $registrationPin]);
 
         $response = $this->graphRequest($account->access_token)->post(
             $this->graphUrl(rawurlencode($phoneNumber->phone_number_id).'/register'),
             [
                 'messaging_product' => 'whatsapp',
-                'pin' => $pin,
+                'pin' => $registrationPin,
             ],
         );
 
+        if ((int) $response->json('error.code') === 133005) {
+            $phoneNumber->update(['registration_pin_required' => true]);
+            $message = $pin === null
+                ? 'Este número já possui um PIN de confirmação em duas etapas. Informe os seis dígitos para continuar.'
+                : $this->translatedMetaError($response);
+
+            throw new WhatsAppConnectionException($message);
+        }
+
         $this->throwIfMetaRejected($response);
-        $phoneNumber->update(['registered_at' => now()]);
+        $phoneNumber->update([
+            'registered_at' => now(),
+            'registration_pin_required' => false,
+        ]);
     }
 
     private function syncPhoneNumberDetails(WhatsAppPhoneNumber $phoneNumber, WhatsAppAccount $account): void
@@ -294,6 +357,7 @@ final class TechProviderWhatsAppConnector
             'quality_rating' => $response->json('quality_rating'),
             'name_status' => $response->json('name_status'),
             'messaging_limit_tier' => $response->json('messaging_limit_tier'),
+            'details_synced_at' => now(),
         ]);
     }
 

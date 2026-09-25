@@ -121,7 +121,7 @@ it('does not call Meta for a channel that is not connected', function () {
         ->and($channel->fresh()->last_error)->toBe('Credenciais inválidas.');
 });
 
-it('shows a translated provider error without changing the channel connection state', function () {
+it('shows a translated provider error and marks the channel unavailable for an invalid token', function () {
     Http::preventStrayRequests();
     $this->withoutVite();
     $user = User::factory()->withTeam()->create();
@@ -146,8 +146,8 @@ it('shows a translated provider error without changing the channel connection st
                 'message' => 'O access token é inválido ou expirou.',
             ]),
     ));
-    expect($channel->fresh()->status)->toBe(ChannelStatus::Connected)
-        ->and($channel->fresh()->last_error)->toBe('Erro anterior preservado.');
+    expect($channel->fresh()->status)->toBe(ChannelStatus::Error)
+        ->and($channel->fresh()->last_error)->toBe('O access token é inválido ou expirou.');
 });
 
 it('does not request the live Profile when the Conexão tab is active', function () {

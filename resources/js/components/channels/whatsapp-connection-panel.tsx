@@ -64,12 +64,14 @@ function formatQualityRating(rating: string | null): string {
         return '—';
     }
 
-    return {
-        GREEN: 'Alta',
-        YELLOW: 'Média',
-        RED: 'Baixa',
-        UNKNOWN: 'Indisponível',
-    }[rating.toUpperCase()] ?? rating;
+    return (
+        {
+            GREEN: 'Alta',
+            YELLOW: 'Média',
+            RED: 'Baixa',
+            UNKNOWN: 'Indisponível',
+        }[rating.toUpperCase()] ?? rating
+    );
 }
 
 function formatNameStatus(status: string | null): string {
@@ -77,16 +79,18 @@ function formatNameStatus(status: string | null): string {
         return '—';
     }
 
-    return {
-        APPROVED: 'Aprovado',
-        PENDING: 'Em análise',
-        PENDING_REVIEW: 'Em análise',
-        DEFERRED: 'Análise adiada',
-        REJECTED: 'Recusado',
-        DECLINED: 'Recusado',
-        AVAILABLE_WITHOUT_REVIEW: 'Disponível sem revisão',
-        NONE: 'Não informado',
-    }[status.toUpperCase()] ?? status;
+    return (
+        {
+            APPROVED: 'Aprovado',
+            PENDING: 'Em análise',
+            PENDING_REVIEW: 'Em análise',
+            DEFERRED: 'Análise adiada',
+            REJECTED: 'Recusado',
+            DECLINED: 'Recusado',
+            AVAILABLE_WITHOUT_REVIEW: 'Disponível sem revisão',
+            NONE: 'Não informado',
+        }[status.toUpperCase()] ?? status
+    );
 }
 
 function formatMessagingLimitTier(tier: string | null): string {
@@ -116,7 +120,15 @@ export default function WhatsAppConnectionPanel({
     const [connectionStatus, setConnectionStatus] =
         useState<ConnectionStatus>('idle');
     const [ownAppFormOpen, setOwnAppFormOpen] = useState(false);
+    const [registrationPin, setRegistrationPin] = useState('');
     const showOwnAppForm = ownAppFormOpen || whatsapp?.method === 'own_app';
+    const canRetryMetaConnection =
+        whatsapp?.method === 'tech_provider' &&
+        whatsapp.status === 'error' &&
+        (whatsapp.subscribedAt === null ||
+            whatsapp.registeredAt === null ||
+            whatsapp.detailsSyncedAt === null ||
+            whatsapp.templatesSyncedAt === null);
     const canStartMetaSignup =
         whatsapp === null ||
         (whatsapp.method === 'tech_provider' && whatsapp.status === 'error');
@@ -148,6 +160,25 @@ export default function WhatsAppConnectionPanel({
         );
     };
 
+    const retryMetaConnection = () => {
+        router.post(
+            connectWithMeta().url,
+            {
+                pin: whatsapp?.registrationPinRequired
+                    ? registrationPin
+                    : undefined,
+            },
+            {
+                preserveScroll: true,
+                onStart: () => setConnectionStatus('connecting'),
+                onFinish: () => {
+                    setConnectionStatus('idle');
+                    setRegistrationPin('');
+                },
+            },
+        );
+    };
+
     return (
         <div className="grid items-start gap-6 xl:grid-cols-[minmax(0,2fr)_minmax(280px,1fr)]">
             <div className="grid gap-6">
@@ -173,6 +204,55 @@ export default function WhatsAppConnectionPanel({
                                     onAuthorization={submitMetaCode}
                                 />
                             )}
+                            {canManage &&
+                                canRetryMetaConnection &&
+                                whatsapp !== null && (
+                                    <div className="grid justify-items-start gap-3">
+                                        {whatsapp.registrationPinRequired && (
+                                            <div className="grid w-full max-w-sm gap-2">
+                                                <Label htmlFor="registration_pin">
+                                                    PIN de confirmação em duas
+                                                    etapas
+                                                </Label>
+                                                <Input
+                                                    id="registration_pin"
+                                                    inputMode="numeric"
+                                                    autoComplete="one-time-code"
+                                                    maxLength={6}
+                                                    value={registrationPin}
+                                                    onChange={(event) =>
+                                                        setRegistrationPin(
+                                                            event.target.value
+                                                                .replace(
+                                                                    /\D/g,
+                                                                    '',
+                                                                )
+                                                                .slice(0, 6),
+                                                        )
+                                                    }
+                                                    disabled={
+                                                        connectionStatus !==
+                                                        'idle'
+                                                    }
+                                                />
+                                            </div>
+                                        )}
+                                        <Button
+                                            type="button"
+                                            onClick={retryMetaConnection}
+                                            disabled={
+                                                connectionStatus !== 'idle' ||
+                                                (whatsapp.registrationPinRequired &&
+                                                    registrationPin.length !==
+                                                        6)
+                                            }
+                                        >
+                                            {whatsapp.registrationPinRequired
+                                                ? 'Informar PIN e tentar novamente'
+                                                : 'Tentar novamente'}
+                                        </Button>
+                                    </div>
+                                )}
                             {!canManage && (
                                 <p className="text-muted-foreground text-sm">
                                     Somente Owner e Admin podem conectar o
@@ -411,15 +491,21 @@ export default function WhatsAppConnectionPanel({
                                     },
                                     {
                                         label: 'Qualidade',
-                                        value: formatQualityRating(whatsapp.qualityRating),
+                                        value: formatQualityRating(
+                                            whatsapp.qualityRating,
+                                        ),
                                     },
                                     {
                                         label: 'Limite de mensagens',
-                                        value: formatMessagingLimitTier(whatsapp.messagingLimitTier),
+                                        value: formatMessagingLimitTier(
+                                            whatsapp.messagingLimitTier,
+                                        ),
                                     },
                                     {
                                         label: 'Estado do nome',
-                                        value: formatNameStatus(whatsapp.nameStatus),
+                                        value: formatNameStatus(
+                                            whatsapp.nameStatus,
+                                        ),
                                     },
                                     {
                                         label: 'Limite de mensagens',

@@ -95,7 +95,14 @@ class WhatsAppController extends Controller
         abort_if($team === null, 404);
 
         try {
-            $connector->connect($team, $request->validated('code'));
+            $code = $request->validated('code');
+            $pin = $request->validated('pin');
+
+            if (filled($code)) {
+                $connector->connect($team, $code);
+            } else {
+                $connector->retry($team, $pin);
+            }
         } catch (WhatsAppConnectionException $exception) {
             Inertia::flash('toast', [
                 'type' => 'error',
@@ -337,25 +344,57 @@ class WhatsAppController extends Controller
     /**
      * Remove the WhatsApp channel and its specific configuration.
      */
-    public function destroy(Channel $channel): RedirectResponse
+    public function destroy(Channel $channel, MetaErrorTranslator $errorTranslator): RedirectResponse
     {
         Gate::authorize('delete', $channel);
+        $account = $channel->whatsappPhoneNumber?->whatsappAccount;
+        $disconnectError = $account?->connection_method === WhatsAppConnectionMethod::TechProvider
+            ? $this->unsubscribeFromMeta($account, $errorTranslator)
+            : null;
 
-        DB::transaction(function () use ($channel): void {
-            $account = $channel->whatsappPhoneNumber?->whatsappAccount;
+        DB::transaction(function () use ($channel, $account): void {
+            $channel->messages()->update(['channel_id' => null]);
             $channel->delete();
 
-            if ($account !== null && $account->phoneNumbers()->doesntExist()) {
+            if ($account !== null) {
                 $account->delete();
             }
         });
 
         Inertia::flash('toast', [
-            'type' => 'success',
-            'message' => 'Número do WhatsApp removido com sucesso.',
+            'type' => $disconnectError === null ? 'success' : 'error',
+            'message' => $disconnectError
+                ?? 'WhatsApp desconectado. Seus Contatos e Mensagens foram mantidos.',
         ]);
 
         return to_route('channels.whatsapp.edit');
+    }
+
+    private function unsubscribeFromMeta(WhatsAppAccount $account, MetaErrorTranslator $errorTranslator): ?string
+    {
+        if (blank($account->access_token)) {
+            return 'O WhatsApp foi removido desta plataforma, mas a Meta não confirmou o cancelamento dos webhooks porque o token não está disponível.';
+        }
+
+        try {
+            $response = Http::acceptJson()
+                ->connectTimeout(3)
+                ->timeout(15)
+                ->withToken($account->access_token)
+                ->delete(
+                    rtrim((string) config('services.whatsapp.graph_api_url'), '/').'/'.trim((string) config('services.whatsapp.graph_api_version'), '/').'/'.rawurlencode($account->waba_id).'/subscribed_apps',
+                );
+        } catch (ConnectionException) {
+            return 'O WhatsApp foi removido desta plataforma, mas não foi possível confirmar o cancelamento dos webhooks na Meta. Verifique sua conexão e tente novamente.';
+        }
+
+        if ($response->successful() && $response->json('success', true) !== false) {
+            return null;
+        }
+
+        $reason = $errorTranslator->translate($response->json('error'));
+
+        return 'O WhatsApp foi removido desta plataforma, mas a Meta não confirmou o cancelamento dos webhooks: '.$reason;
     }
 
     /**
@@ -391,7 +430,10 @@ class WhatsAppController extends Controller
             'lastTestedAt' => $account?->last_tested_at?->toIso8601String(),
             'webhookVerifiedAt' => $account?->webhook_verified_at?->toIso8601String(),
             'subscribedAt' => $account?->subscribed_at?->toIso8601String(),
+            'templatesSyncedAt' => $account?->templates_synced_at?->toIso8601String(),
             'registeredAt' => $phoneNumber?->registered_at?->toIso8601String(),
+            'detailsSyncedAt' => $phoneNumber?->details_synced_at?->toIso8601String(),
+            'registrationPinRequired' => $phoneNumber?->registration_pin_required ?? false,
             'nameStatus' => $phoneNumber?->name_status,
             'messagingLimitTier' => $phoneNumber?->messaging_limit_tier,
             'agent' => $channel->agent === null ? null : [

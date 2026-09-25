@@ -183,7 +183,7 @@ it('allows an Owner to replace the photo when an App ID is configured', function
     Http::assertSentCount(3);
 });
 
-it('preserves channel connection fields when Meta rejects the photo upload', function () {
+it('marks the channel unavailable when Meta rejects the photo upload with an invalid token', function () {
     Http::preventStrayRequests();
     $owner = User::factory()->withTeam()->create();
     [$channel] = createWhatsAppProfilePictureChannel($owner, '123456789012345', 'Previous error.');
@@ -206,8 +206,8 @@ it('preserves channel connection fields when Meta rejects the photo upload', fun
         'type' => 'error',
         'message' => 'O access token é inválido ou expirou.',
     ]);
-    expect($channel->fresh()->status)->toBe(ChannelStatus::Connected)
-        ->and($channel->fresh()->last_error)->toBe('Previous error.');
+    expect($channel->fresh()->status)->toBe(ChannelStatus::Error)
+        ->and($channel->fresh()->last_error)->toBe('O access token é inválido ou expirou.');
 });
 
 it('forbids a Member from changing the photo before contacting Meta', function () {
