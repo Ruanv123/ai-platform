@@ -65,6 +65,9 @@ describe('WhatsAppProfileView', () => {
                 connectionUrl="/channels/whatsapp?tab=conexao"
                 channelId={null}
                 updateTextsUrl={null}
+                updateProfilePictureUrl={null}
+                appId={null}
+                requiresAppId={false}
                 canEdit={false}
                 categories={[]}
             />,
@@ -87,6 +90,9 @@ describe('WhatsAppProfileView', () => {
                 connectionUrl="/channels/whatsapp?tab=conexao"
                 channelId={null}
                 updateTextsUrl={null}
+                updateProfilePictureUrl={null}
+                appId={null}
+                requiresAppId={false}
                 canEdit={false}
                 categories={[]}
             />,
@@ -111,6 +117,9 @@ describe('WhatsAppProfileView', () => {
                 connectionUrl="/channels/whatsapp?tab=conexao"
                 channelId={null}
                 updateTextsUrl={null}
+                updateProfilePictureUrl={null}
+                appId={null}
+                requiresAppId={false}
                 canEdit={false}
                 categories={[]}
             />,
@@ -142,6 +151,9 @@ describe('WhatsAppProfileView', () => {
                 connectionUrl="/channels/whatsapp?tab=conexao"
                 channelId="channel-1"
                 updateTextsUrl="/channels/whatsapp-test/channel-1/profile/texts"
+                updateProfilePictureUrl={null}
+                appId={null}
+                requiresAppId={false}
                 canEdit={false}
                 categories={[{ value: 'RETAIL', label: 'Varejo' }]}
             />,
@@ -168,6 +180,9 @@ describe('WhatsAppProfileView', () => {
                 connectionUrl="/channels/whatsapp-test?tab=conexao"
                 channelId="channel-1"
                 updateTextsUrl="/channels/whatsapp-test/channel-1/profile/texts"
+                updateProfilePictureUrl={null}
+                appId={null}
+                requiresAppId={false}
                 canEdit
                 categories={[]}
             />,

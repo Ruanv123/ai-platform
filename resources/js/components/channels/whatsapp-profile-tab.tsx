@@ -12,6 +12,9 @@ type Props = {
     connectionUrl: string;
     channelId: string | null;
     updateTextsUrl: string | null;
+    updateProfilePictureUrl: string | null;
+    appId: string | null;
+    requiresAppId: boolean;
     canEdit: boolean;
     categories?: WhatsAppProfileCategoryOption[];
 };
@@ -21,6 +24,9 @@ export default function WhatsAppProfileTab({
     connectionUrl,
     channelId,
     updateTextsUrl,
+    updateProfilePictureUrl,
+    appId,
+    requiresAppId,
     canEdit,
     categories = [],
 }: Props) {
@@ -41,6 +47,9 @@ export default function WhatsAppProfileTab({
                         connectionUrl={connectionUrl}
                         channelId={channelId}
                         updateTextsUrl={updateTextsUrl}
+                        updateProfilePictureUrl={updateProfilePictureUrl}
+                        appId={appId}
+                        requiresAppId={requiresAppId}
                         canEdit={canEdit}
                         categories={categories}
                     />

@@ -5,7 +5,10 @@ import type {
     WhatsAppChannelDetails,
 } from '@/components/channels/whatsapp-channel-types';
 import WhatsAppProfileTab from '@/components/channels/whatsapp-profile-tab';
-import { updateProfileTexts as updateWhatsAppProfileTexts } from '@/actions/App/Http/Controllers/Channels/WhatsAppController';
+import {
+    updateProfilePicture as updateWhatsAppProfilePicture,
+    updateProfileTexts as updateWhatsAppProfileTexts,
+} from '@/actions/App/Http/Controllers/Channels/WhatsAppController';
 import type {
     WhatsAppProfileCapabilities,
     WhatsAppProfileCategoryOption,
@@ -39,6 +42,9 @@ export default function WhatsApp({
     const updateTextsUrl = whatsapp === null
         ? null
         : updateWhatsAppProfileTexts(whatsapp.id).url;
+    const updateProfilePictureUrl = whatsapp === null
+        ? null
+        : updateWhatsAppProfilePicture(whatsapp.id).url;
 
     return (
         <>
@@ -101,6 +107,9 @@ export default function WhatsApp({
                             connectionUrl={connectionUrl}
                             channelId={whatsapp?.id ?? null}
                             updateTextsUrl={updateTextsUrl}
+                            updateProfilePictureUrl={updateProfilePictureUrl}
+                            appId={whatsapp?.appId ?? null}
+                            requiresAppId
                             canEdit={permissions.canManageChannels}
                             categories={whatsappProfileCategories}
                         />

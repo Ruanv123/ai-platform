@@ -14,6 +14,7 @@ import type {
     WhatsAppProfileField,
     WhatsAppProfileResult,
 } from '@/components/channels/whatsapp-profile-types';
+import WhatsAppProfilePhotoBlock from '@/components/channels/whatsapp-profile-photo-block';
 import WhatsAppProfileTextForm from '@/components/channels/whatsapp-profile-text-form';
 
 type Props = {
@@ -22,6 +23,9 @@ type Props = {
     connectionUrl: string;
     channelId: string | null;
     updateTextsUrl: string | null;
+    updateProfilePictureUrl: string | null;
+    appId: string | null;
+    requiresAppId: boolean;
     canEdit: boolean;
     categories: WhatsAppProfileCategoryOption[];
 };
@@ -47,6 +51,9 @@ export default function WhatsAppProfileView({
     connectionUrl,
     channelId,
     updateTextsUrl,
+    updateProfilePictureUrl,
+    appId,
+    requiresAppId,
     canEdit,
     categories,
 }: Props) {
@@ -139,20 +146,17 @@ export default function WhatsAppProfileView({
             </CardHeader>
             <CardContent className="grid gap-6">
                 {capabilities.readableFields.includes('profilePicture') && (
-                    <div className="flex items-center gap-4">
-                                {data.profilePictureUrl ? (
-                            <img
-                                src={data.profilePictureUrl}
-                                alt="Foto do Perfil do WhatsApp"
-                                className="size-20 rounded-full object-cover"
-                            />
-                        ) : (
-                            <div
-                                aria-label="Foto do Perfil indisponível"
-                                className="bg-muted size-20 rounded-full"
-                            />
-                        )}
-                    </div>
+                    <WhatsAppProfilePhotoBlock
+                        profilePictureUrl={data.profilePictureUrl}
+                        appId={appId}
+                        requiresAppId={requiresAppId}
+                        connectionUrl={connectionUrl}
+                        updateProfilePictureUrl={updateProfilePictureUrl}
+                        canEdit={
+                            canEdit &&
+                            capabilities.editableFields.includes('profilePicture')
+                        }
+                    />
                 )}
                 <dl className="grid gap-4 md:grid-cols-2">
                     {facts.map((fact) => (

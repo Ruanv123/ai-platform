@@ -4,11 +4,12 @@ namespace App\Http\Controllers\Channels;
 
 use App\Enums\ChannelStatus;
 use App\Enums\ChannelType;
-use App\Enums\WhatsAppConnectionMethod;
 use App\Enums\WhatsAppBusinessCategory;
+use App\Enums\WhatsAppConnectionMethod;
 use App\Exceptions\WhatsAppProfileException;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Channels\SaveWhatsAppChannelRequest;
+use App\Http\Requests\Channels\UpdateWhatsAppProfilePictureRequest;
 use App\Http\Requests\Channels\UpdateWhatsAppProfileTextsRequest;
 use App\Models\Agent;
 use App\Models\Channel;
@@ -261,6 +262,29 @@ class WhatsAppController extends Controller
         Inertia::flash('toast', [
             'type' => 'success',
             'message' => 'Perfil do WhatsApp atualizado com sucesso.',
+        ]);
+
+        return to_route('channels.whatsapp.edit', ['tab' => 'perfil']);
+    }
+
+    public function updateProfilePicture(
+        UpdateWhatsAppProfilePictureRequest $request,
+        Channel $channel,
+    ): RedirectResponse {
+        try {
+            $this->profileProvider->updateProfilePicture($channel, $request->photo());
+        } catch (WhatsAppProfileException $exception) {
+            Inertia::flash('toast', [
+                'type' => 'error',
+                'message' => $exception->getMessage(),
+            ]);
+
+            return to_route('channels.whatsapp.edit', ['tab' => 'perfil']);
+        }
+
+        Inertia::flash('toast', [
+            'type' => 'success',
+            'message' => 'Foto do Perfil do WhatsApp atualizada com sucesso.',
         ]);
 
         return to_route('channels.whatsapp.edit', ['tab' => 'perfil']);

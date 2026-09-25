@@ -7,6 +7,7 @@ use App\Models\Channel;
 use App\WhatsApp\Profiles\WhatsAppProfileCapabilities;
 use App\WhatsApp\Profiles\WhatsAppProfileData;
 use App\WhatsApp\Profiles\WhatsAppProfileProvider;
+use Illuminate\Http\UploadedFile;
 use RuntimeException;
 
 final class EvolutionGoWhatsAppProfileProvider implements WhatsAppProfileProvider
@@ -80,5 +81,10 @@ final class EvolutionGoWhatsAppProfileProvider implements WhatsAppProfileProvide
         } catch (RuntimeException $exception) {
             throw new WhatsAppProfileException($exception->getMessage(), 0, $exception);
         }
+    }
+
+    public function updateProfilePicture(Channel $channel, UploadedFile $photo): void
+    {
+        throw new WhatsAppProfileException('A troca da foto ainda não está disponível para este tipo de Canal.');
     }
 }
