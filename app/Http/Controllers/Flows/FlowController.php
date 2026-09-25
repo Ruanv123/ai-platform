@@ -408,15 +408,17 @@ class FlowController extends Controller
     {
         return WhatsAppTemplate::query()
             ->where('status', 'approved')
-            ->whereHas('account.phoneNumber.channel', fn ($query) => $query->where('team_id', $team->getKey())->where('type', 'whatsapp'))
-            ->with('account.phoneNumber')
+            ->whereHas('account', fn ($query) => $query
+                ->where('team_id', $team->getKey())
+                ->whereHas('phoneNumbers.channel', fn ($channelQuery) => $channelQuery->where('type', 'whatsapp')))
+            ->with('account.phoneNumbers')
             ->orderBy('name')
             ->get()
             ->map(fn (WhatsAppTemplate $template): array => [
                 'id' => $template->getKey(),
                 'name' => $template->name,
                 'language' => $template->language,
-                'channelId' => $template->account->phoneNumber->channel_id,
+                'channelId' => $template->account->phoneNumbers->first()?->channel_id,
                 'category' => $template->assigned_category?->value ?? $template->requested_category->value,
                 'body' => $template->body,
                 'variables' => $template->variableDefinitions(),

@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Channels;
 
 use App\Enums\ChannelType;
+use App\Enums\WhatsAppConnectionMethod;
 use App\Http\Controllers\Controller;
 use App\Jobs\ProcessWhatsAppWebhook;
 use App\Models\WhatsAppAccount;
@@ -72,9 +73,11 @@ class WhatsAppWebhookController extends Controller
             ->where('phone_number_id', $phoneNumberId)
             ->with(['channel.agent', 'whatsappAccount'])
             ->first();
+        $account = $phoneNumber?->whatsappAccount;
 
         if ($phoneNumber === null
-            || $phoneNumber->whatsappAccount === null
+            || $account === null
+            || $account->connection_method !== WhatsAppConnectionMethod::OwnApp
             || $phoneNumber->channel->type !== ChannelType::WhatsApp) {
             return response('Forbidden', 403);
         }
@@ -82,7 +85,7 @@ class WhatsAppWebhookController extends Controller
         $expectedSignature = 'sha256='.hash_hmac(
             'sha256',
             $rawBody,
-            $phoneNumber->whatsappAccount->app_secret,
+            $account->app_secret,
         );
 
         if (! hash_equals($expectedSignature, $signature)) {

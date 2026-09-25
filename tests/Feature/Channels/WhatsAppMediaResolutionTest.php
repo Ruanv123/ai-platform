@@ -28,12 +28,13 @@ function createOfficialMediaChannel(): Channel
     $channel = Channel::factory()->for(Team::factory())->create([
         'type' => ChannelType::WhatsApp,
     ]);
-    $phoneNumber = WhatsAppPhoneNumber::factory()->for($channel)->create([
-        'phone_number_id' => 'official-phone-number-id',
-    ]);
-    WhatsAppAccount::factory()->for($phoneNumber, 'phoneNumber')->create([
+    $account = WhatsAppAccount::factory()->for($channel->team, 'team')->create([
         'app_secret' => 'media-test-secret',
         'access_token' => 'media-test-token',
+    ]);
+    $phoneNumber = WhatsAppPhoneNumber::factory()->for($channel)->create([
+        'phone_number_id' => 'official-phone-number-id',
+        'whatsapp_account_id' => $account->getKey(),
     ]);
 
     return $channel;

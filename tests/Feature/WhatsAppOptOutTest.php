@@ -7,7 +7,6 @@ use App\Models\Channel;
 use App\Models\Contact;
 use App\Models\Message;
 use App\Models\User;
-use App\Models\WhatsAppAccount;
 use App\Models\WhatsAppPhoneNumber;
 use App\WhatsApp\IncomingMessageResponseDispatcher;
 use App\WhatsApp\OptOutInterceptor;
@@ -20,7 +19,6 @@ it('intercepts an opt-out before dispatching any flow job', function () {
     $user = User::factory()->withTeam()->create();
     $channel = Channel::factory()->for($user->company())->create(['type' => ChannelType::WhatsApp]);
     $phone = WhatsAppPhoneNumber::factory()->for($channel)->create(['phone_number_id' => 'opt-out-phone']);
-    WhatsAppAccount::factory()->for($phone, 'phoneNumber')->create();
     $contact = Contact::factory()->for($user->company())->create(['phone' => '5511999999999']);
     $message = Message::factory()->for($contact)->for($channel)->incoming()->create(['content' => 'SAIR']);
     Http::fake([

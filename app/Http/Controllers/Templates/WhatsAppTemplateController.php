@@ -38,7 +38,7 @@ final class WhatsAppTemplateController extends Controller
         ]);
         $templates = WhatsAppTemplate::query()
             ->whereIn('whatsapp_account_id', $accounts->modelKeys())
-            ->with('account.phoneNumber')
+            ->with('account.phoneNumbers')
             ->when(isset($filters['status']), fn ($query) => $query->where('status', $filters['status']))
             ->when(isset($filters['category']), fn ($query) => $query->where(function ($query) use ($filters): void {
                 $query->where('requested_category', $filters['category'])
@@ -70,7 +70,7 @@ final class WhatsAppTemplateController extends Controller
     public function show(Request $request, WhatsAppTemplate $template): Response
     {
         $this->authorizeTemplate($request, $template);
-        $template->load(['account.phoneNumber', 'history']);
+        $template->load(['account.phoneNumbers', 'history']);
 
         return Inertia::render('templates/show', [
             'template' => $this->serialize($template, true),
@@ -90,7 +90,7 @@ final class WhatsAppTemplateController extends Controller
         ]);
 
         if ($request->expectsJson()) {
-            return response()->json($this->serialize($template->load('account.phoneNumber')), 201);
+            return response()->json($this->serialize($template->load('account.phoneNumbers')), 201);
         }
 
         return to_route('templates.show', $template);
@@ -115,7 +115,7 @@ final class WhatsAppTemplateController extends Controller
         $template->update($attributes);
 
         if ($request->expectsJson()) {
-            return response()->json($this->serialize($template->fresh(['account.phoneNumber'])));
+            return response()->json($this->serialize($template->fresh(['account.phoneNumbers'])));
         }
 
         return to_route('templates.show', $template);
@@ -136,7 +136,7 @@ final class WhatsAppTemplateController extends Controller
         }
 
         if ($request->expectsJson()) {
-            return response()->json($this->serialize($template->load('account.phoneNumber')));
+            return response()->json($this->serialize($template->load('account.phoneNumbers')));
         }
 
         Inertia::flash('toast', [
@@ -187,10 +187,10 @@ final class WhatsAppTemplateController extends Controller
     private function accounts(int $teamId): Collection
     {
         return WhatsAppAccount::query()
-            ->whereHas('phoneNumber.channel', fn ($query) => $query
-                ->where('team_id', $teamId)
+            ->where('team_id', $teamId)
+            ->whereHas('phoneNumbers.channel', fn ($query) => $query
                 ->where('type', ChannelType::WhatsApp))
-            ->with('phoneNumber')
+            ->with('phoneNumbers')
             ->get();
     }
 
@@ -207,7 +207,8 @@ final class WhatsAppTemplateController extends Controller
     {
         $teamId = $request->user()->company()?->getKey();
         abort_unless($teamId !== null && $template->account()
-            ->whereHas('phoneNumber.channel', fn ($query) => $query->where('team_id', $teamId)->where('type', ChannelType::WhatsApp))
+            ->where('team_id', $teamId)
+            ->whereHas('phoneNumbers.channel', fn ($query) => $query->where('type', ChannelType::WhatsApp))
             ->exists(), 404);
     }
 
@@ -318,9 +319,9 @@ final class WhatsAppTemplateController extends Controller
 
     private function accountLabel(WhatsAppAccount $account): string
     {
-        $phone = $account->phoneNumber;
+        $phone = $account->phoneNumbers->first();
 
-        return collect([$phone->verified_name, $phone->display_phone_number])
+        return collect([$phone?->verified_name, $phone?->display_phone_number])
             ->filter(fn (?string $value): bool => filled($value))
             ->join(' · ') ?: 'Conta do WhatsApp';
     }

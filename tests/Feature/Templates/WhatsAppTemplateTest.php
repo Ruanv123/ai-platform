@@ -17,8 +17,8 @@ function createTemplateWhatsAppChannel(User $user, array $channelAttributes = []
         'type' => ChannelType::WhatsApp,
         ...$channelAttributes,
     ]);
-    $phoneNumber = WhatsAppPhoneNumber::factory()->for($channel)->create();
-    $account = WhatsAppAccount::factory()->for($phoneNumber, 'phoneNumber')->create();
+    $account = WhatsAppAccount::factory()->for($user->company(), 'team')->create();
+    $phoneNumber = WhatsAppPhoneNumber::factory()->for($channel)->for($account, 'whatsappAccount')->create();
 
     return [$channel, $phoneNumber, $account];
 }

@@ -4,28 +4,24 @@ namespace App\Models;
 
 use Database\Factories\WhatsAppPhoneNumberFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
+use Illuminate\Database\Eloquent\Attributes\Hidden;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
-use Illuminate\Database\Eloquent\Relations\HasOne;
 
-/**
- * @property int $id
- * @property string $channel_id
- * @property string $phone_number_id
- * @property string|null $display_phone_number
- * @property string|null $verified_name
- * @property string|null $quality_rating
- * @property-read Channel $channel
- * @property-read WhatsAppAccount|null $whatsappAccount
- */
 #[Fillable([
     'channel_id',
+    'whatsapp_account_id',
     'phone_number_id',
     'display_phone_number',
     'verified_name',
     'quality_rating',
+    'name_status',
+    'messaging_limit_tier',
+    'registration_pin',
+    'registered_at',
 ])]
+#[Hidden(['registration_pin'])]
 
 class WhatsAppPhoneNumber extends Model
 {
@@ -44,13 +40,16 @@ class WhatsAppPhoneNumber extends Model
         return $this->belongsTo(Channel::class);
     }
 
-    /**
-     * Get the Meta account that owns this number.
-     *
-     * @return HasOne<WhatsAppAccount, $this>
-     */
-    public function whatsappAccount(): HasOne
+    public function whatsappAccount(): BelongsTo
     {
-        return $this->hasOne(WhatsAppAccount::class, 'whatsapp_phone_number_id');
+        return $this->belongsTo(WhatsAppAccount::class, 'whatsapp_account_id');
+    }
+
+    protected function casts(): array
+    {
+        return [
+            'registration_pin' => 'encrypted',
+            'registered_at' => 'datetime',
+        ];
     }
 }
