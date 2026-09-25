@@ -6,6 +6,7 @@ use App\Http\Controllers\Agents\PlaygroundController;
 use App\Http\Controllers\Channels\ChannelController;
 use App\Http\Controllers\Channels\WhatsAppController;
 use App\Http\Controllers\Channels\WhatsAppTestController;
+use App\Http\Controllers\Channels\WhatsAppTestProfilePhotoController;
 use App\Http\Controllers\Channels\WhatsAppTestWebhookController;
 use App\Http\Controllers\Channels\WhatsAppWebhookController;
 use App\Http\Controllers\ContactConsentController;
@@ -40,6 +41,17 @@ Route::match(['get', 'post'], 'webhooks/whatsapp', [WhatsAppWebhookController::c
 
 Route::post('webhooks/whatsapp-test', [WhatsAppTestWebhookController::class, 'handle'])
     ->name('webhooks.whatsapp-test');
+
+Route::get(
+    'webhooks/whatsapp-test/profile-photo/{photoToken}/{extension}',
+    [WhatsAppTestProfilePhotoController::class, 'show'],
+)
+    ->where([
+        'photoToken' => '[A-Za-z0-9]{64}',
+        'extension' => 'jpg|png',
+    ])
+    ->middleware('signed')
+    ->name('channels.whatsapp-test.profile.photo.serve');
 
 Route::post('webhooks/flows/{channelId}/{event}', [FlowWebhookController::class, 'handle'])
     ->middleware('throttle:flow-webhook')
@@ -182,6 +194,8 @@ Route::middleware(['auth', EnsureUserHasTeam::class])->group(function () {
         ->name('channels.whatsapp-test.update');
     Route::post('channels/whatsapp-test/{whatsappTestChannel}/profile/texts', [WhatsAppTestController::class, 'updateProfileTexts'])
         ->name('channels.whatsapp-test.profile.texts');
+    Route::post('channels/whatsapp-test/{whatsappTestChannel}/profile/photo', [WhatsAppTestController::class, 'updateProfilePicture'])
+        ->name('channels.whatsapp-test.profile.photo');
     Route::delete('channels/whatsapp-test/{whatsappTestChannel}', [WhatsAppTestController::class, 'destroy'])
         ->name('channels.whatsapp-test.destroy');
 

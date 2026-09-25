@@ -13,12 +13,16 @@ class UpdateWhatsAppProfilePictureRequest extends FormRequest
 {
     protected function prepareForValidation(): void
     {
-        $channel = $this->route('channel');
+        $routeParameter = $this->route('channel') === null ? 'whatsappTestChannel' : 'channel';
+        $channel = $this->route($routeParameter);
         $teamId = $this->user()?->company()?->getKey();
+        $expectedChannelType = $routeParameter === 'channel'
+            ? ChannelType::WhatsApp
+            : ChannelType::WhatsAppTest;
 
         abort_unless(
             $channel instanceof Channel
-                && $channel->type === ChannelType::WhatsApp
+                && $channel->type === $expectedChannelType
                 && $channel->team_id === $teamId,
             404,
         );
@@ -26,7 +30,7 @@ class UpdateWhatsAppProfilePictureRequest extends FormRequest
 
     public function authorize(): bool
     {
-        $channel = $this->route('channel');
+        $channel = $this->route('channel') ?? $this->route('whatsappTestChannel');
 
         return $channel instanceof Channel
             && ($this->user()?->can('update', $channel) ?? false);
