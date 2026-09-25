@@ -32,6 +32,10 @@ function configureWhatsAppTestProfileEvolution(): void
     ]);
 }
 
+beforeEach(function (): void {
+    config(['inertia.ssr.enabled' => false]);
+});
+
 it('defers the live test Profile and reads only its supported Evolution Go fields', function () {
     app()->instance('env', 'local');
     Http::preventStrayRequests();
@@ -184,6 +188,9 @@ it('shows the Evolution Go error without changing the Channel status', function 
             'jid' => '15551234567890@s.whatsapp.net',
         ]]]),
         'evolution.test/user/info' => Http::response(['error' => 'perfil indisponível'], 500),
+        'evolution.test/user/avatar' => Http::response(['data' => [
+            'url' => 'https://cdn.example.test/profile.jpg',
+        ]]),
     ]);
 
     $response = $this->actingAs($user)->get(

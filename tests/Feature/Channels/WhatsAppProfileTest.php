@@ -28,6 +28,10 @@ function createWhatsAppProfileChannel(User $user, ChannelStatus $status = Channe
     return [$channel, $phoneNumber, $account];
 }
 
+beforeEach(function (): void {
+    config(['inertia.ssr.enabled' => false]);
+});
+
 it('defers the live Profile until the Perfil tab is open and reads the supported Meta fields', function () {
     Http::preventStrayRequests();
     $this->withoutVite();
