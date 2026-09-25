@@ -6,6 +6,7 @@ use App\Enums\TeamRole;
 use App\Models\Channel;
 use App\Models\User;
 use App\Models\WhatsAppTestConnection;
+use Illuminate\Foundation\Http\Middleware\PreventRequestForgery;
 use Illuminate\Http\Client\Request as ClientRequest;
 use Illuminate\Support\Facades\Http;
 
@@ -33,6 +34,7 @@ beforeEach(function (): void {
         'services.evolution.api_key' => 'platform-admin-key',
     ]);
     $this->withoutVite();
+    $this->withoutMiddleware(PreventRequestForgery::class);
 });
 
 it('sends the updated recado to Evolution Go and preserves the channel state', function () {
