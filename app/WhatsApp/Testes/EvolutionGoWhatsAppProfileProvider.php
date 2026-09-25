@@ -12,6 +12,7 @@ use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\URL;
 use Illuminate\Support\Str;
 use RuntimeException;
+use Throwable;
 
 final class EvolutionGoWhatsAppProfileProvider implements WhatsAppProfileProvider
 {
@@ -101,18 +102,31 @@ final class EvolutionGoWhatsAppProfileProvider implements WhatsAppProfileProvide
         };
         $photoToken = Str::random(64);
         $path = 'whatsapp-profile-photos/'.$photoToken.'.'.$extension;
+        $cleanupPath = $path;
+
+        $disk = Storage::disk('whatsapp_media');
+        $operationException = null;
 
         try {
-            $storedPath = Storage::disk('whatsapp_media')->putFileAs(
-                'whatsapp-profile-photos',
-                $photo,
-                $photoToken.'.'.$extension,
-            );
+            try {
+                $storedPath = $disk->putFileAs(
+                    'whatsapp-profile-photos',
+                    $photo,
+                    $photoToken.'.'.$extension,
+                );
+            } catch (Throwable $exception) {
+                throw new WhatsAppProfileException(
+                    'Não foi possível preparar a foto para o Evolution Go.',
+                    0,
+                    $exception,
+                );
+            }
 
             if (! is_string($storedPath)) {
                 throw new WhatsAppProfileException('Não foi possível preparar a foto para o Evolution Go.');
             }
 
+            $cleanupPath = $storedPath;
             $imageUrl = URL::temporarySignedRoute(
                 'channels.whatsapp-test.profile.photo.serve',
                 now()->addMinutes(5),
@@ -127,8 +141,30 @@ final class EvolutionGoWhatsAppProfileProvider implements WhatsAppProfileProvide
             } catch (RuntimeException $exception) {
                 throw new WhatsAppProfileException($exception->getMessage(), 0, $exception);
             }
+        } catch (Throwable $exception) {
+            $operationException = $exception;
         } finally {
-            Storage::disk('whatsapp_media')->delete($path);
+            try {
+                $deleted = $disk->delete($cleanupPath);
+
+                if (! $deleted && $operationException === null) {
+                    $operationException = new WhatsAppProfileException(
+                        'A foto do Perfil do WhatsApp foi atualizada, mas não foi possível remover o arquivo temporário.',
+                    );
+                }
+            } catch (Throwable $exception) {
+                if ($operationException === null) {
+                    $operationException = new WhatsAppProfileException(
+                        'A foto do Perfil do WhatsApp foi atualizada, mas não foi possível remover o arquivo temporário.',
+                        0,
+                        $exception,
+                    );
+                }
+            }
+        }
+
+        if ($operationException !== null) {
+            throw $operationException;
         }
     }
 
