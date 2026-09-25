@@ -318,7 +318,7 @@ abstract class EvolutionGoMessageStrategy implements EvolutionGoStrategy
         }
 
         try {
-            return Carbon::parse($timestamp);
+            return Carbon::parse($timestamp)->setTimezone(config('app.timezone'));
         } catch (Throwable) {
             return null;
         }

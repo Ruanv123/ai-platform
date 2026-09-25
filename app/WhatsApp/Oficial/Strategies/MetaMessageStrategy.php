@@ -246,9 +246,11 @@ abstract class MetaMessageStrategy implements MetaStrategy
         }
 
         try {
-            return is_numeric($timestamp)
+            $providerTimestamp = is_numeric($timestamp)
                 ? Carbon::createFromTimestamp((int) $timestamp)
                 : Carbon::parse($timestamp);
+
+            return $providerTimestamp->setTimezone(config('app.timezone'));
         } catch (Throwable) {
             return null;
         }
