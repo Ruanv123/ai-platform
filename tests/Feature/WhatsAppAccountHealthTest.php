@@ -221,7 +221,11 @@ it('marks the official channel when template synchronization receives an invalid
         ], 401),
     ]);
 
-    $this->actingAs($user)->post(route('templates.sync'))->assertRedirect(route('templates.index'));
+    $this->from(route('templates.index'))
+        ->actingAs($user)
+        ->post(route('templates.sync'))
+        ->assertRedirect(route('templates.index'))
+        ->assertSessionHasErrors('sync');
 
     expect($channel->fresh()->status)->toBe(ChannelStatus::Error)
         ->and($channel->fresh()->last_error)->toBe('O access token é inválido ou expirou.');

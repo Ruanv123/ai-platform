@@ -24,7 +24,7 @@ final class EvolutionGoReactionStrategy implements EvolutionGoStrategy
         }
 
         $providerMessageId = data_get($reaction, 'key.id');
-        $emoji = $reaction['text'] ?? null;
+        $emoji = $reaction['text'] ?? '';
 
         if (! is_string($providerMessageId)
             || $providerMessageId === ''

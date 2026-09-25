@@ -42,6 +42,7 @@ function createWhatsAppConformanceChannel(
     ChannelType $channelType,
     string $wabaId = 'waba-fixture',
     string $phoneNumberId = 'official-phone-number-id',
+    string $instanceName = 'local-development',
 ): Channel {
     $channel = Channel::factory()->for(Team::factory())->create([
         'type' => $channelType,
@@ -58,7 +59,7 @@ function createWhatsAppConformanceChannel(
         ]);
     } else {
         WhatsAppTestConnection::factory()->for($channel)->create([
-            'instance_name' => 'local-development',
+            'instance_name' => $instanceName,
         ]);
     }
 
@@ -257,13 +258,8 @@ it('discards a reaction when the provider message belongs to another channel', f
         $channelType,
         'other-waba-fixture',
         'other-phone-number-id',
+        'other-local-development',
     );
-
-    if ($channelType === ChannelType::WhatsAppTest) {
-        $otherChannel->whatsappTestConnection->update([
-            'instance_name' => 'other-local-development',
-        ]);
-    }
 
     $contact = Contact::factory()->for($otherChannel->team)->create();
     $providerMessageId = 'provider-message-on-other-channel';

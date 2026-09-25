@@ -24,7 +24,7 @@ final class MetaReactionStrategy implements MetaStrategy
         }
 
         $providerMessageId = $reaction['message_id'] ?? null;
-        $emoji = $reaction['emoji'] ?? null;
+        $emoji = $reaction['emoji'] ?? '';
 
         if (! is_string($providerMessageId)
             || $providerMessageId === ''
