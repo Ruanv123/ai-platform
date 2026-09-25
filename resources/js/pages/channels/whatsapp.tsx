@@ -8,6 +8,7 @@ import WhatsAppProfileTab from '@/components/channels/whatsapp-profile-tab';
 import {
     updateProfilePicture as updateWhatsAppProfilePicture,
     updateProfileTexts as updateWhatsAppProfileTexts,
+    requestDisplayName as requestWhatsAppDisplayName,
 } from '@/actions/App/Http/Controllers/Channels/WhatsAppController';
 import type {
     WhatsAppProfileCapabilities,
@@ -45,6 +46,9 @@ export default function WhatsApp({
     const updateProfilePictureUrl = whatsapp === null
         ? null
         : updateWhatsAppProfilePicture(whatsapp.id).url;
+    const requestDisplayNameUrl = whatsapp === null
+        ? null
+        : requestWhatsAppDisplayName(whatsapp.id).url;
 
     return (
         <>
@@ -108,6 +112,7 @@ export default function WhatsApp({
                             channelId={whatsapp?.id ?? null}
                             updateTextsUrl={updateTextsUrl}
                             updateProfilePictureUrl={updateProfilePictureUrl}
+                            requestDisplayNameUrl={requestDisplayNameUrl}
                             appId={whatsapp?.appId ?? null}
                             requiresAppId
                             canEdit={permissions.canManageChannels}

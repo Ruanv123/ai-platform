@@ -120,6 +120,7 @@ export default function WhatsAppTest({
                             channelId={whatsappTest?.id ?? null}
                             updateTextsUrl={updateTextsUrl}
                             updateProfilePictureUrl={updateProfilePictureUrl}
+                            requestDisplayNameUrl={null}
                             appId={null}
                             requiresAppId={false}
                             canEdit={canManage}

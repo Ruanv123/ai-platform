@@ -131,4 +131,9 @@ final class EvolutionGoWhatsAppProfileProvider implements WhatsAppProfileProvide
             Storage::disk('whatsapp_media')->delete($path);
         }
     }
+
+    public function requestDisplayName(Channel $channel, string $displayName): void
+    {
+        throw new WhatsAppProfileException('O Evolution Go não suporta pedidos de alteração do nome de exibição.');
+    }
 }

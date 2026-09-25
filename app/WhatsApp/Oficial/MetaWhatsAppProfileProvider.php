@@ -201,4 +201,29 @@ final class MetaWhatsAppProfileProvider implements WhatsAppProfileProvider
             throw new WhatsAppProfileException('Não foi possível trocar a foto do Perfil do WhatsApp. Verifique sua conexão e tente novamente.');
         }
     }
+
+    public function requestDisplayName(Channel $channel, string $displayName): void
+    {
+        $phoneNumber = $channel->whatsappPhoneNumber;
+        $account = $phoneNumber?->whatsappAccount;
+
+        if ($phoneNumber === null || $account === null) {
+            throw new WhatsAppProfileException('O Perfil do WhatsApp não está disponível para este Canal.');
+        }
+
+        $url = rtrim((string) config('services.whatsapp.graph_api_url'), '/').'/'.config('services.whatsapp.graph_api_version').'/'.rawurlencode($phoneNumber->phone_number_id);
+
+        try {
+            $response = Http::connectTimeout(3)
+                ->timeout(10)
+                ->withToken($account->access_token)
+                ->post($url, ['new_display_name' => $displayName]);
+
+            if (! $response->successful()) {
+                throw new WhatsAppProfileException($this->errorTranslator->translate($response->json('error')));
+            }
+        } catch (ConnectionException) {
+            throw new WhatsAppProfileException('Não foi possível pedir a alteração do nome de exibição. Verifique sua conexão e tente novamente.');
+        }
+    }
 }

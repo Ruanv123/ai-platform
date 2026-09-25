@@ -15,6 +15,7 @@ import type {
     WhatsAppProfileResult,
 } from '@/components/channels/whatsapp-profile-types';
 import WhatsAppProfilePhotoBlock from '@/components/channels/whatsapp-profile-photo-block';
+import WhatsAppProfileDisplayNameBlock from '@/components/channels/whatsapp-profile-display-name-block';
 import WhatsAppProfileTextForm from '@/components/channels/whatsapp-profile-text-form';
 
 type Props = {
@@ -24,26 +25,12 @@ type Props = {
     channelId: string | null;
     updateTextsUrl: string | null;
     updateProfilePictureUrl: string | null;
+    requestDisplayNameUrl: string | null;
     appId: string | null;
     requiresAppId: boolean;
     canEdit: boolean;
     categories: WhatsAppProfileCategoryOption[];
 };
-
-const nameStatusLabels: Record<string, string> = {
-    APPROVED: 'Aprovado',
-    DECLINED: 'Recusado',
-    EXPIRED: 'Expirado',
-    PENDING: 'Em revisão',
-};
-
-function formatNameStatus(status: string | null): string | null {
-    if (status === null) {
-        return null;
-    }
-
-    return nameStatusLabels[status] ?? status;
-}
 
 export default function WhatsAppProfileView({
     profile,
@@ -52,6 +39,7 @@ export default function WhatsAppProfileView({
     channelId,
     updateTextsUrl,
     updateProfilePictureUrl,
+    requestDisplayNameUrl,
     appId,
     requiresAppId,
     canEdit,
@@ -115,11 +103,6 @@ export default function WhatsAppProfileView({
         label: string;
         value: string | null;
     }[] = [
-        {
-            field: 'displayName',
-            label: 'Nome de exibição',
-            value: data.displayName,
-        },
         { field: 'about', label: 'Recado', value: data.about },
         { field: 'description', label: 'Descrição', value: data.description },
         { field: 'address', label: 'Endereço', value: data.address },
@@ -158,6 +141,14 @@ export default function WhatsAppProfileView({
                         }
                     />
                 )}
+                {capabilities.readableFields.includes('displayName') && (
+                    <WhatsAppProfileDisplayNameBlock
+                        profile={data}
+                        requestDisplayNameUrl={requestDisplayNameUrl}
+                        canRequestDisplayName={capabilities.canRequestDisplayName}
+                        canEdit={canEdit}
+                    />
+                )}
                 <dl className="grid gap-4 md:grid-cols-2">
                     {facts.map((fact) => (
                         <div key={fact.field} className="grid content-start gap-1">
@@ -167,22 +158,6 @@ export default function WhatsAppProfileView({
                             <dd className="break-words text-sm font-medium">
                                 {fact.value ?? '—'}
                             </dd>
-                                {fact.field === 'displayName' &&
-                                    formatNameStatus(data.nameStatus) && (
-                                        <dd className="text-muted-foreground text-sm">
-                                            {formatNameStatus(data.nameStatus)}
-                                        </dd>
-                                    )}
-                            {fact.field === 'displayName' &&
-                                data.newDisplayName && (
-                                    <dd className="text-muted-foreground text-sm">
-                                        Pedido: {data.newDisplayName}
-                                        {formatNameStatus(
-                                            data.newNameStatus,
-                                        ) &&
-                                            ` · ${formatNameStatus(data.newNameStatus)}`}
-                                    </dd>
-                                )}
                         </div>
                     ))}
                 </dl>

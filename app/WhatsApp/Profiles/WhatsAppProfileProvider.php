@@ -14,4 +14,6 @@ interface WhatsAppProfileProvider
     public function updateTexts(Channel $channel, array $values): void;
 
     public function updateProfilePicture(Channel $channel, UploadedFile $photo): void;
+
+    public function requestDisplayName(Channel $channel, string $displayName): void;
 }
