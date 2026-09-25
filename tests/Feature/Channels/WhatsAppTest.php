@@ -46,7 +46,9 @@ it('redirects guests to login when they visit WhatsApp configuration', function 
 
 it('renders the WhatsApp channel without returning its secrets', function () {
     $user = User::factory()->withTeam()->create();
-    [$channel] = createWhatsAppChannel($user, ['status' => ChannelStatus::Connected], [], [
+    [$channel] = createWhatsAppChannel($user, ['status' => ChannelStatus::Connected], [
+        'app_id' => '987654321012345',
+    ], [
         'phone_number_id' => '15551234567890',
     ]);
 
@@ -60,6 +62,7 @@ it('renders the WhatsApp channel without returning its secrets', function () {
     $response->assertOk()->assertInertia(fn (Assert $page) => $page
         ->component('channels/whatsapp')
         ->where('whatsapp.id', $channel->id)
+        ->where('whatsapp.appId', '987654321012345')
         ->where('whatsapp.status', 'connected')
         ->where('whatsapp.accessTokenSet', true)
         ->where('whatsapp.accessTokenMasked', '••••••••')
@@ -77,7 +80,7 @@ it('allows an owner to configure one WhatsApp channel with its account and numbe
 
     $response = $this->actingAs($user)->post(
         route('channels.whatsapp.store'),
-        whatsappDetails(),
+        whatsappDetails(['app_id' => '123456789012345']),
     );
 
     $response->assertRedirect(route('channels.whatsapp.edit'));
@@ -95,6 +98,7 @@ it('allows an owner to configure one WhatsApp channel with its account and numbe
     ]);
     $this->assertDatabaseHas('whatsapp_accounts', [
         'waba_id' => '102030405060708',
+        'app_id' => '123456789012345',
         'method' => 'manual',
     ]);
 
@@ -115,6 +119,24 @@ it('allows multiple official WhatsApp channels for the same company', function (
 
     $response->assertRedirect(route('channels.whatsapp.edit'));
     $this->assertDatabaseCount('channels', 2);
+    $this->assertDatabaseHas('whatsapp_accounts', [
+        'waba_id' => '102030405060708',
+        'app_id' => null,
+    ]);
+});
+
+it('rejects an App ID longer than 255 characters', function () {
+    $user = User::factory()->withTeam()->create();
+
+    $response = $this->actingAs($user)->post(
+        route('channels.whatsapp.store'),
+        whatsappDetails(['app_id' => str_repeat('1', 256)]),
+    );
+
+    $response->assertSessionHasErrors([
+        'app_id' => 'O App ID não pode ter mais de 255 caracteres.',
+    ]);
+    $this->assertDatabaseCount('whatsapp_accounts', 0);
 });
 
 it('preserves account secrets when an owner edits the other WhatsApp fields', function () {
@@ -128,6 +150,7 @@ it('preserves account secrets when an owner edits the other WhatsApp fields', fu
         route('channels.whatsapp.update', $channel),
         whatsappDetails([
             'waba_id' => 'updated-waba',
+            'app_id' => '987654321012345',
             'phone_number_id' => 'updated-phone',
             'access_token' => '',
             'app_secret' => '',
@@ -138,6 +161,7 @@ it('preserves account secrets when an owner edits the other WhatsApp fields', fu
     $channel->refresh();
     expect($channel->whatsappPhoneNumber->phone_number_id)->toBe('updated-phone')
         ->and($channel->whatsappPhoneNumber->whatsappAccount->waba_id)->toBe('updated-waba')
+        ->and($channel->whatsappPhoneNumber->whatsappAccount->app_id)->toBe('987654321012345')
         ->and($channel->whatsappPhoneNumber->whatsappAccount->access_token)->toBe('keep-this-token')
         ->and($channel->whatsappPhoneNumber->whatsappAccount->app_secret)->toBe('keep-this-secret');
 });

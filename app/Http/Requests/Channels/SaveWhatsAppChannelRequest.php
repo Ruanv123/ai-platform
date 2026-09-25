@@ -35,6 +35,7 @@ class SaveWhatsAppChannelRequest extends FormRequest
     {
         return [
             'waba_id' => ['required', 'string', 'max:255'],
+            'app_id' => ['nullable', 'string', 'max:255'],
             'phone_number_id' => ['required', 'string', 'max:255'],
             'access_token' => [$this->route('channel') instanceof Channel ? 'nullable' : 'required', 'string', 'max:5000'],
             'app_secret' => [$this->route('channel') instanceof Channel ? 'nullable' : 'required', 'string', 'max:5000'],
@@ -56,6 +57,7 @@ class SaveWhatsAppChannelRequest extends FormRequest
     {
         return [
             'waba_id.required' => 'Informe o WABA ID.',
+            'app_id.max' => 'O App ID não pode ter mais de 255 caracteres.',
             'phone_number_id.required' => 'Informe o Phone Number ID.',
             'access_token.required' => 'Informe o access token permanente.',
             'app_secret.required' => 'Informe o App Secret.',

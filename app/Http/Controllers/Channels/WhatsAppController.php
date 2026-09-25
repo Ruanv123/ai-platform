@@ -85,6 +85,7 @@ class WhatsAppController extends Controller
             $phoneNumber->whatsappAccount()->create([
                 'method' => WhatsAppConnectionMethod::Manual,
                 'waba_id' => $validated['waba_id'],
+                'app_id' => $validated['app_id'] ?? null,
                 'access_token' => $validated['access_token'],
                 'app_secret' => $validated['app_secret'],
                 'verify_token' => $this->generateVerifyToken(),
@@ -110,6 +111,10 @@ class WhatsAppController extends Controller
         $phoneNumber = $channel->whatsappPhoneNumber()->firstOrFail();
         $account = $phoneNumber->whatsappAccount()->firstOrFail();
         $accountAttributes = ['waba_id' => $validated['waba_id']];
+
+        if (array_key_exists('app_id', $validated)) {
+            $accountAttributes['app_id'] = $validated['app_id'];
+        }
 
         foreach (['access_token', 'app_secret'] as $secret) {
             if (filled($validated[$secret] ?? null)) {
@@ -232,6 +237,7 @@ class WhatsAppController extends Controller
         return [
             'id' => $channel->id,
             'wabaId' => $account?->waba_id,
+            'appId' => $account?->app_id,
             'phoneNumberId' => $phoneNumber?->phone_number_id,
             'accessTokenSet' => $canManage && filled($account?->access_token),
             'accessTokenMasked' => $canManage ? $this->maskSecret($account?->access_token) : null,
