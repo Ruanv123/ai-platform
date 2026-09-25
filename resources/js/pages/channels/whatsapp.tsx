@@ -5,7 +5,10 @@ import type {
     WhatsAppChannelDetails,
 } from '@/components/channels/whatsapp-channel-types';
 import WhatsAppProfileTab from '@/components/channels/whatsapp-profile-tab';
-import type { WhatsAppProfileCapabilities } from '@/components/channels/whatsapp-profile-types';
+import type {
+    WhatsAppProfileCapabilities,
+    WhatsAppProfileCategoryOption,
+} from '@/components/channels/whatsapp-profile-types';
 import Heading from '@/components/heading';
 import { index as channelsIndex } from '@/routes/channels';
 import { edit as whatsappEdit } from '@/routes/channels/whatsapp';
@@ -18,6 +21,7 @@ type Props = {
     permissions: TeamPermissions;
     webhookUrl: string;
     whatsappProfileCapabilities: WhatsAppProfileCapabilities;
+    whatsappProfileCategories: WhatsAppProfileCategoryOption[];
 };
 
 export default function WhatsApp({
@@ -27,6 +31,7 @@ export default function WhatsApp({
     permissions,
     webhookUrl,
     whatsappProfileCapabilities,
+    whatsappProfileCategories,
 }: Props) {
     const connectionUrl = whatsappEdit({ query: { tab: 'conexao' } }).url;
     const profileUrl = whatsappEdit({ query: { tab: 'perfil' } }).url;
@@ -90,6 +95,9 @@ export default function WhatsApp({
                         <WhatsAppProfileTab
                             capabilities={whatsappProfileCapabilities}
                             connectionUrl={connectionUrl}
+                            channelId={whatsapp?.id ?? null}
+                            canEdit={permissions.canManageChannels}
+                            categories={whatsappProfileCategories}
                         />
                     )}
                 </div>

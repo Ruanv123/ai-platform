@@ -107,6 +107,8 @@ export default function WhatsAppTest({
                         <WhatsAppProfileTab
                             capabilities={whatsappProfileCapabilities}
                             connectionUrl={connectionUrl}
+                            channelId={whatsappTest?.id ?? null}
+                            canEdit={false}
                         />
                     ) : whatsappTest === null ? (
                         <Card>

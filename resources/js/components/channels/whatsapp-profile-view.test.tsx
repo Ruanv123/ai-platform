@@ -19,6 +19,13 @@ vi.mock('@inertiajs/react', () => ({
         children: ReactNode;
     }) => createElement('a', { href, ...props }, children),
     router: { reload },
+    useForm: (data: Record<string, unknown>) => ({
+        data,
+        errors: {},
+        processing: false,
+        setData: () => undefined,
+        transform: () => ({ post: () => undefined }),
+    }),
 }));
 
 const capabilities: WhatsAppProfileCapabilities = {
@@ -55,6 +62,9 @@ describe('WhatsAppProfileView', () => {
                 profile={profile}
                 capabilities={capabilities}
                 connectionUrl="/channels/whatsapp?tab=conexao"
+                channelId={null}
+                canEdit={false}
+                categories={[]}
             />,
         );
 
@@ -73,6 +83,9 @@ describe('WhatsAppProfileView', () => {
                 profile={{ state: 'not_connected' }}
                 capabilities={capabilities}
                 connectionUrl="/channels/whatsapp?tab=conexao"
+                channelId={null}
+                canEdit={false}
+                categories={[]}
             />,
         );
 
@@ -93,6 +106,9 @@ describe('WhatsAppProfileView', () => {
                 profile={{ state: 'error', message: 'A Meta recusou a consulta.' }}
                 capabilities={capabilities}
                 connectionUrl="/channels/whatsapp?tab=conexao"
+                channelId={null}
+                canEdit={false}
+                categories={[]}
             />,
         );
 
@@ -102,5 +118,36 @@ describe('WhatsAppProfileView', () => {
         fireEvent.click(screen.getByRole('button', { name: 'Tentar de novo' }));
 
         expect(reload).toHaveBeenCalledWith({ only: ['whatsappProfile'] });
+    });
+
+    it('shows editable text fields as disabled to Members without a save button', () => {
+        render(
+            <WhatsAppProfileView
+                profile={profile}
+                capabilities={{
+                    ...capabilities,
+                    editableFields: [
+                        'about',
+                        'description',
+                        'address',
+                        'email',
+                        'websites',
+                        'category',
+                    ],
+                }}
+                connectionUrl="/channels/whatsapp?tab=conexao"
+                channelId="channel-1"
+                canEdit={false}
+                categories={[{ value: 'RETAIL', label: 'Varejo' }]}
+            />,
+        );
+
+        expect(screen.getByLabelText('Recado')).toBeDisabled();
+        expect(screen.getByLabelText('Descrição')).toBeDisabled();
+        expect(screen.getByLabelText('Endereço')).toBeDisabled();
+        expect(screen.getByLabelText('E-mail')).toBeDisabled();
+        expect(screen.getByLabelText('Site 1')).toBeDisabled();
+        expect(screen.getByRole('combobox', { name: 'Categoria' })).toBeDisabled();
+        expect(screen.queryByRole('button', { name: 'Salvar' })).not.toBeInTheDocument();
     });
 });
