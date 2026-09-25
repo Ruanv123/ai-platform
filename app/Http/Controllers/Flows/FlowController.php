@@ -411,7 +411,7 @@ class FlowController extends Controller
             ->whereHas('account', fn ($query) => $query
                 ->where('team_id', $team->getKey())
                 ->whereHas('phoneNumbers.channel', fn ($channelQuery) => $channelQuery->where('type', 'whatsapp')))
-            ->with('account.phoneNumbers')
+            ->with(['account.phoneNumbers', 'components.variables', 'components.buttons'])
             ->orderBy('name')
             ->get()
             ->map(fn (WhatsAppTemplate $template): array => [
@@ -420,7 +420,7 @@ class FlowController extends Controller
                 'language' => $template->language,
                 'channelId' => $template->account->phoneNumbers->first()?->channel_id,
                 'category' => $template->assigned_category?->value ?? $template->requested_category->value,
-                'body' => $template->body,
+                'body' => $template->bodyText(),
                 'variables' => $template->variableDefinitions(),
             ])->values()->all();
     }

@@ -20,7 +20,6 @@ class WhatsAppTemplateHistoryFactory extends Factory
             'new_category' => null,
             'reason' => null,
             'explanation' => null,
-            'details' => [],
             'created_at' => now(),
         ];
     }

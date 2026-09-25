@@ -85,7 +85,7 @@ type WhatsAppTemplate = {
     channelId: string;
     category: string;
     body: string;
-    variables: { position: number; component: string }[];
+    variables: { position: number; component: string; buttonIndex?: number }[];
 };
 
 type Props = {

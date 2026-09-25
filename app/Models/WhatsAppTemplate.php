@@ -4,37 +4,13 @@ namespace App\Models;
 
 use App\Enums\WhatsAppTemplateCategory;
 use App\Enums\WhatsAppTemplateStatus;
-use Database\Factories\WhatsAppTemplateFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
-use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
-use Illuminate\Support\Carbon;
+use Illuminate\Support\Str;
 
-/**
- * @property int $id
- * @property int $whatsapp_account_id
- * @property string|null $meta_template_id
- * @property string $name
- * @property string $language
- * @property WhatsAppTemplateStatus $status
- * @property WhatsAppTemplateCategory $requested_category
- * @property WhatsAppTemplateCategory|null $assigned_category
- * @property string $body
- * @property string|null $header_type
- * @property string|null $header_text
- * @property string|null $footer
- * @property array<int, array<string, mixed>>|null $buttons
- * @property array<int, array<string, mixed>> $variables
- * @property string|null $rejection_reason
- * @property string|null $rejection_explanation
- * @property Carbon|null $last_synced_at
- * @property Carbon|null $submitted_at
- * @property-read WhatsAppAccount $account
- * @property-read Collection<int, WhatsAppTemplateHistory> $history
- */
 #[Fillable([
     'whatsapp_account_id',
     'meta_template_id',
@@ -43,12 +19,7 @@ use Illuminate\Support\Carbon;
     'status',
     'requested_category',
     'assigned_category',
-    'body',
-    'header_type',
-    'header_text',
-    'footer',
-    'buttons',
-    'variables',
+    'quality_rating',
     'rejection_reason',
     'rejection_explanation',
     'last_synced_at',
@@ -58,39 +29,126 @@ class WhatsAppTemplate extends Model
 {
     protected $table = 'whatsapp_templates';
 
-    /** @use HasFactory<WhatsAppTemplateFactory> */
     use HasFactory;
 
-    /** @return BelongsTo<WhatsAppAccount, $this> */
     public function account(): BelongsTo
     {
         return $this->belongsTo(WhatsAppAccount::class, 'whatsapp_account_id');
     }
 
-    /** @return HasMany<WhatsAppTemplateHistory, $this> */
+    public function components(): HasMany
+    {
+        return $this->hasMany(WhatsAppTemplateComponent::class, 'whatsapp_template_id')
+            ->orderBy('position')
+            ->orderBy('id');
+    }
+
     public function history(): HasMany
     {
         return $this->hasMany(WhatsAppTemplateHistory::class, 'whatsapp_template_id')->latest('created_at');
     }
 
+    public function componentByType(string $type): ?WhatsAppTemplateComponent
+    {
+        $this->loadMissing('components');
+
+        return $this->components->firstWhere('type', Str::lower($type));
+    }
+
+    public function bodyText(): string
+    {
+        return $this->componentByType('body')?->text ?? '';
+    }
+
+    public function headerType(): ?string
+    {
+        $format = $this->componentByType('header')?->format;
+
+        return $format === null ? null : Str::upper($format);
+    }
+
+    public function headerText(): ?string
+    {
+        return $this->componentByType('header')?->text;
+    }
+
+    public function footerText(): ?string
+    {
+        return $this->componentByType('footer')?->text;
+    }
+
+    public function buttonDefinitions(): array
+    {
+        $component = $this->componentByType('buttons');
+        if ($component === null) {
+            return [];
+        }
+
+        $component->loadMissing('buttons');
+
+        return $component->buttons->map(fn (WhatsAppTemplateButton $button): array => array_filter([
+            'type' => match ($button->type) {
+                'quick_reply' => 'QUICK_REPLY',
+                'url' => 'URL',
+                'phone_number' => 'PHONE_NUMBER',
+                'copy_code' => 'COPY_CODE',
+                default => Str::upper($button->type),
+            },
+            'text' => $button->text,
+            'url' => $button->url,
+            'phone_number' => $button->phone_number,
+            'example' => $button->example,
+        ], fn (mixed $value): bool => $value !== null))->values()->all();
+    }
+
+    public function variableDefinitions(): array
+    {
+        $this->loadMissing('components.variables', 'components.buttons');
+        $definitions = [];
+
+        foreach ($this->components as $component) {
+            if ($component->type !== 'buttons') {
+                foreach ($component->variables as $variable) {
+                    $definitions[] = [
+                        'position' => (int) $variable->position,
+                        'component' => $component->type,
+                        'example' => $variable->example,
+                    ];
+                }
+
+                continue;
+            }
+
+            $usedVariables = [];
+            foreach ($component->buttons as $button) {
+                if ($button->type !== 'url' || blank($button->url)) {
+                    continue;
+                }
+
+                preg_match_all('/{{\s*(\d+)\s*}}/', $button->url, $matches);
+                foreach (array_unique($matches[1]) as $position) {
+                    $variable = $component->variables->first(fn (WhatsAppTemplateVariable $candidate): bool => (int) $candidate->position === (int) $position && ! isset($usedVariables[$candidate->getKey()])
+                    );
+                    if ($variable !== null) {
+                        $usedVariables[$variable->getKey()] = true;
+                    }
+
+                    $definitions[] = [
+                        'position' => (int) $position,
+                        'component' => 'button',
+                        'buttonIndex' => (int) $button->position,
+                        'example' => $variable?->example ?? $button->example,
+                    ];
+                }
+            }
+        }
+
+        return $definitions;
+    }
+
     public function isSendable(): bool
     {
         return $this->status->canSend();
-    }
-
-    /**
-     * Return the component variables in their positional order.
-     *
-     * @return list<array<string, mixed>>
-     */
-    public function variableDefinitions(): array
-    {
-        $variables = array_values($this->variables ?? []);
-
-        usort($variables, static fn (array $left, array $right): int => ((int) ($left['position'] ?? 0)) <=> ((int) ($right['position'] ?? 0))
-        );
-
-        return $variables;
     }
 
     protected function casts(): array
@@ -99,8 +157,6 @@ class WhatsAppTemplate extends Model
             'status' => WhatsAppTemplateStatus::class,
             'requested_category' => WhatsAppTemplateCategory::class,
             'assigned_category' => WhatsAppTemplateCategory::class,
-            'buttons' => 'array',
-            'variables' => 'array',
             'last_synced_at' => 'immutable_datetime',
             'submitted_at' => 'immutable_datetime',
         ];

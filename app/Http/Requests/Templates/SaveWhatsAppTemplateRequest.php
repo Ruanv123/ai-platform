@@ -33,10 +33,15 @@ class SaveWhatsAppTemplateRequest extends FormRequest
             'header_text' => ['nullable', 'string', 'max:60'],
             'footer' => ['nullable', 'string', 'max:60'],
             'buttons' => ['nullable', 'array', 'max:3'],
-            'buttons.*.type' => ['required_with:buttons', 'string', 'in:QUICK_REPLY,URL,PHONE_NUMBER'],
-            'buttons.*.text' => ['required_with:buttons', 'string', 'max:25'],
+            'buttons.*.type' => ['required_with:buttons', 'string', Rule::in(['QUICK_REPLY', 'URL', 'PHONE_NUMBER', 'COPY_CODE', 'quick_reply', 'url', 'phone_number', 'copy_code'])],
+            'buttons.*.text' => ['nullable', 'string', 'max:25'],
             'buttons.*.url' => ['nullable', 'string', 'max:2000'],
+            'buttons.*.phone_number' => ['nullable', 'string', 'max:32'],
+            'buttons.*.example' => ['nullable', 'string', 'max:255'],
             'variables' => ['nullable', 'array'],
+            'variables.*.position' => ['required_with:variables', 'integer', 'min:1', 'max:10'],
+            'variables.*.component' => ['required_with:variables', 'string', Rule::in(['body', 'header'])],
+            'variables.*.example' => ['nullable', 'string', 'max:255'],
         ];
     }
 
