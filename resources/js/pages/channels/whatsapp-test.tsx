@@ -1,6 +1,6 @@
 import { Head, Link, router, usePoll } from '@inertiajs/react';
 import { FlaskConical, Trash2 } from 'lucide-react';
-import { useState } from 'react';
+import { useState, type SyntheticEvent } from 'react';
 import {
     ChannelSignalLamp,
     channelSignal,
@@ -42,6 +42,28 @@ type Props = {
     permissions: TeamPermissions;
 };
 
+function logQrCodeLoaded(event: SyntheticEvent<HTMLImageElement>): void {
+    const image = event.currentTarget;
+    const mimeType = /^data:(image\/[^;,]+);base64,/i.exec(image.currentSrc)?.[1] ?? null;
+
+    console.info('[WHATSAPP-TEST-QR] image.loaded', {
+        mime_type: mimeType,
+        width: image.naturalWidth,
+        height: image.naturalHeight,
+        source_length: image.currentSrc.length,
+    });
+}
+
+function logQrCodeFailed(event: SyntheticEvent<HTMLImageElement>): void {
+    const image = event.currentTarget;
+    const mimeType = /^data:(image\/[^;,]+);base64,/i.exec(image.currentSrc)?.[1] ?? null;
+
+    console.error('[WHATSAPP-TEST-QR] image.failed', {
+        mime_type: mimeType,
+        source_length: image.currentSrc.length,
+    });
+}
+
 /** Keeps refetching the Channel while the pairing session isn't connected yet. */
 function ConnectionPoll() {
     usePoll(2000, { only: ['whatsappTest'] });
@@ -71,6 +93,8 @@ function QrCodePanel({
                         src={whatsappTest.qrcode}
                         alt="QR code de pareamento do WhatsApp"
                         className="size-full object-contain"
+                        onLoad={logQrCodeLoaded}
+                        onError={logQrCodeFailed}
                     />
                 ) : (
                     <div className="size-3/4 animate-pulse rounded-md bg-black/10" />

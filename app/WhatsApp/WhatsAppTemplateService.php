@@ -34,17 +34,27 @@ final class WhatsAppTemplateService
         $oldCategory = $template->assigned_category?->value;
         $metaStatus = $this->status($response->json('status', 'PENDING'));
         $assignedCategory = $this->category($response->json('category'));
-        $template->forceFill([
-            'meta_template_id' => $this->scalar($response->json('id')) ?? $template->meta_template_id,
-            'status' => $metaStatus,
-            'assigned_category' => $assignedCategory,
-            'rejection_reason' => null,
-            'rejection_explanation' => null,
-            'submitted_at' => now(),
-            'last_synced_at' => now(),
-        ])->save();
+        $template
+            ->forceFill([
+                'meta_template_id' => $this->scalar($response->json('id')) ??
+                    $template->meta_template_id,
+                'status' => $metaStatus,
+                'assigned_category' => $assignedCategory,
+                'rejection_reason' => null,
+                'rejection_explanation' => null,
+                'submitted_at' => now(),
+                'last_synced_at' => now(),
+            ])
+            ->save();
 
-        $this->recordChange($template, 'submitted', $oldStatus, $metaStatus->value, $oldCategory, $assignedCategory?->value);
+        $this->recordChange(
+            $template,
+            'submitted',
+            $oldStatus,
+            $metaStatus->value,
+            $oldCategory,
+            $assignedCategory?->value,
+        );
 
         return $template->fresh();
     }
@@ -55,26 +65,42 @@ final class WhatsAppTemplateService
      *
      * @param  array<string, mixed>  $remote
      */
-    public function upsertFromMeta(WhatsAppAccount $account, array $remote): WhatsAppTemplate
-    {
+    public function upsertFromMeta(
+        WhatsAppAccount $account,
+        array $remote,
+    ): WhatsAppTemplate {
         $name = (string) ($remote['name'] ?? '');
         $language = (string) ($remote['language'] ?? 'pt_BR');
         $metaId = $this->scalar($remote['id']);
         $template = WhatsAppTemplate::withoutGlobalScopes()
             ->where('whatsapp_account_id', $account->getKey())
-            ->when($metaId !== null, fn ($query) => $query->where('meta_template_id', $metaId))
-            ->when($metaId === null, fn ($query) => $query->where('name', $name)->where('language', $language))
+            ->when(
+                $metaId !== null,
+                fn ($query) => $query->where('meta_template_id', $metaId),
+            )
+            ->when(
+                $metaId === null,
+                fn ($query) => $query
+                    ->where('name', $name)
+                    ->where('language', $language),
+            )
             ->first();
 
-        $components = is_array($remote['components'] ?? null) ? $remote['components'] : [];
+        $components = is_array($remote['components'] ?? null)
+            ? $remote['components']
+            : [];
         $oldStatus = $template?->status?->value;
         $oldCategory = $template?->assigned_category?->value;
         $status = $this->status($remote['status'] ?? 'PENDING');
-        $assignedCategory = $this->category($remote['category'] ?? $remote['correct_category'] ?? null);
-        $requestedCategory = ($template === null ? null : $template->requested_category)
-            ?? $assignedCategory
-            ?? WhatsAppTemplateCategory::Utility;
-        $rejectionReason = $this->scalar($remote['rejected_reason'] ?? $remote['rejection_reason'] ?? null);
+        $assignedCategory = $this->category(
+            $remote['category'] ?? ($remote['correct_category'] ?? null),
+        );
+        $requestedCategory =
+            ($template === null ? null : $template->requested_category) ??
+            ($assignedCategory ?? WhatsAppTemplateCategory::Utility);
+        $rejectionReason = $this->scalar(
+            $remote['rejected_reason'] ?? ($remote['rejection_reason'] ?? null),
+        );
         $attributes = [
             'whatsapp_account_id' => $account->getKey(),
             'meta_template_id' => $metaId,
@@ -90,23 +116,50 @@ final class WhatsAppTemplateService
             'buttons' => $this->component($components, 'BUTTONS')['buttons'] ?? [],
             'variables' => $this->variables($components),
             'rejection_reason' => $rejectionReason,
-            'rejection_explanation' => $this->explainRejection($rejectionReason),
+            'rejection_explanation' => $this->explainRejection(
+                $rejectionReason,
+            ),
             'last_synced_at' => now(),
             'submitted_at' => ($template === null ? null : $template->submitted_at) ?? now(),
         ];
 
         if ($template === null) {
-            $template = WhatsAppTemplate::withoutGlobalScopes()->create($attributes);
-            $this->recordChange($template, 'imported', null, $status->value, null, $assignedCategory?->value, $rejectionReason);
+            $template = WhatsAppTemplate::withoutGlobalScopes()->create(
+                $attributes,
+            );
+            $this->recordChange(
+                $template,
+                'imported',
+                null,
+                $status->value,
+                null,
+                $assignedCategory?->value,
+                $rejectionReason,
+            );
 
             return $template;
         }
 
         $template->forceFill($attributes)->save();
         if ($oldStatus !== $status->value) {
-            $this->recordChange($template, 'status_changed', $oldStatus, $status->value, $oldCategory, $assignedCategory?->value, $rejectionReason);
+            $this->recordChange(
+                $template,
+                'status_changed',
+                $oldStatus,
+                $status->value,
+                $oldCategory,
+                $assignedCategory?->value,
+                $rejectionReason,
+            );
         } elseif ($oldCategory !== $assignedCategory?->value) {
-            $this->recordChange($template, 'category_changed', $oldStatus, $status->value, $oldCategory, $assignedCategory?->value);
+            $this->recordChange(
+                $template,
+                'category_changed',
+                $oldStatus,
+                $status->value,
+                $oldCategory,
+                $assignedCategory?->value,
+            );
         }
 
         return $template;
@@ -119,11 +172,18 @@ final class WhatsAppTemplateService
         }
 
         $oldStatus = $template->status->value;
-        $template->forceFill([
-            'status' => WhatsAppTemplateStatus::Deleted,
-            'last_synced_at' => now(),
-        ])->save();
-        $this->recordChange($template, 'deleted', $oldStatus, WhatsAppTemplateStatus::Deleted->value);
+        $template
+            ->forceFill([
+                'status' => WhatsAppTemplateStatus::Deleted,
+                'last_synced_at' => now(),
+            ])
+            ->save();
+        $this->recordChange(
+            $template,
+            'deleted',
+            $oldStatus,
+            WhatsAppTemplateStatus::Deleted->value,
+        );
     }
 
     /** @return array<string, mixed> */
@@ -133,7 +193,9 @@ final class WhatsAppTemplateService
         if (filled($template->header_text)) {
             $components[] = array_filter([
                 'type' => 'HEADER',
-                'format' => Str::upper((string) ($template->header_type ?: 'TEXT')),
+                'format' => Str::upper(
+                    (string) ($template->header_type ?: 'TEXT'),
+                ),
                 'text' => $template->header_text,
             ]);
         }
@@ -142,7 +204,10 @@ final class WhatsAppTemplateService
             $components[] = ['type' => 'FOOTER', 'text' => $template->footer];
         }
         if ($template->buttons !== []) {
-            $components[] = ['type' => 'BUTTONS', 'buttons' => $template->buttons];
+            $components[] = [
+                'type' => 'BUTTONS',
+                'buttons' => $template->buttons,
+            ];
         }
 
         return [
@@ -156,27 +221,36 @@ final class WhatsAppTemplateService
     public function assertValidDraft(WhatsAppTemplate $template): void
     {
         if (! preg_match('/^[a-z0-9]+(?:_[a-z0-9]+)*$/', $template->name)) {
-            throw new RuntimeException('O nome precisa usar apenas letras minúsculas, números e sublinhados.');
+            throw new RuntimeException(
+                'O nome precisa usar apenas letras minúsculas, números e sublinhados.',
+            );
         }
         if (blank($template->body)) {
             throw new RuntimeException('O corpo do Template é obrigatório.');
         }
         $positions = $this->bodyPositions($template->body);
         if ($positions !== [] && $positions !== range(1, count($positions))) {
-            throw new RuntimeException('As variáveis do corpo precisam ser posicionais e sequenciais, começando em {{1}}.');
+            throw new RuntimeException(
+                'As variáveis do corpo precisam ser posicionais e sequenciais, começando em {{1}}.',
+            );
         }
         if (count($positions) > 10) {
-            throw new RuntimeException('O corpo pode ter no máximo 10 variáveis.');
+            throw new RuntimeException(
+                'O corpo pode ter no máximo 10 variáveis.',
+            );
         }
         if (mb_strlen($template->body) > 1024) {
-            throw new RuntimeException('O corpo do Template pode ter no máximo 1.024 caracteres.');
+            throw new RuntimeException(
+                'O corpo do Template pode ter no máximo 1.024 caracteres.',
+            );
         }
     }
 
     public function explainRejection(?string $reason): ?string
     {
         return match (Str::upper(trim((string) $reason))) {
-            'ABUSIVE_CONTENT', 'SCAM' => 'A Meta identificou conteúdo abusivo ou enganoso. Remova promessas, ameaças e linguagem que possa induzir o Contato ao erro.',
+            'ABUSIVE_CONTENT',
+            'SCAM' => 'A Meta identificou conteúdo abusivo ou enganoso. Remova promessas, ameaças e linguagem que possa induzir o Contato ao erro.',
             'INVALID_FORMAT' => 'A estrutura do Template não segue o formato aceito. Confira as variáveis, botões e limites de caracteres.',
             'INCORRECT_CATEGORY' => 'A categoria escolhida não corresponde ao conteúdo. Escolha Utilidade para avisos operacionais e Marketing apenas para divulgação.',
             'TAG_CONTENT_MISMATCH' => 'O conteúdo não corresponde à categoria ou às tags declaradas. Revise o objetivo e a categoria do Template.',
@@ -187,17 +261,33 @@ final class WhatsAppTemplateService
 
     private function request(WhatsAppAccount $account): PendingRequest
     {
-        return Http::withToken($account->access_token)->connectTimeout(3)->timeout(15);
+        return Http::withToken($account->access_token)
+            ->connectTimeout(3)
+            ->timeout(15);
     }
 
     private function templatesUrl(WhatsAppAccount $account): string
     {
-        return $this->graphBase().'/'.rawurlencode($account->waba_id).'/message_templates';
+        return $this->graphBase().
+            '/'.
+            rawurlencode($account->waba_id).
+            '/message_templates';
     }
 
     private function graphBase(): string
     {
-        return rtrim((string) config('services.whatsapp.graph_api_url', 'https://graph.facebook.com'), '/').'/'.trim((string) config('services.whatsapp.graph_api_version', 'v23.0'), '/');
+        return rtrim(
+            (string) config(
+                'services.whatsapp.graph_api_url',
+                'https://graph.facebook.com',
+            ),
+            '/',
+        ).
+            '/'.
+            trim(
+                (string) config('services.whatsapp.graph_api_version', 'v23.0'),
+                '/',
+            );
     }
 
     /** @param array<int, array<string, mixed>> $components */
@@ -232,13 +322,24 @@ final class WhatsAppTemplateService
         $variables = [];
         foreach ($components as $component) {
             $componentType = Str::lower((string) ($component['type'] ?? ''));
-            preg_match_all('/{{\s*(\d+)\s*}}/', (string) ($component['text'] ?? ''), $matches);
+            preg_match_all(
+                "/{{\s*(\d+)\s*}}/",
+                (string) ($component['text'] ?? ''),
+                $matches,
+            );
             foreach (array_unique($matches[1]) as $position) {
-                $variables[] = ['position' => (int) $position, 'component' => $componentType];
+                $variables[] = [
+                    'position' => (int) $position,
+                    'component' => $componentType,
+                ];
             }
         }
 
-        usort($variables, static fn (array $left, array $right): int => $left['position'] <=> $right['position']);
+        usort(
+            $variables,
+            static fn (array $left, array $right): int => $left['position'] <=>
+                $right['position'],
+        );
 
         return $variables;
     }
@@ -246,7 +347,7 @@ final class WhatsAppTemplateService
     /** @return list<int> */
     private function bodyPositions(string $body): array
     {
-        preg_match_all('/{{\s*(\d+)\s*}}/', $body, $matches);
+        preg_match_all("/{{\s*(\d+)\s*}}/", $body, $matches);
 
         return array_values(array_unique(array_map('intval', $matches[1])));
     }

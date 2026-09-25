@@ -33,7 +33,6 @@ Record:
 
 ```markdown
 ## Design language
-
 - Audited surface:
 - Design sources:
 - Documented decisions:
@@ -82,7 +81,6 @@ Use this structure:
 
 ```markdown
 ## Design language
-
 - Audited surface:
 - Design sources:
 - Documented decisions:
@@ -90,12 +88,10 @@ Use this structure:
 - Explicit exceptions:
 
 ## Findings
-
-| #   | Problem | Evidence | Proposed change | Scope | Confidence |
-| --- | ------- | -------- | --------------- | ----- | ---------- |
+| # | Problem | Evidence | Proposed change | Scope | Confidence |
+| --- | --- | --- | --- | --- | --- |
 
 ## Improve first
-
 <Highest-leverage finding and why, or no supported recommendation.>
 ```
 

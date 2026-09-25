@@ -1,10 +1,16 @@
 <?php
 
 use App\Enums\ChannelType;
+use App\Enums\FlowStatus;
 use App\Enums\FlowTriggerType;
 use App\Models\Channel;
 use App\Models\Flow;
+use App\Models\FlowEvent;
+use App\Models\FlowEventEmission;
 use App\Models\FlowExecution;
+use App\Models\FlowExecutionAggregate;
+use App\Models\FlowExecutionErrorAggregate;
+use App\Models\FlowExecutionStep;
 use App\Models\User;
 use Inertia\Testing\AssertableInertia as Assert;
 
@@ -125,7 +131,7 @@ it('deletes a flow without execution history', function () {
     $this->assertModelMissing($flow);
 });
 
-it('prevents deleting a flow that has execution history', function () {
+it('deletes a flow with its execution history and metrics', function () {
     $user = User::factory()->withTeam()->create();
     $flow = Flow::factory()->for($user->company())->create();
     $version = $flow->versions()->create([
@@ -138,13 +144,94 @@ it('prevents deleting a flow that has execution history', function () {
     $execution = FlowExecution::factory()->create([
         'flow_version_id' => $version->getKey(),
     ]);
+    $step = FlowExecutionStep::factory()->create(['flow_execution_id' => $execution->getKey()]);
+    $aggregate = FlowExecutionAggregate::factory()->create([
+        'team_id' => $flow->team_id,
+        'flow_id' => $flow->getKey(),
+        'flow_version_id' => $version->getKey(),
+    ]);
+    $errorAggregate = FlowExecutionErrorAggregate::factory()->create([
+        'team_id' => $flow->team_id,
+        'flow_id' => $flow->getKey(),
+        'flow_version_id' => $version->getKey(),
+    ]);
+    $event = FlowEvent::factory()->for($user->company())->create();
+    $emission = FlowEventEmission::factory()->create([
+        'team_id' => $flow->team_id,
+        'flow_event_id' => $event->getKey(),
+        'flow_execution_id' => $execution->getKey(),
+        'flow_id' => $flow->getKey(),
+        'flow_version_id' => $version->getKey(),
+    ]);
 
     $this->actingAs($user)
         ->delete(route('flows.destroy', $flow))
-        ->assertSessionHasErrors('flow');
+        ->assertRedirect(route('flows.index'));
 
-    $this->assertModelExists($flow);
-    $this->assertModelExists($execution);
+    $this->assertModelMissing($flow);
+    $this->assertModelMissing($version);
+    $this->assertModelMissing($execution);
+    $this->assertModelMissing($step);
+    $this->assertModelMissing($aggregate);
+    $this->assertModelMissing($errorAggregate);
+    $this->assertModelMissing($emission);
+    $this->assertModelExists($event);
+});
+
+it('exposes an existing version for a draft flow in the listing', function () {
+    $user = User::factory()->withTeam()->create();
+    $flow = Flow::factory()->for($user->company())->create(['status' => FlowStatus::Draft]);
+    $flow->versions()->create([
+        'team_id' => $user->company()->getKey(),
+        'number' => 1,
+        'dsl' => $flow->draft_dsl,
+        'category' => 'reaction',
+        'published_at' => now(),
+    ]);
+
+    $this->actingAs($user)->get(route('flows.index'))
+        ->assertInertia(fn (Assert $page) => $page
+            ->component('flows/index')
+            ->where('flows.data.0.hasPublishedVersion', true),
+        );
+});
+
+it('activates an existing version and stays on the flow listing', function () {
+    $user = User::factory()->withTeam()->create();
+    $flow = Flow::factory()->for($user->company())->create(['status' => FlowStatus::Draft]);
+    $flow->versions()->create([
+        'team_id' => $user->company()->getKey(),
+        'number' => 1,
+        'dsl' => $flow->draft_dsl,
+        'category' => 'reaction',
+        'published_at' => now(),
+    ]);
+
+    $this->actingAs($user)
+        ->from(route('flows.index'))
+        ->post(route('flows.resume', $flow))
+        ->assertRedirect(route('flows.index'));
+
+    expect($flow->fresh()->status)->toBe(FlowStatus::Published);
+});
+
+it('pauses a published flow and stays on the flow listing', function () {
+    $user = User::factory()->withTeam()->create();
+    $flow = Flow::factory()->for($user->company())->create(['status' => FlowStatus::Published]);
+    $flow->versions()->create([
+        'team_id' => $user->company()->getKey(),
+        'number' => 1,
+        'dsl' => $flow->draft_dsl,
+        'category' => 'reaction',
+        'published_at' => now(),
+    ]);
+
+    $this->actingAs($user)
+        ->from(route('flows.index'))
+        ->post(route('flows.pause', $flow))
+        ->assertRedirect(route('flows.index'));
+
+    expect($flow->fresh()->status)->toBe(FlowStatus::Paused);
 });
 
 it('forbids a member from deleting a flow', function () {

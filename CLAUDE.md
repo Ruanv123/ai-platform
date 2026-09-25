@@ -219,3 +219,15 @@ Os cinco papéis padrão (`needs-triage`, `needs-info`, `ready-for-agent`, `read
 ### Domain docs
 
 Single-context: um `CONTEXT.md` e `docs/adr/` na raiz. See `docs/agents/domain.md`.
+
+## Convenções de código do projeto
+
+### Um componente por arquivo
+
+- Todo arquivo fora de `resources/js/components/ui/` (componentes do shadcn) deve conter apenas 1 componente. Não declare vários componentes no mesmo arquivo.
+- Isso vale principalmente para modais, dialogs, sheets e similares: cada modal fica em seu próprio arquivo, sem subcomponentes auxiliares ao lado.
+- Se precisar de um subcomponente, extraia-o para um arquivo próprio.
+
+### Comentários
+
+- Não use comentários no código (nem `//`, `/* */`, `{/* */}` ou blocos de documentação decorativos). O código deve ser autoexplicativo por meio de nomes descritivos.

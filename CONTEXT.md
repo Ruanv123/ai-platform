@@ -29,19 +29,51 @@ _Avoid_: Expediente, Horário comercial, Business hours
 ### Agente
 
 **Agente**:
-Uma configuração de atendimento pertencente à Empresa — persona, objetivo, estilo, instruções, Coleções consultáveis e Calendários agendáveis em que pode marcar. Uma Empresa pode ter vários, e o mesmo Agente pode atender em vários Canais.
+Uma configuração de atendimento pertencente à Empresa — persona, objetivo, Estilo, Limites, Cenários, Ações, Coleções consultáveis e Calendários agendáveis em que pode marcar. Uma Empresa pode ter vários, e o mesmo Agente pode atender em vários Canais.
 _Avoid_: Bot, Assistente, Chatbot, Persona
 
-**Instrução**:
-Uma orientação escrita pelo cliente que entra no prompt do Agente. Formam uma lista ordenada.
-_Avoid_: Regra, Prompt, Diretriz
+**Objetivo**:
+Para que o Agente existe — Atendimento, Vendas, Qualificação ou Agendamento. Define os pontos de partida sugeridos (boas-vindas, Limites, Cenários e Situações de teste), não o que ele pode fazer.
+_Avoid_: Papel, Função, Tipo de agente
+
+**Estilo**:
+Como o Agente fala: tom, uso de emojis, tamanho das respostas e diretrizes livres sobre a forma da resposta. Nunca diz o que ele faz nem o que ele evita.
+_Avoid_: Diretriz de resposta, Instrução, Personalidade
+
+**Limite**:
+Algo que o Agente nunca faz, em qualquer conversa — um assunto que evita, uma informação que não passa, um compromisso que não assume.
+_Avoid_: Regra, Proteção, Guardrail, Restrição
+
+**Cenário**:
+Uma situação específica descrita em linguagem natural — quando ela acontece e o que o Agente deve fazer — podendo citar Ações. O Agente a interpreta dentro da conversa livre, sem garantia de ordem; quando a ordem precisa ser garantida, o lugar é um Fluxo.
+_Avoid_: Instrução, Playbook, Roteiro, Fluxo
+
+**Ação**:
+Algo que o Agente pode fazer além de responder — consultar a Base de conhecimento, marcar na agenda, fazer a Transferência para humano, aplicar Tag, salvar Campo do Contato. A Empresa liga as que o Agente pode usar; um Cenário só pode pedir uma Ação ligada.
+_Avoid_: Ferramenta, Tool, Habilidade, Integração
+
+**Rascunho do agente**:
+A configuração do Agente que está sendo editada e ainda não vale nos Canais. É sobre ela que o Playground e as Situações de teste rodam.
+_Avoid_: Edição, Pendente
+
+**Versão do agente**:
+O retrato da configuração do Agente no momento em que foi publicado. É o que atende nos Canais; editar cria Rascunho, publicar cria Versão nova.
+_Avoid_: Revisão, Snapshot, Release
+
+**Memória do agente**:
+Os fatos curtos e importantes que um Agente decidiu guardar sobre um Contato — uma preferência, um vínculo, algo já resolvido. Pertence ao par Agente e Contato: outro Agente não a enxerga. Não desliza como o Histórico e vale em todos os Canais do Contato. A Empresa pode vê-la e apagá-la.
+_Avoid_: Contexto, Histórico, Campo do Contato, Perfil
+
+**Situação de teste**:
+Uma conversa de exemplo salva junto do Agente, com o comportamento esperado — o que a resposta deve ou não conter e quais Ações deve ou não usar. Roda de novo sobre o Rascunho a cada mudança para mostrar o que quebrou.
+_Avoid_: Cenário, Eval, Caso de teste, Teste
 
 **Playground**:
-O chat de teste do atendimento. Roda sobre o rascunho — do formulário, no caso do Agente, e da Versão não publicada, no caso do Fluxo — e nada é enviado ao Contato. Consultar Horários disponíveis é real; marcar e cancelar Compromisso são simulados. No Fluxo, mostra o Traço do turno ao lado da conversa.
+O chat de teste do atendimento. Roda sobre o rascunho — o Rascunho do agente, no caso do Agente, e a Versão não publicada, no caso do Fluxo — e nada é enviado ao Contato. Consultar Horários disponíveis é real; marcar e cancelar Compromisso são simulados. No Fluxo, mostra o Traço do turno ao lado da conversa.
 _Avoid_: Simulador, Preview, Sandbox
 
 **Agente inativo**:
-Um Agente que não responde nos Canais vinculados, mas continua utilizável no Playground.
+Um Agente que não responde nos Canais vinculados, mas continua utilizável no Playground. Todo Agente nasce inativo e sem Versão do agente; ativar pela primeira vez publica a primeira Versão. Ativo e inativo são o único estado do Agente — publicar é uma ação, não um estado.
 _Avoid_: Agente desligado, Agente pausado
 
 ### Base de conhecimento
@@ -72,12 +104,24 @@ O meio de atendimento em si (WhatsApp, Chat no site, Instagram Direct), independ
 _Avoid_: Canal, Provedor, Plataforma
 
 **Conta do WhatsApp**:
-As credenciais de app da Meta usadas pelo Canal: WABA ID, tokens, verify token e o estado de verificação do webhook.
-_Avoid_: WABA, Conta Meta, Business Account
+A conta de WhatsApp Business da Empresa na Meta (a WABA). É dona dos Números do WhatsApp e dos Templates, e é por ela que a Meta cobra a Empresa. Sabe por qual Forma de conexão foi ligada à plataforma.
+_Avoid_: WABA, Conta Meta, Business Account, Credenciais
+
+**App da Meta**:
+O aplicativo registrado na Meta que chama a API do WhatsApp em nome da Conta do WhatsApp e assina os webhooks que ela recebe. Na conexão pelo Tech Provider é um só, o da plataforma, compartilhado por todas as Empresas; na conexão por App próprio é o da Empresa.
+_Avoid_: Credenciais, Integração, Aplicativo
+
+**Forma de conexão**:
+Como a Conta do WhatsApp foi ligada à plataforma: pelo **Tech Provider** (a Empresa autoriza a plataforma pelo cadastro incorporado da Meta e usa o App da Meta da plataforma) ou por **App próprio** (a Empresa informa as credenciais do seu próprio App da Meta).
+_Avoid_: Método, Modo, Manual, Embedded Signup
 
 **Número do WhatsApp**:
 O número que recebe e responde mensagens, com sua identidade e qualidade. É a ele que o Canal se prende.
 _Avoid_: Telefone, WhatsApp, Linha
+
+**Perfil do WhatsApp**:
+A identidade pública de um Número do WhatsApp, vista pelos Contatos ao abrir a conversa: nome de exibição, foto, recado e dados do negócio. Quem guarda o Perfil é o provedor, não a plataforma: a Empresa vê e edita o Perfil sempre direto no provedor.
+_Avoid_: Contato, Perfil comercial, Business profile
 
 **WhatsApp de testes**:
 O Tipo de canal que conecta um número de WhatsApp por um serviço não oficial, usado apenas em desenvolvimento. Não é oferecido aos clientes.
@@ -114,8 +158,20 @@ A pessoa que fala com a Empresa pelos Canais, identificada pelo telefone dentro 
 _Avoid_: Cliente, Lead, Usuário, Destinatário
 
 **Mensagem**:
-Cada mensagem trocada entre um Contato e o Agente, em qualquer direção, sempre presa ao Canal por onde passou.
+O registro de conteúdo recebido de um Contato ou preparado para envio pela Empresa em um Canal. Um envio do Agente ou de alguém da Equipe pode falhar e continuar visível no atendimento.
 _Avoid_: Interação, Evento, Ticket
+
+**Conversa**:
+A sequência de Mensagens de um Contato com a Empresa em um Canal. É a unidade em que a IA pode ser pausada para atendimento humano, sem afetar o mesmo Contato em outros Canais.
+_Avoid_: Thread, Sessão, Ticket
+
+**Pausa da IA**:
+A suspensão temporária das respostas automáticas do Agente em uma Conversa enquanto alguém da Equipe a conduz. Pode terminar por devolução manual ou pelo prazo da Empresa.
+_Avoid_: Agente inativo, Transferência para humano
+
+**Reação**:
+Um emoji que o Contato coloca sobre uma Mensagem já trocada. Pertence à Mensagem reagida e não é uma Mensagem nova: não abre turno e não aciona o Agente. Reagir de novo troca o emoji; reagir vazio remove.
+_Avoid_: Curtida, Mensagem de reação
 
 **Histórico**:
 A janela recente de Mensagens de um Contato num Canal: o que o Agente lê para responder. É uma leitura das Mensagens, não uma entidade própria.
@@ -184,5 +240,5 @@ A mensagem pré-aprovada pela Meta, única forma de escrever para um Contato for
 _Avoid_: Modelo, HSM, Mensagem pronta
 
 **Transferência para humano**:
-O momento em que um Fluxo para de responder, marca o Contato como aguardando atendimento e avisa a Equipe. O Fluxo só volta a responder quando alguém devolve ou por inatividade.
+O momento em que um Fluxo ou um Agente para de responder, marca o Contato como aguardando atendimento e avisa a Equipe. Só volta a responder quando alguém devolve ou por inatividade.
 _Avoid_: Handoff, Escalação, Takeover

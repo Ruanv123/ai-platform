@@ -1,35 +1,35 @@
 {
-    "version": 1,
-    "skills": {
-        "improve-animations": {
-            "source": "emilkowalski/skills",
-            "sourceType": "github",
-            "skillPath": "skills/improve-animations/SKILL.md",
-            "computedHash": "524ea241e41d58bbdd8e288700fe24f5725e2a2f3ae7186ad7cebf9055058356"
-        },
-        "improve-ui": {
-            "source": "ibelick/ui-skills",
-            "sourceType": "github",
-            "skillPath": "skills/improve-ui/SKILL.md",
-            "computedHash": "5bd7689c5508c6bd8166f796b3d1bd32255077447595b14b60fac9847dce63f1"
-        },
-        "interface-design": {
-            "source": "Dammyjay93/interface-design",
-            "sourceType": "github",
-            "skillPath": ".claude/skills/interface-design/SKILL.md",
-            "computedHash": "340cc79a1558f09371aa3eb689952a8b777c1d7362c24226e99693606a80828e"
-        },
-        "no-use-effect": {
-            "source": "alejandrobailo/no-use-effect",
-            "sourceType": "github",
-            "skillPath": "SKILL.md",
-            "computedHash": "149b47d59d4327f349171431ce0478e519b830b022e941f0a22fa951bb442e07"
-        },
-        "vercel-react-best-practices": {
-            "source": "vercel-labs/agent-skills",
-            "sourceType": "github",
-            "skillPath": "skills/react-best-practices/SKILL.md",
-            "computedHash": "3219a1944e404ffc14d1d9d6aef6dd2e3855b81387ee0a044ccbfe14d34c2357"
-        }
+  "version": 1,
+  "skills": {
+    "improve-animations": {
+      "source": "emilkowalski/skills",
+      "sourceType": "github",
+      "skillPath": "skills/improve-animations/SKILL.md",
+      "computedHash": "524ea241e41d58bbdd8e288700fe24f5725e2a2f3ae7186ad7cebf9055058356"
+    },
+    "improve-ui": {
+      "source": "ibelick/ui-skills",
+      "sourceType": "github",
+      "skillPath": "skills/improve-ui/SKILL.md",
+      "computedHash": "5bd7689c5508c6bd8166f796b3d1bd32255077447595b14b60fac9847dce63f1"
+    },
+    "interface-design": {
+      "source": "Dammyjay93/interface-design",
+      "sourceType": "github",
+      "skillPath": ".claude/skills/interface-design/SKILL.md",
+      "computedHash": "340cc79a1558f09371aa3eb689952a8b777c1d7362c24226e99693606a80828e"
+    },
+    "no-use-effect": {
+      "source": "alejandrobailo/no-use-effect",
+      "sourceType": "github",
+      "skillPath": "SKILL.md",
+      "computedHash": "149b47d59d4327f349171431ce0478e519b830b022e941f0a22fa951bb442e07"
+    },
+    "vercel-react-best-practices": {
+      "source": "vercel-labs/agent-skills",
+      "sourceType": "github",
+      "skillPath": "skills/react-best-practices/SKILL.md",
+      "computedHash": "ca7b0c0c6e5f2750043f7f0cd72d16ac4e2abc48f9b5500d047a4b77a2506212"
     }
+  }
 }

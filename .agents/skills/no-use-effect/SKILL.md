@@ -1,6 +1,6 @@
 ---
 name: no-use-effect
-description: 'ALWAYS ACTIVE. Enforces a strict no-direct-useEffect rule in React and React Native code. Never write useEffect directly — use derived state, event handlers, useMemo, useSyncExternalStore, data-fetching libraries, key-based resets, or useMountEffect instead. Triggers on all React component code: writing new components, editing existing ones, reviewing code, fixing bugs, or refactoring. Also triggers when user mentions useEffect, side effects, data fetching, state sync, or component lifecycle.'
+description: "ALWAYS ACTIVE. Enforces a strict no-direct-useEffect rule in React and React Native code. Never write useEffect directly — use derived state, event handlers, useMemo, useSyncExternalStore, data-fetching libraries, key-based resets, or useMountEffect instead. Triggers on all React component code: writing new components, editing existing ones, reviewing code, fixing bugs, or refactoring. Also triggers when user mentions useEffect, side effects, data fetching, state sync, or component lifecycle."
 ---
 
 # No Direct useEffect
@@ -9,8 +9,8 @@ Never call `useEffect` directly. For the rare case of syncing with an external s
 
 ```tsx
 export function useMountEffect(effect: () => void | (() => void)) {
-    /* eslint-disable react-hooks/exhaustive-deps, no-restricted-syntax */
-    useEffect(effect, []);
+  /* eslint-disable react-hooks/exhaustive-deps, no-restricted-syntax */
+  useEffect(effect, []);
 }
 ```
 
@@ -26,7 +26,7 @@ If you can calculate it from existing state/props, compute it inline.
 // BAD: two render cycles
 const [filteredProducts, setFilteredProducts] = useState([]);
 useEffect(() => {
-    setFilteredProducts(products.filter((p) => p.inStock));
+  setFilteredProducts(products.filter((p) => p.inStock));
 }, [products]);
 
 // GOOD: one render
@@ -37,8 +37,8 @@ For expensive calculations, use `useMemo`:
 
 ```tsx
 const visibleTodos = useMemo(
-    () => getFilteredTodos(todos, filter),
-    [todos, filter],
+  () => getFilteredTodos(todos, filter),
+  [todos, filter]
 );
 ```
 
@@ -51,12 +51,13 @@ Effect-based fetching creates race conditions and reinvents caching.
 ```tsx
 // BAD: race condition
 useEffect(() => {
-    fetchProduct(productId).then(setProduct);
+  fetchProduct(productId).then(setProduct);
 }, [productId]);
 
 // GOOD: library handles cancellation/caching/staleness
-const { data: product } = useQuery(['product', productId], () =>
-    fetchProduct(productId),
+const { data: product } = useQuery(
+  ['product', productId],
+  () => fetchProduct(productId)
 );
 ```
 
@@ -65,8 +66,8 @@ In React 19+, use the `use()` hook with `<Suspense>` to unwrap promises without 
 ```tsx
 // GOOD: use() + Suspense (React 19+)
 function UserProfile({ userPromise }: { userPromise: Promise<User> }) {
-    const user = use(userPromise);
-    return <h1>{user.name}</h1>;
+  const user = use(userPromise);
+  return <h1>{user.name}</h1>;
 }
 ```
 
@@ -80,22 +81,19 @@ If a user action triggers it, do the work in the handler. Procedural logic (vali
 // BAD: flag-relay through effect
 const [liked, setLiked] = useState(false);
 useEffect(() => {
-    if (liked) {
-        postLike();
-        setLiked(false);
-    }
+  if (liked) { postLike(); setLiked(false); }
 }, [liked]);
 
 // GOOD: direct
-<button onClick={() => postLike()}>Like</button>;
+<button onClick={() => postLike()}>Like</button>
 ```
 
 For shared logic between handlers, extract a function — not an effect:
 
 ```tsx
 function buyProduct() {
-    addToCart(product);
-    showNotification(`Added ${product.name}`);
+  addToCart(product);
+  showNotification(`Added ${product.name}`);
 }
 ```
 
@@ -108,16 +106,16 @@ Only for true mount-time external system setup: DOM integration, third-party wid
 ```tsx
 // BAD: guard inside effect
 useEffect(() => {
-    if (!isLoading) playVideo();
+  if (!isLoading) playVideo();
 }, [isLoading]);
 
 // GOOD: conditional mounting
 function VideoPlayerWrapper({ isLoading }) {
-    if (isLoading) return <LoadingScreen />;
-    return <VideoPlayer />;
+  if (isLoading) return <LoadingScreen />;
+  return <VideoPlayer />;
 }
 function VideoPlayer() {
-    useMountEffect(() => playVideo());
+  useMountEffect(() => playVideo());
 }
 ```
 
@@ -129,17 +127,13 @@ If you need "start fresh when ID changes," use React's remount semantics.
 
 ```tsx
 // BAD: effect resets on ID change
-useEffect(() => {
-    loadVideo(videoId);
-}, [videoId]);
+useEffect(() => { loadVideo(videoId); }, [videoId]);
 
 // GOOD: key forces clean remount
-<VideoPlayer key={videoId} videoId={videoId} />;
+<VideoPlayer key={videoId} videoId={videoId} />
 
 function VideoPlayer({ videoId }) {
-    useMountEffect(() => {
-        loadVideo(videoId);
-    });
+  useMountEffect(() => { loadVideo(videoId); });
 }
 ```
 
@@ -155,14 +149,14 @@ If you need a `useRef` to stop an effect from double-firing, looping, or accessi
 // BAD: ref guard hides the real problem
 const hasRun = useRef(false);
 useEffect(() => {
-    if (hasRun.current) return;
-    hasRun.current = true;
-    showWelcomeToast(userId);
+  if (hasRun.current) return;
+  hasRun.current = true;
+  showWelcomeToast(userId);
 }, [userId]);
 
 // GOOD: useMountEffect for true one-time setup
 useMountEffect(() => {
-    showWelcomeToast(userId);
+  showWelcomeToast(userId);
 });
 ```
 
@@ -171,23 +165,23 @@ useMountEffect(() => {
 const onMessageRef = useRef(onMessage);
 onMessageRef.current = onMessage;
 useEffect(() => {
-    const conn = createConnection(roomId);
-    conn.on('message', (msg) => onMessageRef.current(msg));
-    return () => conn.disconnect();
+  const conn = createConnection(roomId);
+  conn.on('message', (msg) => onMessageRef.current(msg));
+  return () => conn.disconnect();
 }, [roomId]);
 
 // GOOD: useEffectEvent (experimental) captures latest values automatically
 const onMsg = useEffectEvent((msg) => {
-    onMessage(msg);
+  onMessage(msg);
 });
 useEffect(() => {
-    const conn = createConnection(roomId);
-    conn.on('message', onMsg);
-    return () => conn.disconnect();
+  const conn = createConnection(roomId);
+  conn.on('message', onMsg);
+  return () => conn.disconnect();
 }, [roomId]);
 ```
 
-The React docs explicitly warn: _"The right question isn't 'how to run an Effect once', but 'how to fix my Effect so that it works after remounting'."_
+The React docs explicitly warn: *"The right question isn't 'how to run an Effect once', but 'how to fix my Effect so that it works after remounting'."*
 
 **Smell test:** You're adding `hasRun.current`, `isMounted.current`, or a ref whose sole purpose is controlling when/if an effect runs. Or you're storing a callback in a ref to avoid listing it as a dependency.
 
@@ -199,14 +193,12 @@ Do not use an effect to call `onChange` — update both in the event handler, or
 
 ```tsx
 // BAD
-useEffect(() => {
-    onChange(isOn);
-}, [isOn, onChange]);
+useEffect(() => { onChange(isOn); }, [isOn, onChange]);
 
 // GOOD: update both during the event
 function updateToggle(nextIsOn) {
-    setIsOn(nextIsOn);
-    onChange(nextIsOn);
+  setIsOn(nextIsOn);
+  onChange(nextIsOn);
 }
 ```
 
@@ -219,15 +211,15 @@ When an effect needs to read the latest value of a prop/state without re-running
 const themeRef = useRef(theme);
 themeRef.current = theme;
 useEffect(() => {
-    logVisit(url, themeRef.current);
+  logVisit(url, themeRef.current);
 }, [url]);
 
 // GOOD: useEffectEvent reads latest values automatically
 const onVisit = useEffectEvent(() => {
-    logVisit(url, theme);
+  logVisit(url, theme);
 });
 useEffect(() => {
-    onVisit();
+  onVisit();
 }, [url]);
 ```
 
@@ -241,15 +233,15 @@ For DOM measurement or setup, a callback ref is more reliable than `useRef` + `u
 // BAD: ref.current may be null on first render
 const ref = useRef(null);
 useMountEffect(() => {
-    setHeight(ref.current.getBoundingClientRect().height);
+  setHeight(ref.current.getBoundingClientRect().height);
 });
 return <div ref={ref}>Content</div>;
 
 // GOOD: callback ref fires when node is attached
 const measuredRef = useCallback((node: HTMLDivElement | null) => {
-    if (node !== null) {
-        setHeight(node.getBoundingClientRect().height);
-    }
+  if (node !== null) {
+    setHeight(node.getBoundingClientRect().height);
+  }
 }, []);
 return <div ref={measuredRef}>Content</div>;
 ```
@@ -262,9 +254,9 @@ Use `useSyncExternalStore` instead of manual subscription effects:
 
 ```tsx
 const isOnline = useSyncExternalStore(
-    subscribe,
-    () => navigator.onLine,
-    () => true,
+  subscribe,
+  () => navigator.onLine,
+  () => true
 );
 ```
 
@@ -274,8 +266,8 @@ Run once at module level, not in an effect:
 
 ```tsx
 if (typeof window !== 'undefined') {
-    checkAuthToken();
-    loadDataFromLocalStorage();
+  checkAuthToken();
+  loadDataFromLocalStorage();
 }
 ```
 
@@ -285,31 +277,19 @@ Never chain effects that trigger each other. Derive values inline and batch stat
 
 ```tsx
 // BAD: 3 effects chaining state -> 3 extra renders
-useEffect(() => {
-    if (card?.gold) setGoldCardCount((c) => c + 1);
-}, [card]);
-useEffect(() => {
-    if (goldCardCount > 3) {
-        setRound((r) => r + 1);
-        setGoldCardCount(0);
-    }
-}, [goldCardCount]);
-useEffect(() => {
-    if (round > 5) setIsGameOver(true);
-}, [round]);
+useEffect(() => { if (card?.gold) setGoldCardCount(c => c + 1); }, [card]);
+useEffect(() => { if (goldCardCount > 3) { setRound(r => r + 1); setGoldCardCount(0); } }, [goldCardCount]);
+useEffect(() => { if (round > 5) setIsGameOver(true); }, [round]);
 
 // GOOD: derive + handle in event
 const isGameOver = round > 5;
 
 function handlePlaceCard(nextCard) {
-    setCard(nextCard);
-    if (nextCard.gold) {
-        if (goldCardCount < 3) setGoldCardCount(goldCardCount + 1);
-        else {
-            setGoldCardCount(0);
-            setRound(round + 1);
-        }
-    }
+  setCard(nextCard);
+  if (nextCard.gold) {
+    if (goldCardCount < 3) setGoldCardCount(goldCardCount + 1);
+    else { setGoldCardCount(0); setRound(round + 1); }
+  }
 }
 ```
 

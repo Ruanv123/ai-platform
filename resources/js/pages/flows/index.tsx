@@ -49,6 +49,7 @@ type Flow = {
     name: string;
     status: 'draft' | 'published' | 'paused';
     statusLabel: string;
+    hasPublishedVersion: boolean;
     hasUnpublishedChanges: boolean;
     channelLabel: string | null;
     triggerType: string;
@@ -311,7 +312,7 @@ export default function FlowsIndex({
                                                     aria-label={`${flow.status === 'published' ? 'Pausar' : 'Ativar'} ${flow.name}`}
                                                     disabled={
                                                         !permissions.canManageFlows ||
-                                                        flow.status === 'draft'
+                                                        !flow.hasPublishedVersion
                                                     }
                                                     className={`relative h-5 w-9 rounded-full transition-colors ${flow.status === 'published' ? 'bg-signal-live' : 'bg-muted'} disabled:cursor-not-allowed disabled:opacity-50`}
                                                     onClick={() =>
@@ -686,9 +687,8 @@ function DeleteFlowDialog({
         return null;
     }
 
-    const hasExecutionHistory = flow.executionCount > 0;
     const handleDelete = () => {
-        if (hasExecutionHistory || processing) {
+        if (processing) {
             return;
         }
 
@@ -713,23 +713,16 @@ function DeleteFlowDialog({
                 <DialogHeader>
                     <DialogTitle>Excluir Fluxo?</DialogTitle>
                     <DialogDescription>
-                        {hasExecutionHistory ? (
+                        O Fluxo <strong>{flow.name}</strong> será excluído
+                        permanentemente com suas Versões, métricas
+                        {flow.executionCount > 0 && (
                             <>
-                                O Fluxo <strong>{flow.name}</strong> possui{' '}
-                                {flow.executionCount}{' '}
+                                {' '}e {flow.executionCount}{' '}
                                 {flow.executionCount === 1
                                     ? 'Execução registrada'
-                                    : 'Execuções registradas'}{' '}
-                                e não pode ser excluído porque esse histórico
-                                precisa ser preservado.
+                                    : 'Execuções registradas'}
                             </>
-                        ) : (
-                            <>
-                                O Fluxo <strong>{flow.name}</strong> e suas
-                                Versões serão excluídos permanentemente. Essa
-                                ação não pode ser desfeita.
-                            </>
-                        )}
+                        )}. Essa ação não pode ser desfeita.
                     </DialogDescription>
                     {error !== null && (
                         <p className="text-destructive text-sm">{error}</p>
@@ -738,18 +731,16 @@ function DeleteFlowDialog({
                 <DialogFooter>
                     <DialogClose asChild>
                         <Button type="button" variant="outline">
-                            {hasExecutionHistory ? 'Fechar' : 'Cancelar'}
+                            Cancelar
                         </Button>
                     </DialogClose>
-                    {!hasExecutionHistory && (
-                        <Button
-                            variant="destructive"
-                            disabled={processing}
-                            onClick={handleDelete}
-                        >
-                            {processing ? 'Excluindo...' : 'Excluir Fluxo'}
-                        </Button>
-                    )}
+                    <Button
+                        variant="destructive"
+                        disabled={processing}
+                        onClick={handleDelete}
+                    >
+                        {processing ? 'Excluindo...' : 'Excluir Fluxo'}
+                    </Button>
                 </DialogFooter>
             </DialogContent>
         </Dialog>

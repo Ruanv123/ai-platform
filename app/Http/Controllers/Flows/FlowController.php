@@ -222,13 +222,14 @@ class FlowController extends Controller
     {
         Gate::authorize('delete', $flow);
 
-        if ($flow->executions()->exists()) {
-            throw ValidationException::withMessages([
-                'flow' => 'Este Fluxo possui Execuções e não pode ser excluído porque seu histórico precisa ser preservado.',
-            ]);
-        }
-
-        $flow->delete();
+        DB::transaction(function () use ($flow): void {
+            DB::table('flow_execution_error_aggregates')->where('flow_id', $flow->getKey())->delete();
+            DB::table('flow_execution_aggregates')->where('flow_id', $flow->getKey())->delete();
+            DB::table('flow_executions')
+                ->whereIn('flow_version_id', $flow->versions()->select('id'))
+                ->delete();
+            $flow->delete();
+        });
 
         Inertia::flash('toast', [
             'type' => 'success',
@@ -303,7 +304,7 @@ class FlowController extends Controller
             return response()->json($this->serialize($flow->fresh()));
         }
 
-        return to_route('flows.show', $flow);
+        return back();
     }
 
     public function resume(Request $request, Flow $flow): RedirectResponse|JsonResponse
@@ -319,7 +320,7 @@ class FlowController extends Controller
             return response()->json($this->serialize($flow->fresh()));
         }
 
-        return to_route('flows.show', $flow);
+        return back();
     }
 
     private function assertChannelBelongsToTeam(?string $channelId, int $teamId): void
@@ -454,6 +455,7 @@ class FlowController extends Controller
             'id' => $flow->getKey(),
             'name' => $flow->name,
             'status' => $flow->status->value,
+            'hasPublishedVersion' => $publishedVersion !== null,
             'statusLabel' => match ($flow->status) {
                 FlowStatus::Draft => 'Rascunho',
                 FlowStatus::Published => 'Publicado',

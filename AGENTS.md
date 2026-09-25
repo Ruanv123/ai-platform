@@ -205,3 +205,16 @@ Use Wayfinder to generate TypeScript functions for Laravel routes. Import from `
 - IMPORTANT: Activate `inertia-react-development` when working with Inertia React client-side patterns.
 
 </laravel-boost-guidelines>
+
+
+## Convenções de código do projeto
+
+### Um componente por arquivo
+
+- Todo arquivo fora de `resources/js/components/ui/` (componentes do shadcn) deve conter apenas 1 componente. Não declare vários componentes no mesmo arquivo.
+- Isso vale principalmente para modais, dialogs, sheets e similares: cada modal fica em seu próprio arquivo, sem subcomponentes auxiliares ao lado.
+- Se precisar de um subcomponente, extraia-o para um arquivo próprio.
+
+### Comentários
+
+- Não use comentários no código (nem `//`, `/* */`, `{/* */}` ou blocos de documentação decorativos). O código deve ser autoexplicativo por meio de nomes descritivos.
