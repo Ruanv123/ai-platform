@@ -49,6 +49,7 @@ use Illuminate\Support\Carbon;
     'provider_message_id',
     'sent_by_user_id',
     'content',
+    'button_payload',
     'delivery_status',
     'failure_reason',
     'failure_code',

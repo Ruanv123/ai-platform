@@ -122,7 +122,11 @@ final class FlowEngine
 
             if ($version->category === FlowCategory::Conversation) {
                 if ($active === null) {
-                    $this->start($flow, $version, $channel, $contact, ['message' => $message->content, 'payload_type' => $message->payload_type], $message);
+                    $this->start($flow, $version, $channel, $contact, [
+                        'message' => $message->content,
+                        'payload_type' => $message->payload_type,
+                        'button_payload' => $message->getAttribute('button_payload'),
+                    ], $message);
                 }
 
                 continue;
@@ -133,7 +137,11 @@ final class FlowEngine
                 $version,
                 $channel,
                 $contact,
-                ['message' => $message->content, 'payload_type' => $message->payload_type],
+                [
+                    'message' => $message->content,
+                    'payload_type' => $message->payload_type,
+                    'button_payload' => $message->getAttribute('button_payload'),
+                ],
             );
             $this->run($execution, $message, reaction: true);
             $message->forceFill(['is_responded' => true])->save();
