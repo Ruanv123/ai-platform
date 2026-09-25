@@ -7,6 +7,7 @@ use App\Enums\ChannelType;
 use App\Exceptions\WhatsAppProfileException;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Channels\SaveWhatsAppTestChannelRequest;
+use App\Http\Requests\Channels\UpdateWhatsAppTestProfileTextsRequest;
 use App\Models\Agent;
 use App\Models\Channel;
 use App\Models\User;
@@ -197,6 +198,29 @@ class WhatsAppTestController extends Controller
         ]);
 
         return to_route('channels.whatsapp-test.edit');
+    }
+
+    public function updateProfileTexts(
+        UpdateWhatsAppTestProfileTextsRequest $request,
+        Channel $whatsappTestChannel,
+    ): RedirectResponse {
+        try {
+            $this->profileProvider->updateTexts($whatsappTestChannel, $request->validated());
+        } catch (WhatsAppProfileException $exception) {
+            Inertia::flash('toast', [
+                'type' => 'error',
+                'message' => $exception->getMessage(),
+            ]);
+
+            return to_route('channels.whatsapp-test.edit', ['tab' => 'perfil']);
+        }
+
+        Inertia::flash('toast', [
+            'type' => 'success',
+            'message' => 'Perfil do WhatsApp atualizado com sucesso.',
+        ]);
+
+        return to_route('channels.whatsapp-test.edit', ['tab' => 'perfil']);
     }
 
     /**

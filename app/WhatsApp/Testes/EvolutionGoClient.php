@@ -119,6 +119,13 @@ final class EvolutionGoClient
         return is_string($about) ? $about : null;
     }
 
+    public function updateProfileAbout(string $instanceToken, string $about): void
+    {
+        $this->send('post', 'user/profileStatus', [
+            'status' => $about,
+        ], $instanceToken);
+    }
+
     public function profilePictureUrl(string $instanceToken, string $instanceJid): ?string
     {
         $response = $this->send('post', 'user/avatar', [

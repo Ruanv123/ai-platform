@@ -12,6 +12,7 @@ import type {
     WhatsAppTestChannelDetails,
 } from '@/components/channels/whatsapp-test-channel-types';
 import WhatsAppProfileTab from '@/components/channels/whatsapp-profile-tab';
+import { updateProfileTexts as updateWhatsAppTestProfileTexts } from '@/actions/App/Http/Controllers/Channels/WhatsAppTestController';
 import type { WhatsAppProfileCapabilities } from '@/components/channels/whatsapp-profile-types';
 import Heading from '@/components/heading';
 import { Button } from '@/components/ui/button';
@@ -45,6 +46,9 @@ export default function WhatsAppTest({
     const isConnected = whatsappTest?.status === 'connected';
     const connectionUrl = whatsappTestEdit({ query: { tab: 'conexao' } }).url;
     const profileUrl = whatsappTestEdit({ query: { tab: 'perfil' } }).url;
+    const updateTextsUrl = whatsappTest === null
+        ? null
+        : updateWhatsAppTestProfileTexts(whatsappTest.id).url;
 
     const remove = () => {
         if (
@@ -108,7 +112,8 @@ export default function WhatsAppTest({
                             capabilities={whatsappProfileCapabilities}
                             connectionUrl={connectionUrl}
                             channelId={whatsappTest?.id ?? null}
-                            canEdit={false}
+                            updateTextsUrl={updateTextsUrl}
+                            canEdit={canManage}
                         />
                     ) : whatsappTest === null ? (
                         <Card>

@@ -11,7 +11,6 @@ import {
     SelectTrigger,
     SelectValue,
 } from '@/components/ui/select';
-import { updateProfileTexts } from '@/actions/App/Http/Controllers/Channels/WhatsAppController';
 import type {
     WhatsAppProfileCategoryOption,
     WhatsAppProfileData,
@@ -28,7 +27,7 @@ type FormData = {
 };
 
 type Props = {
-    channelId: string;
+    updateTextsUrl: string;
     profile: WhatsAppProfileData;
     editableFields: WhatsAppProfileField[];
     canEdit: boolean;
@@ -66,7 +65,7 @@ function changedFields(
 }
 
 export default function WhatsAppProfileTextForm({
-    channelId,
+    updateTextsUrl,
     profile,
     editableFields,
     canEdit,
@@ -97,7 +96,7 @@ export default function WhatsAppProfileTextForm({
         }
 
         form.transform(() => updates);
-        form.post(updateProfileTexts(channelId).url, {
+        form.post(updateTextsUrl, {
             preserveScroll: true,
         });
     }
