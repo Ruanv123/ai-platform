@@ -3,8 +3,10 @@
 namespace App\Providers;
 
 use App\Http\Controllers\Channels\WhatsAppController;
+use App\Http\Controllers\Channels\WhatsAppTestController;
 use App\WhatsApp\Oficial\MetaWhatsAppProfileProvider;
 use App\WhatsApp\Profiles\WhatsAppProfileProvider;
+use App\WhatsApp\Testes\EvolutionGoWhatsAppProfileProvider;
 use Carbon\CarbonImmutable;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Http\JsonResponse;
@@ -25,6 +27,10 @@ class AppServiceProvider extends ServiceProvider
         $this->app->when(WhatsAppController::class)
             ->needs(WhatsAppProfileProvider::class)
             ->give(MetaWhatsAppProfileProvider::class);
+
+        $this->app->when(WhatsAppTestController::class)
+            ->needs(WhatsAppProfileProvider::class)
+            ->give(EvolutionGoWhatsAppProfileProvider::class);
     }
 
     /**

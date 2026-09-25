@@ -45,6 +45,91 @@ final class EvolutionGoClient
         return data_get($this->send('get', 'instance/status', [], $instanceToken)->json(), 'data.LoggedIn') === true;
     }
 
+    public function profileInstanceJid(string $instanceName, string $instanceToken): string
+    {
+        $instances = $this->send(
+            'get',
+            'instance/all',
+            [],
+            (string) config('services.evolution.api_key'),
+        )->json('data');
+
+        if (is_array($instances)) {
+            foreach ($instances as $instance) {
+                if (! is_array($instance)) {
+                    continue;
+                }
+
+                $name = $instance['name'] ?? $instance['Name'] ?? null;
+                $token = $instance['token'] ?? $instance['Token'] ?? null;
+                $jid = $instance['jid'] ?? $instance['Jid'] ?? null;
+
+                if ($name === $instanceName
+                    && is_string($token)
+                    && hash_equals($instanceToken, $token)
+                    && is_string($jid)
+                    && filled($jid)) {
+                    return $jid;
+                }
+            }
+        }
+
+        throw new RuntimeException('Não foi possível localizar o número conectado no Evolution Go.');
+    }
+
+    public function profileDisplayName(string $instanceToken): ?string
+    {
+        $status = $this->send('get', 'instance/status', [], $instanceToken)->json();
+
+        if (data_get($status, 'data.LoggedIn') !== true) {
+            throw new RuntimeException('O WhatsApp de testes não está conectado ao Evolution Go.');
+        }
+
+        $name = data_get($status, 'data.Name');
+
+        return is_string($name) ? $name : null;
+    }
+
+    public function profileAbout(string $instanceToken, string $instanceJid): ?string
+    {
+        $response = $this->send('post', 'user/info', [
+            'number' => [$instanceJid],
+        ], $instanceToken)->json();
+        $users = data_get($response, 'data.Users') ?? data_get($response, 'data.users');
+
+        if (! is_array($users)) {
+            return null;
+        }
+
+        $user = $users[$instanceJid] ?? null;
+
+        if (! is_array($user)) {
+            foreach ($users as $jid => $candidate) {
+                if ($jid === $instanceJid && is_array($candidate)) {
+                    $user = $candidate;
+                    break;
+                }
+            }
+        }
+
+        $about = is_array($user)
+            ? ($user['Status'] ?? $user['status'] ?? null)
+            : null;
+
+        return is_string($about) ? $about : null;
+    }
+
+    public function profilePictureUrl(string $instanceToken, string $instanceJid): ?string
+    {
+        $response = $this->send('post', 'user/avatar', [
+            'number' => $instanceJid,
+            'preview' => false,
+        ], $instanceToken)->json();
+        $url = data_get($response, 'data.url') ?? data_get($response, 'data.URL');
+
+        return is_string($url) ? $url : null;
+    }
+
     /**
      * Fetch the pairing QR code currently valid for the instance, as an image data URI.
      *

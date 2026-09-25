@@ -120,7 +120,7 @@ export default function WhatsAppProfileView({
             <CardHeader>
                 <CardTitle className="text-base">Perfil do WhatsApp</CardTitle>
                 <CardDescription>
-                    Dados atuais do número, consultados diretamente na Meta.
+                    Dados atuais do número, consultados diretamente no provedor.
                 </CardDescription>
             </CardHeader>
             <CardContent className="grid gap-6">
