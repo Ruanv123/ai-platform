@@ -25,6 +25,11 @@ type Props = {
     agents: AgentOption[];
     permissions: TeamPermissions;
     webhookUrl: string;
+    metaSignup: {
+        appId: string | null;
+        configId: string | null;
+        graphApiVersion: string;
+    };
     whatsappProfileCapabilities: WhatsAppProfileCapabilities;
     whatsappProfileCategories: WhatsAppProfileCategoryOption[];
 };
@@ -35,20 +40,20 @@ export default function WhatsApp({
     agents,
     permissions,
     webhookUrl,
+    metaSignup,
     whatsappProfileCapabilities,
     whatsappProfileCategories,
 }: Props) {
     const connectionUrl = whatsappEdit({ query: { tab: 'conexao' } }).url;
     const profileUrl = whatsappEdit({ query: { tab: 'perfil' } }).url;
-    const updateTextsUrl = whatsapp === null
-        ? null
-        : updateWhatsAppProfileTexts(whatsapp.id).url;
-    const updateProfilePictureUrl = whatsapp === null
-        ? null
-        : updateWhatsAppProfilePicture(whatsapp.id).url;
-    const requestDisplayNameUrl = whatsapp === null
-        ? null
-        : requestWhatsAppDisplayName(whatsapp.id).url;
+    const updateTextsUrl =
+        whatsapp === null ? null : updateWhatsAppProfileTexts(whatsapp.id).url;
+    const updateProfilePictureUrl =
+        whatsapp === null
+            ? null
+            : updateWhatsAppProfilePicture(whatsapp.id).url;
+    const requestDisplayNameUrl =
+        whatsapp === null ? null : requestWhatsAppDisplayName(whatsapp.id).url;
 
     return (
         <>
@@ -79,7 +84,7 @@ export default function WhatsApp({
                             className={`-mb-px border-b-2 px-4 py-3 text-sm font-medium transition-colors ${
                                 activeTab === 'conexao'
                                     ? 'border-primary text-foreground'
-                                    : 'border-transparent text-muted-foreground hover:text-foreground'
+                                    : 'text-muted-foreground hover:text-foreground border-transparent'
                             }`}
                         >
                             Conexão
@@ -91,7 +96,7 @@ export default function WhatsApp({
                             className={`-mb-px border-b-2 px-4 py-3 text-sm font-medium transition-colors ${
                                 activeTab === 'perfil'
                                     ? 'border-primary text-foreground'
-                                    : 'border-transparent text-muted-foreground hover:text-foreground'
+                                    : 'text-muted-foreground hover:text-foreground border-transparent'
                             }`}
                         >
                             Perfil
@@ -104,6 +109,7 @@ export default function WhatsApp({
                             agents={agents}
                             permissions={permissions}
                             webhookUrl={webhookUrl}
+                            metaSignup={metaSignup}
                         />
                     ) : (
                         <WhatsAppProfileTab
