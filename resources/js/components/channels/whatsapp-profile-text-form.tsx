@@ -96,7 +96,8 @@ export default function WhatsAppProfileTextForm({
             return;
         }
 
-        form.transform(() => updates).post(updateProfileTexts(channelId).url, {
+        form.transform(() => updates);
+        form.post(updateProfileTexts(channelId).url, {
             preserveScroll: true,
         });
     }
