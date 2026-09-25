@@ -87,6 +87,42 @@ it('runs a published message flow through the channel webhook', function () {
     $this->assertDatabaseHas('flow_executions', ['status' => 'completed', 'final_reason' => 'completed']);
 });
 
+it('exposes an incoming button payload to message flow variables', function () {
+    $team = Team::factory()->create();
+    $channel = Channel::factory()->for($team)->create(['type' => ChannelType::WhatsApp]);
+    $contact = Contact::factory()->for($team)->create(['phone' => '5511999999999']);
+    $dsl = flowGraph([
+        ['id' => 'save-button-code', 'type' => 'define_variable', 'config' => [
+            'name' => 'clicked_button',
+            'value' => '{{ variables.button_payload }}',
+        ]],
+        ['id' => 'finish', 'type' => 'end', 'config' => []],
+    ], [
+        ['source' => 'save-button-code', 'target' => 'finish'],
+    ]);
+    $flow = Flow::factory()->for($team)->create([
+        'channel_id' => $channel->getKey(),
+        'status' => FlowStatus::Published,
+        'draft_dsl' => $dsl,
+    ]);
+    FlowVersion::factory()->for($flow)->create([
+        'team_id' => $team->getKey(),
+        'dsl' => $dsl,
+        'category' => FlowCategory::Reaction,
+    ]);
+    $message = Message::factory()->for($contact)->for($channel)->incoming()->create([
+        'content' => 'Confirmar consulta',
+        'payload_type' => 'text',
+        'button_payload' => 'confirm-appointment-v2',
+    ]);
+
+    app(FlowEngine::class)->handleMessage($channel, $message);
+
+    $execution = FlowExecution::withoutGlobalScopes()->sole();
+    expect($execution->variables['button_payload'])->toBe('confirm-appointment-v2')
+        ->and($execution->variables['clicked_button'])->toBe('confirm-appointment-v2');
+});
+
 it('starts a published flow from the dedicated webhook trigger', function () {
     $team = Team::factory()->create();
     $channel = Channel::factory()->for($team)->create(['type' => ChannelType::WhatsAppTest]);

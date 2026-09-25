@@ -65,6 +65,7 @@ abstract class MetaMessageStrategy implements MetaStrategy
             'payload_type' => $this->eventType($payload),
             'provider_message_id' => $providerMessageId,
             'content' => $content,
+            'button_payload' => $this->buttonPayload($messageData),
         ]);
         $timestamp = $this->providerTimestamp($messageData);
 
@@ -94,6 +95,11 @@ abstract class MetaMessageStrategy implements MetaStrategy
      * @param  array<string, mixed>  $payload
      */
     abstract protected function content(Channel $channel, array $payload): ?string;
+
+    protected function buttonPayload(array $messageData): ?string
+    {
+        return null;
+    }
 
     /**
      * Download and resolve a Meta media attachment when one is present.

@@ -9,6 +9,7 @@ use App\WhatsApp\Media\IncomingMediaResolver;
 use App\WhatsApp\Media\IncomingMediaStorage;
 use App\WhatsApp\MessageReactionUpdater;
 use App\WhatsApp\Oficial\Strategies\MetaAudioStrategy;
+use App\WhatsApp\Oficial\Strategies\MetaButtonReplyStrategy;
 use App\WhatsApp\Oficial\Strategies\MetaDocumentStrategy;
 use App\WhatsApp\Oficial\Strategies\MetaImageStrategy;
 use App\WhatsApp\Oficial\Strategies\MetaReactionStrategy;
@@ -57,6 +58,10 @@ final class MetaEventProcessor
         }
 
         return match (data_get($payload, 'entry.0.changes.0.value.messages.0.type')) {
+            'button' => new MetaButtonReplyStrategy($this->mediaResolver, $this->mediaDownloader, $this->mediaStorage),
+            'interactive' => data_get($payload, 'entry.0.changes.0.value.messages.0.interactive.type') === 'button_reply'
+                ? new MetaButtonReplyStrategy($this->mediaResolver, $this->mediaDownloader, $this->mediaStorage)
+                : new MetaUnsupportedStrategy($this->mediaResolver, $this->mediaDownloader, $this->mediaStorage),
             'text' => new MetaTextStrategy($this->mediaResolver, $this->mediaDownloader, $this->mediaStorage),
             'image' => new MetaImageStrategy($this->mediaResolver, $this->mediaDownloader, $this->mediaStorage),
             'audio' => new MetaAudioStrategy($this->mediaResolver, $this->mediaDownloader, $this->mediaStorage),

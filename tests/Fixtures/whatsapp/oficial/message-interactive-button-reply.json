@@ -1,0 +1,47 @@
+{
+  "object": "whatsapp_business_account",
+  "entry": [
+    {
+      "id": "waba-fixture",
+      "changes": [
+        {
+          "field": "messages",
+          "value": {
+            "messaging_product": "whatsapp",
+            "metadata": {
+              "display_phone_number": "5511888888888",
+              "phone_number_id": "official-phone-number-id"
+            },
+            "contacts": [
+              {
+                "profile": {
+                  "name": "Ana Souza"
+                },
+                "wa_id": "5511999999999"
+              }
+            ],
+            "messages": [
+              {
+                "context": {
+                  "from": "5511888888888",
+                  "id": "wamid.context-button-message"
+                },
+                "from": "5511999999999",
+                "id": "wamid.interactive-button-reply-1",
+                "timestamp": "1760000000",
+                "type": "interactive",
+                "interactive": {
+                  "type": "button_reply",
+                  "button_reply": {
+                    "id": "confirm-appointment-v2",
+                    "title": "Confirmar consulta"
+                  }
+                }
+              }
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

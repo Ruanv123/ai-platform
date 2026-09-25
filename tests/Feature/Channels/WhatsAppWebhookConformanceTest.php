@@ -138,6 +138,49 @@ it('creates the contact and records each core incoming message', function (
     'document' => ['message-document', 'document', 'Segue o comprovante.'],
 ]);
 
+it('records official template button replies as text and preserves their payload', function (
+    string $fixture,
+    string $providerMessageId,
+    string $content,
+    string $buttonPayload,
+) {
+    $channel = createWhatsAppConformanceChannel(ChannelType::WhatsApp);
+    $agent = Agent::factory()->for($channel->team)->create();
+    $channel->update(['agent_id' => $agent->getKey()]);
+    Queue::fake([RespondToWhatsAppMessage::class]);
+
+    $response = postWhatsAppConformanceWebhook(
+        $this,
+        ChannelType::WhatsApp,
+        'webhooks.whatsapp.app-proprio',
+        whatsappConformanceFixture('oficial', $fixture),
+    );
+
+    $response->assertOk()->assertContent('EVENT_RECEIVED');
+    $message = Message::withoutGlobalScopes()
+        ->where('channel_id', $channel->getKey())
+        ->where('provider_message_id', $providerMessageId)
+        ->firstOrFail();
+    expect($message->payload_type)->toBe('text')
+        ->and($message->content)->toBe($content)
+        ->and($message->getAttribute('button_payload'))->toBe($buttonPayload);
+    Queue::assertPushed(RespondToWhatsAppMessage::class, fn (RespondToWhatsAppMessage $job): bool => $job->channelId === $channel->getKey() && $job->contactId === $message->contact_id
+    );
+})->with([
+    'template quick reply button' => [
+        'message-template-button',
+        'wamid.ABGGFlCGg0cvAgo-sHWxBA2VFD_S',
+        'No',
+        'No-Button-Payload',
+    ],
+    'interactive button reply' => [
+        'message-interactive-button-reply',
+        'wamid.interactive-button-reply-1',
+        'Confirmar consulta',
+        'confirm-appointment-v2',
+    ],
+]);
+
 it('does not record the same provider message twice', function (
     ChannelType $channelType,
     string $routeName,
