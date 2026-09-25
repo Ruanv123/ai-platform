@@ -10,6 +10,7 @@ use App\Enums\FlowTriggerType;
 use App\Flows\FlowEngine;
 use App\Models\Channel;
 use App\Models\Contact;
+use App\Models\ContactField;
 use App\Models\Flow;
 use App\Models\FlowExecution;
 use App\Models\FlowVersion;
@@ -35,6 +36,11 @@ function createWhatsAppTemplateFlow(User $user, string $purpose, ChannelType $ch
         'assigned_category' => $purpose,
     ]);
     $contact = Contact::factory()->for($user->company())->create(['phone' => '55'.random_int(10000000000, 99999999999)]);
+    $contactField = ContactField::factory()->for($user->company())->create(['name' => 'name']);
+    $contact->fieldValues()->create([
+        'contact_field_id' => $contactField->getKey(),
+        'value' => $contact->name,
+    ]);
     Message::factory()->for($contact)->for($channel)->incoming()->create([
         'content' => 'Olá',
         'created_at' => now()->subHours(25),

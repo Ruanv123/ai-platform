@@ -167,7 +167,8 @@ it('creates normalized components, variables, and every supported button type', 
 
     $response->assertCreated()
         ->assertJsonPath('body', 'Sua consulta é {{1}}.')
-        ->assertJsonPath('buttons.3.type', 'COPY_CODE');
+        ->assertJsonCount(3, 'buttons')
+        ->assertJsonPath('buttons.2.type', 'COPY_CODE');
 
     $template = WhatsAppTemplate::query()->where('name', 'lembrete_consulta')->firstOrFail();
     expect($template->components()->count())->toBe(3)
