@@ -151,6 +151,12 @@ type SelectedConversation = {
     canPause: boolean;
     canTakeOver: boolean;
     canReturn: boolean;
+    templates: {
+        name: string;
+        language: string;
+        headerType: string | null;
+        headerText: string | null;
+    }[];
 };
 
 function failureReasonLabel(failureReason: string | null): string {
@@ -731,6 +737,15 @@ function ConversationThread({
         [],
     );
     const assignedToMe = selected.assignee?.id === currentUserId;
+    const selectedTemplate = selected.templates.find(
+        (template) => template.name === form.data.template,
+    );
+    const templateMediaType = selectedTemplate?.headerType === 'IMAGE'
+        ? 'image'
+        : selectedTemplate?.headerType === 'DOCUMENT'
+          ? 'document'
+          : null;
+    const isVideoTemplate = selectedTemplate?.headerType === 'VIDEO';
 
     const sendMessage = (event: FormEvent<HTMLFormElement>) => {
         event.preventDefault();
@@ -779,12 +794,17 @@ function ConversationThread({
             return;
         }
 
-        if (!isOutgoingMediaType(messageType)) {
+        const selectedMediaType = messageType === 'template'
+            ? templateMediaType
+            : isOutgoingMediaType(messageType)
+              ? messageType
+              : null;
+        if (selectedMediaType === null) {
             form.setData('media', null);
             return;
         }
 
-        const error = outgoingMediaValidationMessage(file, messageType);
+        const error = outgoingMediaValidationMessage(file, selectedMediaType);
         if (error !== null) {
             form.setData('media', null);
             form.setError('media', error);
@@ -1043,12 +1063,54 @@ function ConversationThread({
                         <>
                             <Input
                                 value={form.data.template}
-                                onChange={(event) =>
-                                    form.setData('template', event.target.value)
-                                }
+                                list="approved-whatsapp-templates"
+                                onChange={(event) => {
+                                    form.setData((data) => ({
+                                        ...data,
+                                        template: event.target.value,
+                                        media: null,
+                                    }));
+                                    form.clearErrors('media');
+                                    if (mediaInputRef.current !== null) {
+                                        mediaInputRef.current.value = '';
+                                    }
+                                }}
                                 placeholder="Nome do Template aprovado"
                                 disabled={!selected.canSend || form.processing}
                             />
+                            <datalist id="approved-whatsapp-templates">
+                                {selected.templates.map((template) => (
+                                    <option key={template.name} value={template.name}>
+                                        {template.language}
+                                    </option>
+                                ))}
+                            </datalist>
+                            {isVideoTemplate && (
+                                <p className="text-signal-attention text-xs" role="status">
+                                    Templates com cabeçalho de vídeo ainda não podem ser enviados por aqui.
+                                </p>
+                            )}
+                            {templateMediaType !== null && (
+                                <div className="grid gap-1.5">
+                                    <label htmlFor="inbox-template-media" className="text-muted-foreground text-xs">
+                                        {outgoingMediaOptions[templateMediaType].label} · até{' '}
+                                        {outgoingMediaOptions[templateMediaType].maxLabel}
+                                    </label>
+                                    <input
+                                        ref={mediaInputRef}
+                                        id="inbox-template-media"
+                                        type="file"
+                                        accept={outgoingMediaOptions[templateMediaType].accept}
+                                        onChange={selectMediaFile}
+                                        required
+                                        disabled={!selected.canSend || form.processing}
+                                        className="border-border/70 file:bg-muted file:text-foreground rounded-lg border px-3 py-2 text-xs file:mr-3 file:rounded file:border-0 file:px-2 file:py-1"
+                                    />
+                                    <span className="text-muted-foreground text-xs">
+                                        {form.data.media?.name ?? 'Selecione o arquivo para este Contato.'}
+                                    </span>
+                                </div>
+                            )}
                             <textarea
                                 value={form.data.parameters}
                                 onChange={(event) =>
@@ -1171,6 +1233,8 @@ function ConversationThread({
                             disabled={
                                 !selected.canSend ||
                                 form.processing ||
+                                isVideoTemplate ||
+                                (templateMediaType !== null && form.data.media === null) ||
                                 (messageType !== 'template' &&
                                     !selected.window.open)
                             }
@@ -1209,7 +1273,11 @@ function MessageBubble({ message }: { message: Message }) {
         message.payloadType,
     )
         ? message.payloadType
-        : null;
+        : message.payloadType === 'template' && message.mediaAvailable
+          ? message.mediaMimeType?.startsWith('image/')
+              ? 'image'
+              : 'document'
+          : null;
     const hasMedia = mediaType !== null;
 
     return (

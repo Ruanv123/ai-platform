@@ -13,6 +13,7 @@ use App\Models\FlowExecution;
 use App\Models\Message;
 use App\Models\User;
 use App\WhatsApp\Output\WhatsAppOutputAdapterFactory;
+use App\WhatsApp\Output\WhatsAppTemplateMediaOutputAdapter;
 use App\WhatsApp\WhatsAppCustomerCareWindow;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
@@ -104,12 +105,11 @@ final class HumanInboxService
             $adapter = $this->outputAdapterFactory->make($channel);
             $media = $data['media'] ?? null;
             $message = match ($type) {
-                'template' => $adapter->sendTemplate(
-                    $channel,
-                    $contact,
-                    (string) ($data['template'] ?? ''),
-                    $data['parameters'] ?? [],
-                ),
+                'template' => $media instanceof UploadedFile
+                    ? ($adapter instanceof WhatsAppTemplateMediaOutputAdapter
+                        ? $adapter->sendTemplateWithMedia($channel, $contact, (string) ($data['template'] ?? ''), $data['parameters'] ?? [], $media)
+                        : throw new \InvalidArgumentException('Este Canal não oferece suporte a Templates com mídia.'))
+                    : $adapter->sendTemplate($channel, $contact, (string) ($data['template'] ?? ''), $data['parameters'] ?? []),
                 'image', 'document', 'video', 'audio' => $media instanceof UploadedFile
                     ? $adapter->sendMedia($channel, $contact, $media, $type)
                     : throw new \InvalidArgumentException('O arquivo enviado não foi encontrado.'),

@@ -8,9 +8,12 @@ use App\Models\User;
 use App\Models\WhatsAppAccount;
 use App\Models\WhatsAppPhoneNumber;
 use App\Models\WhatsAppTemplate;
+use App\Models\WhatsAppTemplateComponent;
 use App\WhatsApp\Output\WhatsAppOutputAdapterFactory;
 use Illuminate\Http\Client\Request;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Storage;
 use Inertia\Testing\AssertableInertia as Assert;
 
 function createTemplateWhatsAppChannel(User $user, array $channelAttributes = []): array
@@ -191,6 +194,101 @@ it('creates normalized components, variables, and every supported button type', 
 
     $phoneButtonResponse->assertCreated()
         ->assertJsonPath('buttons.0.type', 'PHONE_NUMBER');
+});
+
+it('uploads a media header example and submits its resumable handle to Meta', function () {
+    Storage::fake('whatsapp_media');
+    Http::preventStrayRequests();
+    Http::fake([
+        'graph.facebook.com/*' => Http::sequence()
+            ->push(['id' => 'upload:template-header-session'])
+            ->push(['h' => 'header-handle-from-meta'])
+            ->push(['id' => 'meta-template-id', 'status' => 'PENDING', 'category' => 'UTILITY'])
+            ->push(['data' => [[
+                'id' => 'meta-template-id',
+                'name' => 'exame_pronto',
+                'language' => 'pt_BR',
+                'status' => 'APPROVED',
+                'category' => 'UTILITY',
+                'components' => [
+                    ['type' => 'HEADER', 'format' => 'IMAGE', 'example' => ['header_handle' => ['header-handle-from-meta']]],
+                    ['type' => 'BODY', 'text' => 'Seu exame ficou pronto.'],
+                ],
+            ]]]),
+    ]);
+    $user = User::factory()->withTeam()->create();
+    [, , $account] = createTemplateWhatsAppChannel($user);
+    $account->forceFill([
+        'app_id' => 'meta-app-id',
+        'access_token' => 'template-media-access-token',
+    ])->save();
+    $file = UploadedFile::fake()->image('exame.png');
+
+    $this->actingAs($user)
+        ->post(route('templates.store'), [
+            'whatsapp_account_id' => $account->getKey(),
+            'name' => 'exame_pronto',
+            'language' => 'pt_BR',
+            'requested_category' => 'utility',
+            'header_type' => 'IMAGE',
+            'header_media' => $file,
+            'body' => 'Seu exame ficou pronto.',
+        ], ['Accept' => 'application/json'])
+        ->assertCreated();
+
+    $template = WhatsAppTemplate::query()->where('name', 'exame_pronto')->firstOrFail();
+    $header = WhatsAppTemplateComponent::query()
+        ->where('whatsapp_template_id', $template->getKey())
+        ->where('type', 'header')
+        ->firstOrFail();
+    expect($header->format)->toBe('image')
+        ->and($header->media_handle)->toBe('header-handle-from-meta')
+        ->and($header->media_path)->not->toBeNull();
+    Storage::disk('whatsapp_media')->assertExists($header->media_path);
+
+    $this->actingAs($user)
+        ->post(route('templates.submit', $template), [], ['Accept' => 'application/json'])
+        ->assertOk();
+
+    Http::assertSent(fn (Request $request): bool => str_contains($request->url(), '/meta-app-id/uploads?')
+        && $request->hasHeader('Authorization', 'OAuth template-media-access-token'));
+    Http::assertSent(fn (Request $request): bool => str_contains($request->url(), '/upload:template-header-session')
+        && $request->hasHeader('file_offset', '0')
+        && $request->hasHeader('Content-Type', 'image/png'));
+    Http::assertSent(fn (Request $request): bool => str_ends_with($request->url(), '/message_templates')
+        && $request->data()['components'][0] === [
+            'type' => 'HEADER',
+            'format' => 'IMAGE',
+            'example' => ['header_handle' => ['header-handle-from-meta']],
+        ]);
+
+    $this->actingAs($user)->post(route('templates.sync'))->assertRedirect(route('templates.index'));
+    $syncedHeader = WhatsAppTemplateComponent::query()
+        ->where('whatsapp_template_id', $template->getKey())
+        ->where('type', 'header')
+        ->firstOrFail();
+    expect($syncedHeader->media_path)->toBe($header->media_path);
+    Storage::disk('whatsapp_media')->assertExists($syncedHeader->media_path);
+});
+
+it('rejects an invalid media example before starting a Meta upload', function () {
+    Http::preventStrayRequests();
+    $user = User::factory()->withTeam()->create();
+    [, , $account] = createTemplateWhatsAppChannel($user);
+
+    $this->actingAs($user)
+        ->post(route('templates.store'), [
+            'whatsapp_account_id' => $account->getKey(),
+            'name' => 'exame_pronto',
+            'language' => 'pt_BR',
+            'requested_category' => 'utility',
+            'header_type' => 'IMAGE',
+            'header_media' => UploadedFile::fake()->create('exame.pdf', 1, 'application/pdf'),
+            'body' => 'Seu exame ficou pronto.',
+        ])
+        ->assertSessionHasErrors(['header_media' => 'A imagem de exemplo deve estar no formato JPEG ou PNG.']);
+
+    Http::assertNothingSent();
 });
 
 it('sends conversation template parameters according to normalized variables', function () {

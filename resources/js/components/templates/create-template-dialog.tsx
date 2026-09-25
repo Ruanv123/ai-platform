@@ -33,6 +33,41 @@ function positionsForText(text: string): number[] {
     );
 }
 
+function headerMediaValidationMessage(file: File, type: 'IMAGE' | 'DOCUMENT'): string {
+    const isImage = type === 'IMAGE';
+    const extensions = isImage
+        ? ['jpg', 'jpeg', 'png']
+        : ['pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'txt'];
+    const mimeTypes = isImage
+        ? ['image/jpeg', 'image/png']
+        : [
+              'application/pdf',
+              'application/msword',
+              'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+              'application/vnd.ms-excel',
+              'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+              'application/vnd.ms-powerpoint',
+              'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+              'text/plain',
+          ];
+    const extension = file.name.split('.').pop()?.toLowerCase();
+    const invalidType = !extensions.includes(extension ?? '')
+        || (file.type !== '' && !mimeTypes.includes(file.type));
+    if (invalidType) {
+        return isImage
+            ? 'A imagem de exemplo deve estar no formato JPEG ou PNG.'
+            : 'O documento de exemplo deve estar no formato PDF, DOC, DOCX, XLS, XLSX, PPT, PPTX ou TXT.';
+    }
+
+    if (file.size > (isImage ? 5 : 100) * 1024 * 1024) {
+        return isImage
+            ? 'A imagem de exemplo deve ter no máximo 5 MB.'
+            : 'O documento de exemplo deve ter no máximo 100 MB.';
+    }
+
+    return '';
+}
+
 export default function CreateTemplateDialog({
     open,
     onOpenChange,
@@ -43,9 +78,11 @@ export default function CreateTemplateDialog({
     accounts: { id: number; label: string }[];
 }) {
     const [body, setBody] = useState('');
+    const [headerType, setHeaderType] = useState<'TEXT' | 'IMAGE' | 'DOCUMENT'>('TEXT');
     const [headerText, setHeaderText] = useState('');
     const [footer, setFooter] = useState('');
     const [buttons, setButtons] = useState<ButtonDraft[]>([]);
+    const [headerMediaError, setHeaderMediaError] = useState('');
     const preview = body.replace(
         /{{\s*(\d+)\s*}}/g,
         (_match, position: string) => `valor ${position}`,
@@ -156,18 +193,74 @@ export default function CreateTemplateDialog({
                                 )}
                             </div>
                             <div className="grid gap-2">
-                                <Label htmlFor="header_text">
-                                    Cabeçalho de texto (opcional)
-                                </Label>
-                                <Input
-                                    id="header_text"
-                                    name="header_text"
-                                    value={headerText}
-                                    onChange={(event) =>
-                                        setHeaderText(event.target.value)
-                                    }
-                                />
+                                <Label htmlFor="header_type">Tipo de cabeçalho</Label>
+                                <select
+                                    id="header_type"
+                                    name="header_type"
+                                    value={headerType}
+                                    onChange={(event) => {
+                                        setHeaderType(event.target.value as typeof headerType);
+                                        setHeaderMediaError('');
+                                    }}
+                                    className="border-input bg-background h-9 rounded-md border px-3 text-sm"
+                                >
+                                    <option value="TEXT">Texto</option>
+                                    <option value="IMAGE">Imagem</option>
+                                    <option value="DOCUMENT">Documento</option>
+                                </select>
                             </div>
+                            {headerType === 'TEXT' ? (
+                                <div className="grid gap-2">
+                                    <Label htmlFor="header_text">
+                                        Cabeçalho de texto (opcional)
+                                    </Label>
+                                    <Input
+                                        id="header_text"
+                                        name="header_text"
+                                        value={headerText}
+                                        onChange={(event) =>
+                                            setHeaderText(event.target.value)
+                                        }
+                                    />
+                                </div>
+                            ) : (
+                                <div className="grid gap-2">
+                                    <Label htmlFor="header_media">
+                                        {headerType === 'IMAGE'
+                                            ? 'Imagem de exemplo · JPEG ou PNG · até 5 MB'
+                                            : 'Documento de exemplo · PDF, DOC, DOCX, XLS, XLSX, PPT, PPTX ou TXT · até 100 MB'}
+                                    </Label>
+                                    <input
+                                        key={headerType}
+                                        id="header_media"
+                                        name="header_media"
+                                        type="file"
+                                        required
+                                        accept={headerType === 'IMAGE'
+                                            ? '.jpg,.jpeg,.png,image/jpeg,image/png'
+                                            : '.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt'}
+                                        onChange={(event) => {
+                                            const file = event.currentTarget.files?.[0];
+                                            if (file === undefined) {
+                                                setHeaderMediaError('');
+                                                return;
+                                            }
+
+                                            const error = headerMediaValidationMessage(file, headerType);
+                                            setHeaderMediaError(error);
+                                            if (error !== '') {
+                                                event.currentTarget.value = '';
+                                            }
+                                        }}
+                                        className="border-input file:bg-muted file:text-foreground rounded-md border px-3 py-2 text-xs file:mr-3 file:rounded file:border-0 file:px-2 file:py-1"
+                                    />
+                                    {(headerMediaError || errors.header_media) && (
+                                        <p className="text-destructive text-xs">
+                                            {headerMediaError || errors.header_media}
+                                        </p>
+                                    )}
+                                </div>
+                            )}
                             <div className="grid gap-2">
                                 <Label htmlFor="footer">
                                     Rodapé (opcional)

@@ -2,6 +2,8 @@
 
 namespace App\Http\Requests;
 
+use App\Models\Channel;
+use App\Models\WhatsAppTemplate;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
@@ -29,7 +31,16 @@ class SendHumanMessageRequest extends FormRequest
     /** @return array<string, array<int, mixed>> */
     public function rules(): array
     {
-        $mediaRules = match ($this->input('type')) {
+        $templateHeaderType = $this->templateHeaderType();
+        $templateMediaType = match ($templateHeaderType) {
+            'IMAGE' => 'image',
+            'DOCUMENT' => 'document',
+            default => null,
+        };
+        $mediaType = $this->input('type') === 'template'
+            ? $templateMediaType
+            : $this->input('type');
+        $mediaRules = match ($mediaType) {
             'image' => ['bail', 'required', 'file', 'mimes:jpeg,jpg,png', 'extensions:jpg,jpeg,png', 'max:5120'],
             'document' => [
                 'bail',
@@ -50,11 +61,26 @@ class SendHumanMessageRequest extends FormRequest
             ],
             default => ['nullable', 'prohibited'],
         };
+        $templateRules = [
+            'nullable',
+            'string',
+            'max:255',
+            'required_if:type,template',
+            function (string $attribute, mixed $value, \Closure $fail): void {
+                $template = $this->selectedTemplate();
+                if ($value !== null && $template !== null && ! $template->status->canSend()) {
+                    $fail('Escolha um Template aprovado da Conta do WhatsApp deste Canal.');
+                }
+                if ($value !== null && $this->templateHeaderType() === 'VIDEO') {
+                    $fail('O envio de Templates com cabeçalho de vídeo ainda não está disponível.');
+                }
+            },
+        ];
 
         return [
             'type' => ['nullable', Rule::in(['text', 'template', 'image', 'document', 'video', 'audio'])],
             'content' => ['nullable', 'string', 'max:4096', 'required_if:type,text'],
-            'template' => ['nullable', 'string', 'max:255', 'required_if:type,template'],
+            'template' => $templateRules,
             'parameters' => ['nullable', 'array', 'max:20'],
             'parameters.*' => ['string', 'max:1024'],
             'media' => $mediaRules,
@@ -64,7 +90,9 @@ class SendHumanMessageRequest extends FormRequest
     /** @return array<string, string> */
     public function messages(): array
     {
-        $type = $this->input('type');
+        $type = $this->input('type') === 'template'
+            ? $this->templateHeaderMediaType() ?? 'template'
+            : $this->input('type');
 
         return [
             'media.required' => 'Selecione um arquivo para enviar.',
@@ -96,5 +124,39 @@ class SendHumanMessageRequest extends FormRequest
             },
             'media.uploaded' => 'O arquivo não foi enviado. Escolha-o novamente.',
         ];
+    }
+
+    private function templateHeaderType(): ?string
+    {
+        return strtoupper((string) ($this->selectedTemplate()?->componentByType('header')?->format ?? '')) ?: null;
+    }
+
+    private function templateHeaderMediaType(): ?string
+    {
+        return match ($this->templateHeaderType()) {
+            'IMAGE' => 'image',
+            'DOCUMENT' => 'document',
+            default => null,
+        };
+    }
+
+    private function selectedTemplate(): ?WhatsAppTemplate
+    {
+        $channel = $this->route('channel');
+        if (! $channel instanceof Channel || blank($this->input('template'))) {
+            return null;
+        }
+
+        $channel->loadMissing('whatsappPhoneNumber');
+        $accountId = $channel->whatsappPhoneNumber?->whatsapp_account_id;
+        if ($accountId === null) {
+            return null;
+        }
+
+        return WhatsAppTemplate::query()
+            ->where('whatsapp_account_id', $accountId)
+            ->where('name', $this->input('template'))
+            ->with('components.variables', 'components.buttons')
+            ->first();
     }
 }

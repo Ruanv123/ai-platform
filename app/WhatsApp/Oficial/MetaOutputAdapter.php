@@ -8,13 +8,14 @@ use App\Models\Message;
 use App\Models\WhatsAppAccount;
 use App\Models\WhatsAppTemplate;
 use App\WhatsApp\Output\AbstractWhatsAppOutputAdapter;
+use App\WhatsApp\Output\WhatsAppTemplateMediaOutputAdapter;
 use Illuminate\Http\Client\PendingRequest;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Http;
 use InvalidArgumentException;
 use RuntimeException;
 
-final class MetaOutputAdapter extends AbstractWhatsAppOutputAdapter
+final class MetaOutputAdapter extends AbstractWhatsAppOutputAdapter implements WhatsAppTemplateMediaOutputAdapter
 {
     public function sendText(Channel $channel, Contact $contact, string $content): Message
     {
@@ -100,6 +101,26 @@ final class MetaOutputAdapter extends AbstractWhatsAppOutputAdapter
 
     public function sendTemplate(Channel $channel, Contact $contact, string|WhatsAppTemplate $template, array $parameters = []): Message
     {
+        return $this->sendTemplateMessage($channel, $contact, $template, $parameters, null);
+    }
+
+    public function sendTemplateWithMedia(
+        Channel $channel,
+        Contact $contact,
+        string|WhatsAppTemplate $template,
+        array $parameters,
+        UploadedFile $media,
+    ): Message {
+        return $this->sendTemplateMessage($channel, $contact, $template, $parameters, $media);
+    }
+
+    private function sendTemplateMessage(
+        Channel $channel,
+        Contact $contact,
+        string|WhatsAppTemplate $template,
+        array $parameters,
+        ?UploadedFile $headerMedia,
+    ): Message {
         $this->assertContactBelongsToChannel($channel, $contact);
         $account = $this->account($channel);
         $normalizedTemplate = $template instanceof WhatsAppTemplate
@@ -109,6 +130,19 @@ final class MetaOutputAdapter extends AbstractWhatsAppOutputAdapter
                 ->where('language', 'pt_BR')
                 ->with('components.variables', 'components.buttons')
                 ->first();
+        $header = $normalizedTemplate?->componentByType('header');
+        $mediaType = strtolower((string) $header?->format);
+        if ($headerMedia !== null && ! in_array($mediaType, ['image', 'document'], true)) {
+            throw new InvalidArgumentException('Escolha um Template aprovado com cabeçalho de imagem ou documento.');
+        }
+        if ($headerMedia === null && in_array($mediaType, ['image', 'document'], true)) {
+            throw new InvalidArgumentException('Selecione o arquivo que será enviado no cabeçalho do Template.');
+        }
+        if ($headerMedia === null && $mediaType === 'video') {
+            throw new InvalidArgumentException('O envio de Templates com cabeçalho de vídeo ainda não está disponível.');
+        }
+
+        $storedMedia = $headerMedia === null ? null : $this->storeOutgoingMedia($headerMedia);
         $components = [];
         $definitions = $normalizedTemplate?->variableDefinitions() ?? [];
         if ($definitions !== []) {
@@ -143,25 +177,60 @@ final class MetaOutputAdapter extends AbstractWhatsAppOutputAdapter
                 'parameters' => array_map(fn (string $parameter): array => ['type' => 'text', 'text' => $parameter], $parameters),
             ];
         }
-        $response = $this->request($channel)->post(
-            $this->messagesUrl($this->phoneNumber($channel)),
-            [
-                'messaging_product' => 'whatsapp',
-                'to' => $contact->phone,
-                'type' => 'template',
-                'template' => [
-                    'name' => $normalizedTemplate?->name ?? ($template instanceof WhatsAppTemplate ? $template->name : $template),
-                    'language' => ['code' => $normalizedTemplate?->language ?? 'pt_BR'],
-                    'components' => $components,
-                ],
-            ],
-        )->throw();
-        $providerMessageId = $this->providerMessageId($response->json());
-        if ($providerMessageId === null) {
-            throw new RuntimeException('A Meta não retornou o id do Template enviado.');
-        }
+        try {
+            if ($storedMedia !== null) {
+                $phoneNumber = $this->phoneNumber($channel);
+                $uploadedMedia = $this->postStoredMedia(
+                    $this->request($channel),
+                    $this->mediaUrl($phoneNumber),
+                    ['messaging_product' => 'whatsapp'],
+                    $storedMedia,
+                );
+                $mediaId = $uploadedMedia->json('id');
+                if (! is_string($mediaId) || blank($mediaId)) {
+                    throw new RuntimeException('A Meta não retornou o id do arquivo do Template.');
+                }
 
-        return $this->recordOutgoingTemplate($channel, $contact, $normalizedTemplate ?? $template, $parameters, $providerMessageId);
+                $mediaParameter = ['type' => $mediaType, $mediaType => ['id' => $mediaId]];
+                if ($mediaType === 'document') {
+                    $mediaParameter['document']['filename'] = $storedMedia['filename'];
+                }
+                array_unshift($components, ['type' => 'header', 'parameters' => [$mediaParameter]]);
+            }
+
+            $response = $this->request($channel)->post(
+                $this->messagesUrl($this->phoneNumber($channel)),
+                [
+                    'messaging_product' => 'whatsapp',
+                    'to' => $contact->phone,
+                    'type' => 'template',
+                    'template' => [
+                        'name' => $normalizedTemplate?->name ?? ($template instanceof WhatsAppTemplate ? $template->name : $template),
+                        'language' => ['code' => $normalizedTemplate?->language ?? 'pt_BR'],
+                        'components' => $components,
+                    ],
+                ],
+            )->throw();
+            $providerMessageId = $this->providerMessageId($response->json());
+            if ($providerMessageId === null) {
+                throw new RuntimeException('A Meta não retornou o id do Template enviado.');
+            }
+
+            return $this->recordOutgoingTemplate(
+                $channel,
+                $contact,
+                $normalizedTemplate ?? $template,
+                $parameters,
+                $providerMessageId,
+                $storedMedia,
+            );
+        } catch (\Throwable $exception) {
+            if ($storedMedia !== null) {
+                $this->deleteStoredMedia($storedMedia);
+            }
+
+            throw $exception;
+        }
     }
 
     public function markIncomingMessageAsRead(Channel $channel, Message $message): void

@@ -16,6 +16,7 @@ use App\Models\Message;
 use App\Models\Team;
 use App\Models\User;
 use App\WhatsApp\Output\WhatsAppOutputAdapterFactory;
+use App\WhatsApp\Output\WhatsAppTemplateMediaOutputAdapter;
 use App\WhatsApp\WhatsAppCustomerCareWindow;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
@@ -418,7 +419,11 @@ final class AgentConversationService
             try {
                 $adapter = $this->outputAdapterFactory->make($channel);
                 $message = match ($type) {
-                    'template' => $adapter->sendTemplate($channel, $contact, $template, $parameters),
+                    'template' => $media instanceof UploadedFile
+                        ? ($adapter instanceof WhatsAppTemplateMediaOutputAdapter
+                            ? $adapter->sendTemplateWithMedia($channel, $contact, $template, $parameters, $media)
+                            : throw new \InvalidArgumentException('Este Canal não oferece suporte a Templates com mídia.'))
+                        : $adapter->sendTemplate($channel, $contact, $template, $parameters),
                     'image', 'document', 'video', 'audio' => $media instanceof UploadedFile
                         ? $adapter->sendMedia($channel, $contact, $media, $type)
                         : throw new \InvalidArgumentException('O arquivo enviado não foi encontrado.'),

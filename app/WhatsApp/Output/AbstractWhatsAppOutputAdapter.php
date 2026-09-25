@@ -109,6 +109,7 @@ abstract class AbstractWhatsAppOutputAdapter implements WhatsAppOutputAdapter
         string|WhatsAppTemplate $template,
         array $parameters,
         string $providerMessageId,
+        ?array $media = null,
     ): Message {
         return Message::create([
             'team_id' => $channel->team_id,
@@ -124,6 +125,13 @@ abstract class AbstractWhatsAppOutputAdapter implements WhatsAppOutputAdapter
                 'parameters' => $parameters,
             ], JSON_THROW_ON_ERROR),
             'delivery_status' => MessageDeliveryStatus::Sent,
+            ...($media === null ? [] : [
+                'media_path' => $media['path'],
+                'media_filename' => $media['filename'],
+                'media_mime_type' => $media['mime_type'],
+                'media_size' => $media['size'],
+                'media_available' => true,
+            ]),
         ]);
     }
 
