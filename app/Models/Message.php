@@ -26,6 +26,7 @@ use Illuminate\Support\Carbon;
  * @property string|null $content
  * @property MessageDeliveryStatus|null $delivery_status
  * @property string|null $failure_reason
+ * @property int|null $failure_code
  * @property string|null $media_path
  * @property string|null $media_filename
  * @property string|null $media_mime_type
@@ -50,6 +51,7 @@ use Illuminate\Support\Carbon;
     'content',
     'delivery_status',
     'failure_reason',
+    'failure_code',
     'media_path',
     'media_filename',
     'media_mime_type',
