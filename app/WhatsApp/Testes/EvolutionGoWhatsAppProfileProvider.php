@@ -57,4 +57,9 @@ final class EvolutionGoWhatsAppProfileProvider implements WhatsAppProfileProvide
             throw new WhatsAppProfileException($exception->getMessage(), 0, $exception);
         }
     }
+
+    public function updateTexts(Channel $channel, array $values): void
+    {
+        throw new WhatsAppProfileException('A edição de textos não está disponível no WhatsApp de testes.');
+    }
 }

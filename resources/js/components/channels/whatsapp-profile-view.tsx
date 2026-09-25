@@ -10,14 +10,19 @@ import {
 } from '@/components/ui/card';
 import type {
     WhatsAppProfileCapabilities,
+    WhatsAppProfileCategoryOption,
     WhatsAppProfileField,
     WhatsAppProfileResult,
 } from '@/components/channels/whatsapp-profile-types';
+import WhatsAppProfileTextForm from '@/components/channels/whatsapp-profile-text-form';
 
 type Props = {
     profile: WhatsAppProfileResult;
     capabilities: WhatsAppProfileCapabilities;
     connectionUrl: string;
+    channelId: string | null;
+    canEdit: boolean;
+    categories: WhatsAppProfileCategoryOption[];
 };
 
 const nameStatusLabels: Record<string, string> = {
@@ -39,6 +44,9 @@ export default function WhatsAppProfileView({
     profile,
     capabilities,
     connectionUrl,
+    channelId,
+    canEdit,
+    categories,
 }: Props) {
     if (profile.state === 'not_connected') {
         return (
@@ -90,6 +98,9 @@ export default function WhatsAppProfileView({
     }
 
     const data = profile.data;
+    const editableTextFields = capabilities.editableFields.filter((field) =>
+        ['about', 'description', 'address', 'email', 'websites', 'category'].includes(field),
+    );
     const allFacts: {
         field: WhatsAppProfileField;
         label: string;
@@ -112,7 +123,8 @@ export default function WhatsAppProfileView({
         { field: 'category', label: 'Categoria', value: data.category },
     ];
     const facts = allFacts.filter((fact) =>
-        capabilities.readableFields.includes(fact.field),
+        capabilities.readableFields.includes(fact.field) &&
+        !editableTextFields.includes(fact.field),
     );
 
     return (
@@ -168,6 +180,16 @@ export default function WhatsAppProfileView({
                         </div>
                     ))}
                 </dl>
+                {channelId !== null && editableTextFields.length > 0 && (
+                    <WhatsAppProfileTextForm
+                        key={JSON.stringify(data)}
+                        channelId={channelId}
+                        profile={data}
+                        editableFields={editableTextFields}
+                        canEdit={canEdit}
+                        categories={categories}
+                    />
+                )}
             </CardContent>
         </Card>
     );

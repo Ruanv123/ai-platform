@@ -82,4 +82,49 @@ final class MetaWhatsAppProfileProvider implements WhatsAppProfileProvider
             category: $profileData['vertical'] ?? null,
         );
     }
+
+    public function updateTexts(Channel $channel, array $values): void
+    {
+        $phoneNumber = $channel->whatsappPhoneNumber;
+        $account = $phoneNumber?->whatsappAccount;
+
+        if ($phoneNumber === null || $account === null) {
+            throw new WhatsAppProfileException('O Perfil do WhatsApp não está disponível para este Canal.');
+        }
+
+        $fieldMap = [
+            'about' => 'about',
+            'description' => 'description',
+            'address' => 'address',
+            'email' => 'email',
+            'websites' => 'websites',
+            'category' => 'vertical',
+        ];
+        $payload = ['messaging_product' => 'whatsapp'];
+
+        foreach ($fieldMap as $inputField => $metaField) {
+            if (array_key_exists($inputField, $values)) {
+                $payload[$metaField] = $values[$inputField] ?? '';
+            }
+        }
+
+        if (count($payload) === 1) {
+            throw new WhatsAppProfileException('Altere pelo menos um campo do Perfil antes de salvar.');
+        }
+
+        $url = rtrim((string) config('services.whatsapp.graph_api_url'), '/').'/'.config('services.whatsapp.graph_api_version').'/'.$phoneNumber->phone_number_id.'/whatsapp_business_profile';
+
+        try {
+            $response = Http::connectTimeout(3)
+                ->timeout(10)
+                ->withToken($account->access_token)
+                ->post($url, $payload);
+
+            if (! $response->successful()) {
+                throw new WhatsAppProfileException($this->errorTranslator->translate($response->json('error')));
+            }
+        } catch (ConnectionException) {
+            throw new WhatsAppProfileException('Não foi possível salvar o Perfil do WhatsApp. Verifique sua conexão e tente novamente.');
+        }
+    }
 }

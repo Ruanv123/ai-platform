@@ -14,6 +14,11 @@ export type WhatsAppProfileCapabilities = {
     canRequestDisplayName: boolean;
 };
 
+export type WhatsAppProfileCategoryOption = {
+    value: string;
+    label: string;
+};
+
 export type WhatsAppProfileData = {
     profilePictureUrl: string | null;
     displayName: string | null;
