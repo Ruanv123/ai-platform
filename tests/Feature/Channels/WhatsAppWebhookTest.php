@@ -1,6 +1,8 @@
 <?php
 
+use App\Enums\ChannelType;
 use App\Jobs\ProcessWhatsAppWebhook;
+use App\Models\Channel;
 use App\Models\WhatsAppAccount;
 use App\Models\WhatsAppPhoneNumber;
 use Illuminate\Support\Facades\Queue;
@@ -72,6 +74,161 @@ function postOwnAppWhatsAppWebhook(TestCase $testCase, string $body, ?string $si
         'HTTP_X_HUB_SIGNATURE_256' => $signature,
     ]), $body);
 }
+
+function postTechProviderWhatsAppWebhook(TestCase $testCase, string $body, ?string $signature): TestResponse
+{
+    return $testCase->call('POST', route('webhooks.whatsapp.tech-provider'), [], [], [], array_filter([
+        'CONTENT_TYPE' => 'application/json',
+        'HTTP_X_HUB_SIGNATURE_256' => $signature,
+    ]), $body);
+}
+
+it('returns the challenge for a matching platform handshake', function () {
+    config(['services.whatsapp.platform.webhook_verify_token' => 'platform-verify-token']);
+
+    $response = $this->get(route('webhooks.whatsapp.tech-provider').'?hub.mode=subscribe&hub.verify_token=platform-verify-token&hub.challenge=platform-challenge');
+
+    $response->assertOk()
+        ->assertContent('platform-challenge')
+        ->assertHeader('Content-Type', 'text/plain; charset=UTF-8');
+});
+
+it('returns 403 when the platform handshake is invalid', function (string $query) {
+    config(['services.whatsapp.platform.webhook_verify_token' => 'platform-verify-token']);
+
+    $response = $this->get(route('webhooks.whatsapp.tech-provider').'?'.$query);
+
+    $response->assertForbidden();
+})->with([
+    'wrong mode' => 'hub.mode=unsubscribe&hub.verify_token=platform-verify-token&hub.challenge=platform-challenge',
+    'wrong token' => 'hub.mode=subscribe&hub.verify_token=unknown-token&hub.challenge=platform-challenge',
+    'missing mode' => 'hub.verify_token=platform-verify-token&hub.challenge=platform-challenge',
+    'missing token' => 'hub.mode=subscribe&hub.challenge=platform-challenge',
+    'missing challenge' => 'hub.mode=subscribe&hub.verify_token=platform-verify-token',
+]);
+
+it('returns 403 when the platform verify token is not configured', function () {
+    config(['services.whatsapp.platform.webhook_verify_token' => null]);
+
+    $response = $this->get(route('webhooks.whatsapp.tech-provider').'?hub.mode=subscribe&hub.verify_token=platform-verify-token&hub.challenge=platform-challenge');
+
+    $response->assertForbidden();
+});
+
+it('returns 403 when an own app verify token is used on the tech provider route', function () {
+    config(['services.whatsapp.platform.webhook_verify_token' => 'platform-verify-token']);
+    WhatsAppAccount::factory()->create(['verify_token' => 'own-app-verify-token']);
+
+    $response = $this->get(route('webhooks.whatsapp.tech-provider').'?hub.mode=subscribe&hub.verify_token=own-app-verify-token&hub.challenge=challenge');
+
+    $response->assertForbidden();
+});
+
+it('dispatches tech provider events for a known WABA signed by the platform app', function () {
+    config(['services.whatsapp.platform.app_secret' => 'platform-app-secret']);
+    $account = WhatsAppAccount::factory()->techProvider()->create();
+    $channel = Channel::factory()->for($account->team)->create([
+        'type' => ChannelType::WhatsApp,
+    ]);
+    $phoneNumber = WhatsAppPhoneNumber::factory()
+        ->for($channel)
+        ->for($account, 'whatsappAccount')
+        ->create();
+    $body = json_encode([
+        'object' => 'whatsapp_business_account',
+        'entry' => [[
+            'id' => $account->waba_id,
+            'changes' => [[
+                'field' => 'messages',
+                'value' => [
+                    'metadata' => ['phone_number_id' => $phoneNumber->phone_number_id],
+                    'messages' => [[
+                        'from' => '5511999999001',
+                        'id' => 'tech-provider-message-1',
+                        'type' => 'text',
+                        'text' => ['body' => 'Mensagem do Tech Provider.'],
+                    ]],
+                ],
+            ]],
+        ]],
+    ], JSON_THROW_ON_ERROR);
+    $signature = 'sha256='.hash_hmac('sha256', $body, 'platform-app-secret');
+    Queue::fake([ProcessWhatsAppWebhook::class]);
+
+    $response = postTechProviderWhatsAppWebhook($this, $body, $signature);
+
+    $response->assertOk()->assertContent('EVENT_RECEIVED');
+    Queue::assertPushed(ProcessWhatsAppWebhook::class, fn (ProcessWhatsAppWebhook $job): bool => $job->channelId === $channel->getKey());
+});
+
+it('returns 200 and discards unknown WABAs and own app accounts on the tech provider route', function () {
+    config(['services.whatsapp.platform.app_secret' => 'platform-app-secret']);
+    [$ownAppAccount, $ownAppPhoneNumber] = createWhatsAppWebhookAccount();
+    $body = json_encode([
+        'object' => 'whatsapp_business_account',
+        'entry' => [
+            [
+                'id' => $ownAppAccount->waba_id,
+                'changes' => [[
+                    'field' => 'messages',
+                    'value' => [
+                        'metadata' => ['phone_number_id' => $ownAppPhoneNumber->phone_number_id],
+                        'messages' => [['id' => 'own-app-message-1', 'type' => 'text']],
+                    ],
+                ]],
+            ],
+            [
+                'id' => 'unknown-tech-provider-waba',
+                'changes' => [[
+                    'field' => 'messages',
+                    'value' => [
+                        'metadata' => ['phone_number_id' => 'unknown-phone-number'],
+                        'messages' => [['id' => 'unknown-message-1', 'type' => 'text']],
+                    ],
+                ]],
+            ],
+        ],
+    ], JSON_THROW_ON_ERROR);
+    $signature = 'sha256='.hash_hmac('sha256', $body, 'platform-app-secret');
+    Queue::fake([ProcessWhatsAppWebhook::class]);
+
+    $response = postTechProviderWhatsAppWebhook($this, $body, $signature);
+
+    $response->assertOk()->assertContent('EVENT_RECEIVED');
+    Queue::assertNotPushed(ProcessWhatsAppWebhook::class);
+});
+
+it('returns 403 when the tech provider route receives a signature from an own app account', function () {
+    config(['services.whatsapp.platform.app_secret' => 'platform-app-secret']);
+    [$account, $phoneNumber] = createWhatsAppWebhookAccount();
+    $body = whatsappWebhookBody($account->waba_id, $phoneNumber->phone_number_id);
+    $signature = 'sha256='.hash_hmac('sha256', $body, 'app-secret');
+
+    $response = postTechProviderWhatsAppWebhook($this, $body, $signature);
+
+    $response->assertForbidden();
+});
+
+it('returns 403 when the platform app secret is not configured', function () {
+    config(['services.whatsapp.platform.app_secret' => null]);
+    $body = '{}';
+    $signature = 'sha256='.hash_hmac('sha256', $body, 'platform-app-secret');
+
+    $response = postTechProviderWhatsAppWebhook($this, $body, $signature);
+
+    $response->assertForbidden();
+});
+
+it('returns 403 when the own app route receives the platform app signature', function () {
+    config(['services.whatsapp.platform.app_secret' => 'platform-app-secret']);
+    [$account, $phoneNumber] = createWhatsAppWebhookAccount();
+    $body = whatsappWebhookBody($account->waba_id, $phoneNumber->phone_number_id);
+    $signature = 'sha256='.hash_hmac('sha256', $body, 'platform-app-secret');
+
+    $response = postOwnAppWhatsAppWebhook($this, $body, $signature);
+
+    $response->assertForbidden();
+});
 
 it('returns 200 for a valid signed event resolved through the phone number and channel', function () {
     [$account, $phoneNumber] = createWhatsAppWebhookAccount();

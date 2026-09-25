@@ -14,11 +14,39 @@ use Illuminate\Http\Response;
 
 class WhatsAppWebhookController extends Controller
 {
+    public function handleTechProvider(Request $request): Response
+    {
+        return $request->isMethod('GET')
+            ? $this->verifyTechProvider($request)
+            : $this->receiveTechProvider($request);
+    }
+
     public function handle(Request $request): Response
     {
         return $request->isMethod('GET')
             ? $this->verify($request)
             : $this->receive($request);
+    }
+
+    private function verifyTechProvider(Request $request): Response
+    {
+        $mode = $this->queryParameter($request, 'hub.mode');
+        $verifyToken = $this->queryParameter($request, 'hub.verify_token');
+        $challenge = $this->queryParameter($request, 'hub.challenge');
+        $configuredVerifyToken = config('services.whatsapp.platform.webhook_verify_token');
+
+        if ($mode !== 'subscribe'
+            || ! is_string($configuredVerifyToken)
+            || blank($configuredVerifyToken)
+            || blank($verifyToken)
+            || blank($challenge)
+            || ! hash_equals($configuredVerifyToken, $verifyToken)) {
+            return response('Forbidden', 403);
+        }
+
+        return response($challenge, 200, [
+            'Content-Type' => 'text/plain; charset=UTF-8',
+        ]);
     }
 
     private function verify(Request $request): Response
@@ -99,6 +127,49 @@ class WhatsAppWebhookController extends Controller
         foreach ($validEntries as $entryIndex => $account) {
             $entry = $entries[$entryIndex];
             $this->dispatchEntryEvents($account, $entry, $payload);
+        }
+
+        return response('EVENT_RECEIVED');
+    }
+
+    private function receiveTechProvider(Request $request): Response
+    {
+        $rawBody = $request->getContent();
+        $signature = $request->header('X-Hub-Signature-256');
+        $appSecret = config('services.whatsapp.platform.app_secret');
+
+        if (! is_string($signature)
+            || blank($signature)
+            || ! is_string($appSecret)
+            || ! $this->signatureMatches($rawBody, $appSecret, $signature)) {
+            return response('Forbidden', 403);
+        }
+
+        $decodedPayload = json_decode($rawBody, true);
+        $payload = is_array($decodedPayload) ? $decodedPayload : [];
+        $entries = is_array($payload['entry'] ?? null)
+            ? $payload['entry']
+            : [];
+        $wabaIds = $this->wabaIds($entries);
+        $accounts = $wabaIds === []
+            ? new Collection
+            : WhatsAppAccount::query()
+                ->where('connection_method', WhatsAppConnectionMethod::TechProvider)
+                ->whereIn('waba_id', $wabaIds)
+                ->get(['id', 'waba_id'])
+                ->keyBy('waba_id');
+
+        foreach ($entries as $entry) {
+            if (! is_array($entry)) {
+                continue;
+            }
+
+            $wabaId = $entry['id'] ?? null;
+            $account = is_scalar($wabaId) ? $accounts->get((string) $wabaId) : null;
+
+            if ($account instanceof WhatsAppAccount) {
+                $this->dispatchEntryEvents($account, $entry, $payload);
+            }
         }
 
         return response('EVENT_RECEIVED');
