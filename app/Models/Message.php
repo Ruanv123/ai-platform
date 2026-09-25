@@ -52,6 +52,8 @@ use Illuminate\Support\Carbon;
     'delivery_status',
     'failure_reason',
     'failure_code',
+    'reaction_emoji',
+    'reacted_at',
     'media_path',
     'media_filename',
     'media_mime_type',
@@ -138,6 +140,7 @@ class Message extends Model
             'direction' => MessageDirection::class,
             'delivery_status' => MessageDeliveryStatus::class,
             'is_responded' => 'boolean',
+            'reacted_at' => 'datetime',
             'media_available' => 'boolean',
         ];
     }

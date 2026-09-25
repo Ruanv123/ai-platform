@@ -330,6 +330,27 @@ it('renders only the selected channel messages, history, and Flow execution with
             )));
 });
 
+it('renders the current reaction on the selected conversation message', function () {
+    $user = User::factory()->withTeam()->create(['is_platform_admin' => true]);
+    $contact = Contact::factory()->for($user->company())->create();
+    $execution = humanWaitingExecution($user, $contact, channelType: ChannelType::WhatsAppTest);
+    $message = Message::factory()
+        ->for($contact)
+        ->for($execution->channel)
+        ->create([
+            'reaction_emoji' => '❤️',
+            'reacted_at' => now(),
+        ]);
+
+    $this->actingAs($user)
+        ->get(route('inbox.show', inboxConversationParams($execution)))
+        ->assertOk()
+        ->assertInertia(fn ($page) => $page
+            ->where('selected.messages.data.0.id', $message->id)
+            ->where('selected.messages.data.0.reactionEmoji', '❤️')
+            ->where('selected.messages.data.0.reactedAt', $message->reacted_at->toIso8601String()));
+});
+
 it('authorizes the inbox broadcast channel only for members of the Empresa', function () {
     config([
         'broadcasting.default' => 'reverb',

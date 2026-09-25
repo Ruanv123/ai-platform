@@ -6,7 +6,9 @@ use App\Enums\ConsentAction;
 use App\Enums\ConsentPurpose;
 use App\Enums\MessageDeliveryStatus;
 use App\Enums\MessageDirection;
+use App\Events\HumanConversationUpdated;
 use App\Jobs\RespondToWhatsAppMessage;
+use App\Jobs\RunFlowTurn;
 use App\Models\Agent;
 use App\Models\Channel;
 use App\Models\Contact;
@@ -15,6 +17,7 @@ use App\Models\Team;
 use App\Models\WhatsAppAccount;
 use App\Models\WhatsAppPhoneNumber;
 use App\Models\WhatsAppTestConnection;
+use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Testing\TestResponse;
@@ -148,6 +151,103 @@ it('does not record the same provider message twice', function (
 
     $this->assertDatabaseCount('contacts', 1);
     $this->assertDatabaseCount('messages', 1);
+})->with('WhatsApp webhook channels');
+
+it('creates, replaces, and removes the reaction on its target message', function (
+    ChannelType $channelType,
+    string $routeName,
+    string $fixtureDirectory,
+) {
+    $channel = createWhatsAppConformanceChannel($channelType);
+    $contact = Contact::factory()->for($channel->team)->create([
+        'phone' => '5511999999999',
+    ]);
+    $providerMessageId = $channelType === ChannelType::WhatsApp
+        ? 'official-reacted-message-1'
+        : 'test-reacted-message-1';
+    $targetMessage = Message::factory()
+        ->for($contact)
+        ->for($channel)
+        ->create(['provider_message_id' => $providerMessageId]);
+    $agent = Agent::factory()->for($channel->team)->create();
+    $channel->update(['agent_id' => $agent->getKey()]);
+    Queue::fake([RespondToWhatsAppMessage::class, RunFlowTurn::class]);
+    Event::fake([HumanConversationUpdated::class]);
+    $payload = whatsappConformanceFixture($fixtureDirectory, 'message-reaction');
+
+    foreach (['👍', '❤️', ''] as $index => $emoji) {
+        if ($channelType === ChannelType::WhatsApp) {
+            $payload['entry'][0]['changes'][0]['value']['messages'][0]['id'] = 'official-reaction-event-'.$index;
+            $payload['entry'][0]['changes'][0]['value']['messages'][0]['reaction']['message_id'] = $providerMessageId;
+            $payload['entry'][0]['changes'][0]['value']['messages'][0]['reaction']['emoji'] = $emoji;
+        } else {
+            $payload['data']['Info']['ID'] = 'test-reaction-event-'.$index;
+            $payload['data']['Message']['reactionMessage']['key']['id'] = $providerMessageId;
+            $payload['data']['Message']['reactionMessage']['text'] = $emoji;
+        }
+
+        postWhatsAppConformanceWebhook($this, $channelType, $routeName, $payload)->assertOk();
+
+        $updatedMessage = $targetMessage->fresh();
+
+        expect($updatedMessage->reaction_emoji)->toBe($emoji === '' ? null : $emoji)
+            ->and($updatedMessage->reacted_at !== null)->toBe($emoji !== '');
+    }
+
+    $this->assertDatabaseCount('messages', 1);
+    Queue::assertNotPushed(RespondToWhatsAppMessage::class);
+    Queue::assertNotPushed(RunFlowTurn::class);
+    Event::assertDispatched(HumanConversationUpdated::class, fn (HumanConversationUpdated $event): bool => $event->teamId === $channel->team_id
+        && $event->contactId === $contact->id
+        && $event->channelId === $channel->id
+        && $event->action === 'message'
+    );
+})->with('WhatsApp webhook channels');
+
+it('discards a reaction when the provider message belongs to another channel', function (
+    ChannelType $channelType,
+    string $routeName,
+    string $fixtureDirectory,
+) {
+    $channel = createWhatsAppConformanceChannel($channelType);
+    $otherChannel = createWhatsAppConformanceChannel(
+        $channelType,
+        'other-waba-fixture',
+        'other-phone-number-id',
+    );
+
+    if ($channelType === ChannelType::WhatsAppTest) {
+        $otherChannel->whatsappTestConnection->update([
+            'instance_name' => 'other-local-development',
+        ]);
+    }
+
+    $contact = Contact::factory()->for($otherChannel->team)->create();
+    $providerMessageId = 'provider-message-on-other-channel';
+    $targetMessage = Message::factory()
+        ->for($contact)
+        ->for($otherChannel)
+        ->create(['provider_message_id' => $providerMessageId]);
+    $agent = Agent::factory()->for($channel->team)->create();
+    $channel->update(['agent_id' => $agent->getKey()]);
+    Queue::fake([RespondToWhatsAppMessage::class, RunFlowTurn::class]);
+    Event::fake([HumanConversationUpdated::class]);
+    $payload = whatsappConformanceFixture($fixtureDirectory, 'message-reaction');
+
+    if ($channelType === ChannelType::WhatsApp) {
+        $payload['entry'][0]['changes'][0]['value']['messages'][0]['reaction']['message_id'] = $providerMessageId;
+    } else {
+        $payload['data']['Message']['reactionMessage']['key']['id'] = $providerMessageId;
+    }
+
+    postWhatsAppConformanceWebhook($this, $channelType, $routeName, $payload)->assertOk();
+
+    expect($targetMessage->fresh()->reaction_emoji)->toBeNull()
+        ->and($targetMessage->fresh()->reacted_at)->toBeNull();
+    $this->assertDatabaseCount('messages', 1);
+    Queue::assertNotPushed(RespondToWhatsAppMessage::class);
+    Queue::assertNotPushed(RunFlowTurn::class);
+    Event::assertNotDispatched(HumanConversationUpdated::class);
 })->with('WhatsApp webhook channels');
 
 it('records every message and status across entries and changes and starts a response for each contact', function () {
