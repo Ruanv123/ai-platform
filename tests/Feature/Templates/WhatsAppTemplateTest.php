@@ -109,6 +109,26 @@ it('renders only templates from the current team and exposes the approval explan
     $this->actingAs($user)->get(route('templates.show', $otherTemplate))->assertNotFound();
 });
 
+it('shows previous and new quality ratings in template history', function () {
+    $user = User::factory()->withTeam()->create();
+    [, , $account] = createTemplateWhatsAppChannel($user);
+    $template = WhatsAppTemplate::factory()->for($account, 'account')->create();
+    $template->history()->create([
+        'event' => 'quality_changed',
+        'old_quality_rating' => 'GREEN',
+        'new_quality_rating' => 'RED',
+        'created_at' => now(),
+    ]);
+
+    $this->actingAs($user)->get(route('templates.show', $template))
+        ->assertInertia(fn (Assert $page) => $page
+            ->component('templates/show')
+            ->where('template.history.0.event', 'quality_changed')
+            ->where('template.history.0.oldQualityRating', 'GREEN')
+            ->where('template.history.0.newQualityRating', 'RED')
+        );
+});
+
 it('preserves a draft when Meta submission fails and moves it to pending on success', function () {
     Http::preventStrayRequests();
     $user = User::factory()->withTeam()->create();

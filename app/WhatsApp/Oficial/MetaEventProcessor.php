@@ -4,6 +4,7 @@ namespace App\WhatsApp\Oficial;
 
 use App\Enums\MessageDirection;
 use App\Models\Channel;
+use App\Models\WhatsAppAccount;
 use App\WhatsApp\IncomingMessageResponseDispatcher;
 use App\WhatsApp\Media\IncomingMediaResolver;
 use App\WhatsApp\Media\IncomingMediaStorage;
@@ -18,6 +19,8 @@ use App\WhatsApp\Oficial\Strategies\MetaStrategy;
 use App\WhatsApp\Oficial\Strategies\MetaTextStrategy;
 use App\WhatsApp\Oficial\Strategies\MetaUnsupportedStrategy;
 use App\WhatsApp\Oficial\Strategies\MetaVideoStrategy;
+use App\WhatsApp\WhatsAppTemplateService;
+use App\WhatsApp\WhatsAppTemplateSynchronizer;
 
 final class MetaEventProcessor
 {
@@ -28,6 +31,8 @@ final class MetaEventProcessor
         private readonly IncomingMessageResponseDispatcher $responseDispatcher,
         private readonly MessageReactionUpdater $reactionUpdater,
         private readonly MetaAccountHealthProcessor $accountHealthProcessor,
+        private readonly WhatsAppTemplateService $templateService,
+        private readonly WhatsAppTemplateSynchronizer $templateSynchronizer,
     ) {}
 
     /**
@@ -40,19 +45,35 @@ final class MetaEventProcessor
         $field = data_get($payload, 'entry.0.changes.0.field');
         $value = data_get($payload, 'entry.0.changes.0.value');
 
-        if ($field !== 'messages') {
-            if (is_string($field) && is_array($value)) {
-                $this->accountHealthProcessor->process($channel, $field, $value);
+        if ($field === 'messages') {
+            $strategy = $this->strategy($payload);
+            $message = $strategy->handle($channel, $payload);
+
+            if ($message?->direction === MessageDirection::Incoming && $strategy->shouldDispatchResponse()) {
+                $this->responseDispatcher->dispatch($channel, $message);
             }
 
             return;
         }
 
-        $strategy = $this->strategy($payload);
-        $message = $strategy->handle($channel, $payload);
+        if (is_string($field) && in_array($field, [
+            'message_template_status_update',
+            'template_category_update',
+            'message_template_quality_update',
+        ], true)) {
+            $channel->loadMissing('whatsappPhoneNumber.whatsappAccount');
+            $account = $channel->whatsappPhoneNumber?->whatsappAccount;
 
-        if ($message?->direction === MessageDirection::Incoming && $strategy->shouldDispatchResponse()) {
-            $this->responseDispatcher->dispatch($channel, $message);
+            if ($account instanceof WhatsAppAccount && is_array($value)
+                && ! $this->templateService->updateFromWebhook($account, $field, $value)) {
+                $this->templateSynchronizer->sync($account);
+            }
+
+            return;
+        }
+
+        if (is_string($field) && is_array($value)) {
+            $this->accountHealthProcessor->process($channel, $field, $value);
         }
     }
 

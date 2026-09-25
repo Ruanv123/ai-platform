@@ -30,6 +30,8 @@ use LogicException;
     'new_status',
     'old_category',
     'new_category',
+    'old_quality_rating',
+    'new_quality_rating',
     'reason',
     'explanation',
     'created_at',
