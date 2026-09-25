@@ -55,6 +55,7 @@ function createOfficialResponseFlowTestChannel(): Channel
     $account = WhatsAppAccount::factory()->for($team, 'team')->create([
         'access_token' => 'official-access-token',
         'app_secret' => 'official-app-secret',
+        'waba_id' => 'waba-fixture',
     ]);
     $phoneNumber = WhatsAppPhoneNumber::factory()->for($channel)->create([
         'phone_number_id' => 'official-phone-number-id',
@@ -314,7 +315,7 @@ it('responds to an incoming official WhatsApp message through the public webhook
     $body = json_encode($payload, JSON_THROW_ON_ERROR);
     $signature = 'sha256='.hash_hmac('sha256', $body, 'official-app-secret');
 
-    $response = $this->call('POST', route('webhooks.whatsapp'), [], [], [], [
+    $response = $this->call('POST', route('webhooks.whatsapp.app-proprio'), [], [], [], [
         'CONTENT_TYPE' => 'application/json',
         'HTTP_X_HUB_SIGNATURE_256' => $signature,
     ], $body);
@@ -481,7 +482,7 @@ it('does not send an official response after Meta customer-care window expires',
     $body = json_encode($payload, JSON_THROW_ON_ERROR);
     $signature = 'sha256='.hash_hmac('sha256', $body, 'official-app-secret');
 
-    $response = $this->call('POST', route('webhooks.whatsapp'), [], [], [], [
+    $response = $this->call('POST', route('webhooks.whatsapp.app-proprio'), [], [], [], [
         'CONTENT_TYPE' => 'application/json',
         'HTTP_X_HUB_SIGNATURE_256' => $signature,
     ], $body);

@@ -32,6 +32,10 @@ final class MetaEventProcessor
      */
     public function process(Channel $channel, array $payload): void
     {
+        if (data_get($payload, 'entry.0.changes.0.field') !== 'messages') {
+            return;
+        }
+
         $message = $this->strategy($payload)->handle($channel, $payload);
 
         if ($message?->direction === MessageDirection::Incoming) {
