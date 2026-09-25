@@ -29,6 +29,10 @@ final class EvolutionGoReadReceiptStrategy extends EvolutionGoMessageStrategy
             ->where('channel_id', $channel->getKey())
             ->where('direction', MessageDirection::Outgoing)
             ->whereIn('provider_message_id', $messageIds)
+            ->where(function ($query): void {
+                $query->whereNull('delivery_status')
+                    ->orWhere('delivery_status', '!=', MessageDeliveryStatus::Failed);
+            })
             ->update([
                 'delivery_status' => MessageDeliveryStatus::Read,
             ]);
