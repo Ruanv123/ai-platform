@@ -46,7 +46,7 @@ final class MetaOutputAdapter extends AbstractWhatsAppOutputAdapter
     {
         $this->assertContactBelongsToChannel($channel, $contact);
 
-        if (! in_array($type, ['image', 'document', 'video'], true)) {
+        if (! in_array($type, ['image', 'document', 'video', 'audio'], true)) {
             throw new InvalidArgumentException('Tipo de mídia não suportado.');
         }
 
@@ -69,6 +69,9 @@ final class MetaOutputAdapter extends AbstractWhatsAppOutputAdapter
             $mediaContent = ['id' => $mediaId];
             if ($type === 'document') {
                 $mediaContent['filename'] = $media['filename'];
+            }
+            if ($type === 'audio') {
+                $mediaContent['voice'] = $this->isOggOpus($media['mime_type'], $media['filename']);
             }
 
             $response = $this->request($channel)->post(
@@ -221,6 +224,12 @@ final class MetaOutputAdapter extends AbstractWhatsAppOutputAdapter
         }
 
         return $account;
+    }
+
+    private function isOggOpus(string $mimeType, string $filename): bool
+    {
+        return in_array(strtolower(pathinfo($filename, PATHINFO_EXTENSION)), ['ogg', 'opus'], true)
+            && in_array(strtolower($mimeType), ['audio/ogg', 'application/ogg', 'audio/opus'], true);
     }
 
     private function messagesUrl(string $phoneNumberId): string

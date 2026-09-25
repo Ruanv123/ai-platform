@@ -7,6 +7,7 @@ import {
     Clock3,
     FileText,
     ImagePlus,
+    Mic,
     PanelRight,
     PanelRightClose,
     Search,
@@ -36,6 +37,7 @@ import {
 } from '@/routes/inbox';
 import { pause as pauseAgent, takeOver as takeOverAgent } from '@/routes/inbox/agent';
 import { store as messagesStore } from '@/routes/inbox/messages';
+import { VoiceMessageRecorder } from '@/components/inbox-voice-recorder';
 
 type Conversation = {
     contactId: number;
@@ -172,7 +174,7 @@ type Props = {
     currentUserId: number;
 };
 
-type MessageType = 'text' | 'template' | 'image' | 'document' | 'video';
+type MessageType = 'text' | 'template' | 'image' | 'document' | 'video' | 'audio';
 
 type OutgoingMediaOption = {
     label: string;
@@ -185,7 +187,7 @@ type OutgoingMediaOption = {
     invalidSizeMessage: string;
 };
 
-const outgoingMediaOptions: Record<'image' | 'document' | 'video', OutgoingMediaOption> = {
+const outgoingMediaOptions: Record<'image' | 'document' | 'video' | 'audio', OutgoingMediaOption> = {
     image: {
         label: 'Imagem',
         accept: '.jpg,.jpeg,.png,image/jpeg,image/png',
@@ -225,6 +227,16 @@ const outgoingMediaOptions: Record<'image' | 'document' | 'video', OutgoingMedia
         invalidTypeMessage: 'Escolha um vídeo MP4 ou 3GP.',
         invalidSizeMessage: 'O vídeo deve ter no máximo 16 MB.',
     },
+    audio: {
+        label: 'Áudio',
+        accept: '.ogg,.opus,.mp3,.aac,.mp4,.m4a,audio/ogg,audio/mpeg,audio/aac,audio/mp4,video/mp4',
+        extensions: ['ogg', 'opus', 'mp3', 'aac', 'mp4', 'm4a'],
+        mimeTypes: ['audio/ogg', 'application/ogg', 'audio/opus', 'audio/mpeg', 'audio/mp3', 'audio/aac', 'audio/x-aac', 'audio/mp4', 'video/mp4'],
+        maxBytes: 16 * 1024 * 1024,
+        maxLabel: '16 MB',
+        invalidTypeMessage: 'Escolha um áudio OGG/Opus, MP3, AAC ou MP4.',
+        invalidSizeMessage: 'O áudio deve ter no máximo 16 MB.',
+    },
 };
 
 const deliveryStatusLabels: Record<string, string> = {
@@ -235,10 +247,11 @@ const deliveryStatusLabels: Record<string, string> = {
     failed: 'Falhou',
 };
 
-function outgoingMediaValidationMessage(file: File, type: 'image' | 'document' | 'video'): string | null {
+function outgoingMediaValidationMessage(file: File, type: 'image' | 'document' | 'video' | 'audio'): string | null {
     const option = outgoingMediaOptions[type];
     const extension = file.name.split('.').pop()?.toLowerCase();
-    if (!option.extensions.includes(extension ?? '') || (file.type !== '' && !option.mimeTypes.includes(file.type))) {
+    const mimeType = file.type.split(';')[0]?.trim().toLowerCase() ?? '';
+    if (!option.extensions.includes(extension ?? '') || (mimeType !== '' && !option.mimeTypes.includes(mimeType))) {
         return option.invalidTypeMessage;
     }
 
@@ -247,6 +260,10 @@ function outgoingMediaValidationMessage(file: File, type: 'image' | 'document' |
     }
 
     return null;
+}
+
+function isOutgoingMediaType(type: MessageType): type is keyof typeof outgoingMediaOptions {
+    return type === 'image' || type === 'document' || type === 'video' || type === 'audio';
 }
 
 const realtimeProps = ['conversations', 'counts', 'selected'];
@@ -747,7 +764,7 @@ function ConversationThread({
             return;
         }
 
-        if (messageType !== 'image' && messageType !== 'document' && messageType !== 'video') {
+        if (!isOutgoingMediaType(messageType)) {
             form.setData('media', null);
             return;
         }
@@ -762,6 +779,27 @@ function ConversationThread({
 
         form.clearErrors('media');
         form.setData('media', file);
+    };
+
+    const selectOutgoingAudio = (file: File | null) => {
+        if (file === null) {
+            form.setData('media', null);
+            form.clearErrors('media');
+
+            return;
+        }
+
+        const error = outgoingMediaValidationMessage(file, 'audio');
+        if (error !== null) {
+            form.setData('media', null);
+            form.setError('media', error);
+
+            return;
+        }
+
+        onMessageTypeChange('audio');
+        form.setData((data) => ({ ...data, type: 'audio', media: file }));
+        form.clearErrors('media');
     };
 
     const takeConversation = () => {
@@ -959,12 +997,13 @@ function ConversationThread({
                         >
                             Template
                         </button>
-                        {(['image', 'document', 'video'] as const).map((type) => {
-                            const Icon = type === 'image'
-                                ? ImagePlus
-                                : type === 'document'
-                                  ? FileText
-                                  : Video;
+                        {(['image', 'document', 'video', 'audio'] as const).map((type) => {
+                            const Icon = {
+                                image: ImagePlus,
+                                document: FileText,
+                                video: Video,
+                                audio: Mic,
+                            }[type];
 
                             return (
                                 <button
@@ -1025,6 +1064,18 @@ function ConversationThread({
                                 !selected.window.open ||
                                 form.processing
                             }
+                        />
+                    ) : messageType === 'audio' ? (
+                        <VoiceMessageRecorder
+                            key={`${selected.contact.id}:${selected.channel.id}`}
+                            disabled={
+                                !selected.canSend ||
+                                !selected.window.open ||
+                                form.processing
+                            }
+                            file={form.data.media}
+                            error={form.errors.media}
+                            onFileChange={selectOutgoingAudio}
                         />
                     ) : (
                         <div className="grid gap-1.5">

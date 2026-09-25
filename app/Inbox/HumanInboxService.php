@@ -110,7 +110,7 @@ final class HumanInboxService
                     (string) ($data['template'] ?? ''),
                     $data['parameters'] ?? [],
                 ),
-                'image', 'document', 'video' => $media instanceof UploadedFile
+                'image', 'document', 'video', 'audio' => $media instanceof UploadedFile
                     ? $adapter->sendMedia($channel, $contact, $media, $type)
                     : throw new \InvalidArgumentException('O arquivo enviado não foi encontrado.'),
                 default => $adapter->sendText($channel, $contact, $content),

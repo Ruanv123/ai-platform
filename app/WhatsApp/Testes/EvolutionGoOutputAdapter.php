@@ -40,7 +40,7 @@ final class EvolutionGoOutputAdapter extends AbstractWhatsAppOutputAdapter
     {
         $this->assertContactBelongsToChannel($channel, $contact);
 
-        if (! in_array($type, ['image', 'document', 'video'], true)) {
+        if (! in_array($type, ['image', 'document', 'video', 'audio'], true)) {
             throw new InvalidArgumentException('Tipo de mídia não suportado.');
         }
 

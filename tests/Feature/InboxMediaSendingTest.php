@@ -69,6 +69,7 @@ function validOutgoingMedia(string $type): UploadedFile
         'image' => UploadedFile::fake()->create('foto.jpg', 1, 'image/jpeg'),
         'document' => UploadedFile::fake()->create('orcamento.pdf', 1, 'application/pdf'),
         'video' => UploadedFile::fake()->create('demonstracao.mp4', 1, 'video/mp4'),
+        'audio' => UploadedFile::fake()->create('mensagem-de-voz.ogg', 1, 'audio/ogg'),
     };
 }
 
@@ -76,9 +77,11 @@ dataset('outgoing media by WhatsApp channel', [
     'official image' => [ChannelType::WhatsApp, 'image'],
     'official document' => [ChannelType::WhatsApp, 'document'],
     'official video' => [ChannelType::WhatsApp, 'video'],
+    'official audio' => [ChannelType::WhatsApp, 'audio'],
     'test image' => [ChannelType::WhatsAppTest, 'image'],
     'test document' => [ChannelType::WhatsAppTest, 'document'],
     'test video' => [ChannelType::WhatsAppTest, 'video'],
+    'test audio' => [ChannelType::WhatsAppTest, 'audio'],
 ]);
 
 it('sends an outgoing media message through the conversation route', function (ChannelType $channelType, string $type) {
@@ -155,7 +158,8 @@ it('sends an outgoing media message through the conversation route', function (C
             && $request->data()['messaging_product'] === 'whatsapp'
             && $request->data()['to'] === $execution->contact->phone
             && $request->data()['type'] === $type
-            && $request->data()[$type]['id'] === 'meta-uploaded-media-id');
+            && $request->data()[$type]['id'] === 'meta-uploaded-media-id'
+            && ($type !== 'audio' || $request->data()['audio']['voice'] === true));
         Http::assertSentCount(2);
     } else {
         Http::assertSent(fn (Request $request): bool => $request->url() === 'https://evolution.test/send/media'
@@ -181,6 +185,52 @@ it('sends an outgoing media message through the conversation route', function (C
             ])));
 })->with('outgoing media by WhatsApp channel');
 
+it('accepts supported audio attachment formats through the conversation route', function (UploadedFile $file, bool $isVoiceNote) {
+    Storage::fake('whatsapp_media');
+    Http::preventStrayRequests();
+    $user = User::factory()->withTeam()->create(['is_platform_admin' => true]);
+    $execution = mediaSendingExecution($user, ChannelType::WhatsApp);
+    Http::fake([
+        'graph.facebook.com/*' => Http::sequence()
+            ->push(['id' => 'meta-audio-format-upload-id'])
+            ->push(['messages' => [['id' => 'meta-audio-format-message-id']]]),
+    ]);
+
+    $this->actingAs($user)
+        ->post(route('inbox.take', [
+            'contact' => $execution->contact,
+            'channel' => $execution->channel,
+        ]))
+        ->assertRedirect(route('inbox.show', [$execution->contact, $execution->channel]));
+
+    $this->actingAs($user)
+        ->post(route('inbox.messages.store', [
+            'contact' => $execution->contact,
+            'channel' => $execution->channel,
+        ]), [
+            'type' => 'audio',
+            'media' => $file,
+        ])
+        ->assertRedirect(route('inbox.show', [$execution->contact, $execution->channel]));
+
+    $this->assertDatabaseHas('messages', [
+        'channel_id' => $execution->channel_id,
+        'provider_message_id' => 'meta-audio-format-message-id',
+        'payload_type' => 'audio',
+        'media_filename' => $file->getClientOriginalName(),
+    ]);
+    Http::assertSent(fn (Request $request): bool => $request->url() === 'https://graph.facebook.com/v23.0/media-sending-phone-id/messages'
+        && $request->data()['type'] === 'audio'
+        && $request->data()['audio']['voice'] === $isVoiceNote);
+})->with([
+    'OGG/Opus' => [UploadedFile::fake()->create('gravacao.ogg', 1, 'audio/ogg'), true],
+    'Opus extension' => [UploadedFile::fake()->create('gravacao.opus', 1, 'audio/ogg'), true],
+    'MP3' => [UploadedFile::fake()->create('gravacao.mp3', 1, 'audio/mpeg'), false],
+    'AAC' => [UploadedFile::fake()->create('gravacao.aac', 1, 'audio/aac'), false],
+    'MP4' => [UploadedFile::fake()->create('gravacao.mp4', 1, 'video/mp4'), false],
+    'M4A' => [UploadedFile::fake()->create('gravacao.m4a', 1, 'audio/mp4'), false],
+]);
+
 it('rejects an unsupported outgoing media format before contacting WhatsApp', function (string $type, string $message) {
     Http::preventStrayRequests();
     $user = User::factory()->withTeam()->create();
@@ -201,6 +251,7 @@ it('rejects an unsupported outgoing media format before contacting WhatsApp', fu
     'image format' => ['image', 'A imagem deve estar no formato JPEG ou PNG.'],
     'document format' => ['document', 'O documento deve estar no formato PDF, DOC, DOCX, XLS, XLSX, PPT, PPTX ou TXT.'],
     'video format' => ['video', 'O vídeo deve estar no formato MP4 ou 3GP.'],
+    'audio format' => ['audio', 'O áudio deve estar no formato OGG/Opus, MP3, AAC ou MP4.'],
 ]);
 
 it('rejects outgoing media that exceeds its type size limit before contacting WhatsApp', function (string $type, UploadedFile $file, string $message) {
@@ -223,6 +274,7 @@ it('rejects outgoing media that exceeds its type size limit before contacting Wh
     'image size' => ['image', UploadedFile::fake()->create('foto.jpg', 5121, 'image/jpeg'), 'A imagem deve ter no máximo 5 MB.'],
     'document size' => ['document', UploadedFile::fake()->create('orcamento.pdf', 102401, 'application/pdf'), 'O documento deve ter no máximo 100 MB.'],
     'video size' => ['video', UploadedFile::fake()->create('video.mp4', 16385, 'video/mp4'), 'O vídeo deve ter no máximo 16 MB.'],
+    'audio size' => ['audio', UploadedFile::fake()->create('voz.ogg', 16385, 'audio/ogg'), 'O áudio deve ter no máximo 16 MB.'],
 ]);
 
 it('pauses the Agent after a direct conversation sends media', function () {

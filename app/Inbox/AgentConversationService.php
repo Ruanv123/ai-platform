@@ -419,7 +419,7 @@ final class AgentConversationService
                 $adapter = $this->outputAdapterFactory->make($channel);
                 $message = match ($type) {
                     'template' => $adapter->sendTemplate($channel, $contact, $template, $parameters),
-                    'image', 'document', 'video' => $media instanceof UploadedFile
+                    'image', 'document', 'video', 'audio' => $media instanceof UploadedFile
                         ? $adapter->sendMedia($channel, $contact, $media, $type)
                         : throw new \InvalidArgumentException('O arquivo enviado não foi encontrado.'),
                     default => $adapter->sendText($channel, $contact, $content),
@@ -512,7 +512,7 @@ final class AgentConversationService
             'contact_id' => $contact->getKey(),
             'channel_id' => $channel->getKey(),
             'direction' => MessageDirection::Outgoing,
-            'payload_type' => in_array($type, ['template', 'image', 'document', 'video'], true) ? $type : 'text',
+            'payload_type' => in_array($type, ['template', 'image', 'document', 'video', 'audio'], true) ? $type : 'text',
             'provider_message_id' => null,
             'sent_by_user_id' => $user->getKey(),
             'content' => $content,
