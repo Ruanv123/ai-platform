@@ -6,6 +6,7 @@ use App\Enums\ConsentAction;
 use App\Enums\ConsentPurpose;
 use App\Enums\MessageDeliveryStatus;
 use App\Enums\MessageDirection;
+use App\Enums\WhatsAppTemplateStatus;
 use App\Jobs\RespondToWhatsAppMessage;
 use App\Models\Agent;
 use App\Models\Channel;
@@ -14,7 +15,9 @@ use App\Models\Message;
 use App\Models\Team;
 use App\Models\WhatsAppAccount;
 use App\Models\WhatsAppPhoneNumber;
+use App\Models\WhatsAppTemplate;
 use App\Models\WhatsAppTestConnection;
+use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Testing\TestResponse;
@@ -149,6 +152,158 @@ it('does not record the same provider message twice', function (
     $this->assertDatabaseCount('contacts', 1);
     $this->assertDatabaseCount('messages', 1);
 })->with('WhatsApp webhook channels');
+
+it('updates official template statuses and records the rejection explanation', function (
+    string $event,
+    WhatsAppTemplateStatus $expectedStatus,
+    ?string $reason,
+) {
+    $channel = createWhatsAppConformanceChannel(ChannelType::WhatsApp);
+    $account = $channel->whatsappPhoneNumber->whatsappAccount;
+    $template = WhatsAppTemplate::factory()->for($account, 'account')->rejected()->create([
+        'meta_template_id' => 'meta-template-ticket10',
+        'rejection_explanation' => 'Explicação anterior.',
+    ]);
+    $payload = whatsappConformanceFixture('oficial', 'template-status-update');
+    $payload['entry'][0]['changes'][0]['value']['event'] = $event;
+    $payload['entry'][0]['changes'][0]['value']['reason'] = $reason;
+
+    $response = postWhatsAppConformanceWebhook(
+        $this,
+        ChannelType::WhatsApp,
+        'webhooks.whatsapp.app-proprio',
+        $payload,
+    );
+
+    $response->assertOk()->assertContent('EVENT_RECEIVED');
+    expect($template->fresh()->status)->toBe($expectedStatus)
+        ->and($template->fresh()->rejection_reason)->toBe($reason)
+        ->and($template->fresh()->rejection_explanation)->toBe($reason === null
+            ? null
+            : 'A estrutura do Template não segue o formato aceito. Confira as variáveis, botões e limites de caracteres.');
+    $this->assertDatabaseHas('whatsapp_template_histories', [
+        'whatsapp_template_id' => $template->getKey(),
+        'event' => 'status_changed',
+        'new_status' => $expectedStatus->value,
+        'reason' => $reason,
+        'explanation' => $reason === null
+            ? null
+            : 'A estrutura do Template não segue o formato aceito. Confira as variáveis, botões e limites de caracteres.',
+    ]);
+})->with([
+    'approval' => ['APPROVED', WhatsAppTemplateStatus::Approved, null],
+    'rejection' => ['REJECTED', WhatsAppTemplateStatus::Rejected, 'INCORRECT_FORMAT'],
+    'pause' => ['PAUSED', WhatsAppTemplateStatus::Paused, null],
+    'disable' => ['DISABLED', WhatsAppTemplateStatus::Disabled, null],
+]);
+
+it('updates an official template category and records the old and new categories', function () {
+    $channel = createWhatsAppConformanceChannel(ChannelType::WhatsApp);
+    $account = $channel->whatsappPhoneNumber->whatsappAccount;
+    $template = WhatsAppTemplate::factory()->for($account, 'account')->create([
+        'meta_template_id' => 'meta-template-ticket10',
+        'requested_category' => 'utility',
+        'assigned_category' => 'utility',
+    ]);
+    $payload = whatsappConformanceFixture('oficial', 'template-category-update');
+
+    $response = postWhatsAppConformanceWebhook(
+        $this,
+        ChannelType::WhatsApp,
+        'webhooks.whatsapp.app-proprio',
+        $payload,
+    );
+
+    $response->assertOk()->assertContent('EVENT_RECEIVED');
+    expect($template->fresh()->assigned_category->value)->toBe('marketing')
+        ->and($template->fresh()->requested_category->value)->toBe('utility');
+    $this->assertDatabaseHas('whatsapp_template_histories', [
+        'whatsapp_template_id' => $template->getKey(),
+        'event' => 'category_changed',
+        'old_category' => 'utility',
+        'new_category' => 'marketing',
+    ]);
+});
+
+it('updates an official template quality rating and records its history', function () {
+    $channel = createWhatsAppConformanceChannel(ChannelType::WhatsApp);
+    $account = $channel->whatsappPhoneNumber->whatsappAccount;
+    $template = WhatsAppTemplate::factory()->for($account, 'account')->create([
+        'meta_template_id' => 'meta-template-ticket10',
+        'quality_rating' => 'GREEN',
+    ]);
+    $payload = whatsappConformanceFixture('oficial', 'template-quality-update');
+
+    $response = postWhatsAppConformanceWebhook(
+        $this,
+        ChannelType::WhatsApp,
+        'webhooks.whatsapp.app-proprio',
+        $payload,
+    );
+
+    $response->assertOk()->assertContent('EVENT_RECEIVED');
+    expect($template->fresh()->quality_rating)->toBe('RED');
+    $this->assertDatabaseHas('whatsapp_template_histories', [
+        'whatsapp_template_id' => $template->getKey(),
+        'event' => 'quality_changed',
+        'old_quality_rating' => 'GREEN',
+        'new_quality_rating' => 'RED',
+    ]);
+});
+
+it('syncs the matching account when a template webhook references an unknown template', function () {
+    Http::preventStrayRequests();
+    $channel = createWhatsAppConformanceChannel(ChannelType::WhatsApp);
+    $account = $channel->whatsappPhoneNumber->whatsappAccount;
+    $foreignChannel = createWhatsAppConformanceChannel(
+        ChannelType::WhatsApp,
+        'waba-foreign-fixture',
+        'foreign-phone-number-id',
+    );
+    $foreignAccount = $foreignChannel->whatsappPhoneNumber->whatsappAccount;
+    $foreignTemplate = WhatsAppTemplate::factory()->for($foreignAccount, 'account')->create([
+        'meta_template_id' => 'meta-template-unknown-ticket10',
+        'status' => WhatsAppTemplateStatus::Approved,
+    ]);
+    $payload = whatsappConformanceFixture('oficial', 'template-status-update');
+    $payload['entry'][0]['changes'][0]['value']['message_template_id'] = 'meta-template-unknown-ticket10';
+    $endpoint = rtrim(config('services.whatsapp.graph_api_url'), '/').'/'.config('services.whatsapp.graph_api_version').'/'.$account->waba_id.'/message_templates';
+    Http::fake([
+        'graph.facebook.com/*/'.$account->waba_id.'/message_templates*' => Http::response([
+            'data' => [[
+                'id' => 'meta-template-unknown-ticket10',
+                'name' => 'consulta_amanha',
+                'language' => 'pt_BR',
+                'status' => 'REJECTED',
+                'category' => 'UTILITY',
+                'rejected_reason' => 'INCORRECT_FORMAT',
+                'components' => [
+                    ['type' => 'BODY', 'text' => 'Sua consulta é amanhã.'],
+                ],
+            ]],
+        ]),
+    ]);
+    $body = json_encode($payload, JSON_THROW_ON_ERROR);
+
+    $response = $this->call('POST', route('webhooks.whatsapp.app-proprio'), [], [], [], [
+        'CONTENT_TYPE' => 'application/json',
+        'HTTP_X_HUB_SIGNATURE_256' => 'sha256='.hash_hmac('sha256', $body, 'conformance-app-secret'),
+    ], $body);
+
+    $response->assertOk()->assertContent('EVENT_RECEIVED');
+    $syncedTemplate = WhatsAppTemplate::query()
+        ->where('whatsapp_account_id', $account->getKey())
+        ->where('meta_template_id', 'meta-template-unknown-ticket10')
+        ->firstOrFail();
+    expect($syncedTemplate->status)->toBe(WhatsAppTemplateStatus::Rejected)
+        ->and($foreignTemplate->fresh()->status)->toBe(WhatsAppTemplateStatus::Approved);
+    $this->assertDatabaseHas('whatsapp_template_histories', [
+        'whatsapp_template_id' => $syncedTemplate->getKey(),
+        'event' => 'imported',
+    ]);
+    Http::assertSent(fn (Request $request): bool => $request->method() === 'GET'
+        && $request->url() === $endpoint.'?limit=100');
+});
 
 it('records every message and status across entries and changes and starts a response for each contact', function () {
     $channel = createWhatsAppConformanceChannel(ChannelType::WhatsApp);

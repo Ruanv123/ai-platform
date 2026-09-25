@@ -347,6 +347,8 @@ final class WhatsAppTemplateController extends Controller
                 'newStatus' => $history->new_status,
                 'oldCategory' => $history->old_category,
                 'newCategory' => $history->new_category,
+                'oldQualityRating' => $history->old_quality_rating,
+                'newQualityRating' => $history->new_quality_rating,
                 'reason' => $history->reason,
                 'explanation' => $history->explanation,
                 'createdAt' => $history->created_at->toIso8601String(),

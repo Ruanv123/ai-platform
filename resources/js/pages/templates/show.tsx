@@ -45,6 +45,8 @@ type Template = {
         newStatus: string | null;
         oldCategory: string | null;
         newCategory: string | null;
+        oldQualityRating: string | null;
+        newQualityRating: string | null;
         reason: string | null;
         explanation: string | null;
         createdAt: string | null;
@@ -287,16 +289,16 @@ export default function TemplateShow({ template, permissions }: Props) {
                                     <dd>
                                         {template.assignedCategoryLabel ??
                                             'Ainda não definida'}
-                                        </dd>
+                                    </dd>
+                                </div>
+                                {template.qualityRating && (
+                                    <div className="flex justify-between gap-3">
+                                        <dt className="text-muted-foreground">
+                                            Qualidade
+                                        </dt>
+                                        <dd>{template.qualityRating}</dd>
                                     </div>
-                                    {template.qualityRating && (
-                                        <div className="flex justify-between gap-3">
-                                            <dt className="text-muted-foreground">
-                                                Qualidade
-                                            </dt>
-                                            <dd>{template.qualityRating}</dd>
-                                        </div>
-                                    )}
+                                )}
                             </dl>
                         </section>
                         <section className="bg-card rounded-xl border p-6">
@@ -348,9 +350,11 @@ export default function TemplateShow({ template, permissions }: Props) {
                                                 {historyLabel(entry.event)}
                                             </p>
                                             <p className="text-muted-foreground mt-1 text-xs">
-                                                {entry.newStatus ??
-                                                    entry.newCategory ??
-                                                    'Registro'}
+                                                {entry.newQualityRating
+                                                    ? `${entry.oldQualityRating ?? 'Sem classificação'} → ${entry.newQualityRating}`
+                                                    : (entry.newStatus ??
+                                                      entry.newCategory ??
+                                                      'Registro')}
                                                 {entry.createdAt
                                                     ? ` · ${new Date(entry.createdAt).toLocaleString('pt-BR')}`
                                                     : ''}
@@ -379,6 +383,7 @@ function historyLabel(event: string): string {
             submitted: 'Enviado para análise',
             status_changed: 'Status atualizado',
             category_changed: 'Categoria recategorizada',
+            quality_changed: 'Qualidade atualizada',
             deleted: 'Removido na Meta',
         }[event] ?? 'Alteração registrada'
     );

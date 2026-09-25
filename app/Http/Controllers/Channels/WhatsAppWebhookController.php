@@ -184,13 +184,28 @@ class WhatsAppWebhookController extends Controller
         }
 
         foreach ($changes as $change) {
-            if (! is_array($change) || ($change['field'] ?? null) !== 'messages') {
+            if (! is_array($change)) {
                 continue;
             }
 
+            $field = $change['field'] ?? null;
             $value = $change['value'] ?? [];
 
             if (! is_array($value)) {
+                continue;
+            }
+
+            if (is_string($field) && in_array($field, [
+                'message_template_status_update',
+                'template_category_update',
+                'message_template_quality_update',
+            ], true)) {
+                $this->dispatchTemplateEvent($account, $entry, $payload, $field, $value);
+
+                continue;
+            }
+
+            if ($field !== 'messages') {
                 continue;
             }
 
@@ -241,6 +256,36 @@ class WhatsAppWebhookController extends Controller
                 }
             }
         }
+    }
+
+    private function dispatchTemplateEvent(
+        WhatsAppAccount $account,
+        array $entry,
+        array $payload,
+        string $field,
+        array $value,
+    ): void {
+        $phoneNumber = WhatsAppPhoneNumber::query()
+            ->where('whatsapp_account_id', $account->getKey())
+            ->whereHas('channel', fn ($query) => $query->where('type', ChannelType::WhatsApp))
+            ->with('channel')
+            ->first();
+        $channel = $phoneNumber?->channel;
+
+        if ($channel === null || $channel->type !== ChannelType::WhatsApp) {
+            return;
+        }
+
+        $itemPayload = $payload;
+        $itemPayload['entry'] = [[
+            'id' => $entry['id'],
+            'changes' => [[
+                'field' => $field,
+                'value' => $value,
+            ]],
+        ]];
+
+        ProcessWhatsAppWebhook::dispatch($channel->getKey(), $itemPayload);
     }
 
     private function hasValidOwnAppSignature(string $rawBody, string $signature): bool

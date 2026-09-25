@@ -1,0 +1,20 @@
+{
+    "object": "whatsapp_business_account",
+    "entry": [
+        {
+            "id": "waba-fixture",
+            "changes": [
+                {
+                    "field": "message_template_status_update",
+                    "value": {
+                        "event": "REJECTED",
+                        "message_template_id": "meta-template-ticket10",
+                        "message_template_name": "consulta_amanha",
+                        "message_template_language": "pt_BR",
+                        "reason": "INCORRECT_FORMAT"
+                    }
+                }
+            ]
+        }
+    ]
+}

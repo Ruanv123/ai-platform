@@ -131,6 +131,30 @@ final class WhatsAppTemplateService
         });
     }
 
+    public function updateFromWebhook(WhatsAppAccount $account, string $field, array $value): bool
+    {
+        $metaTemplateId = $this->scalar($value['message_template_id'] ?? null);
+
+        if ($metaTemplateId === null) {
+            return false;
+        }
+
+        $template = $account->templates()
+            ->where('meta_template_id', $metaTemplateId)
+            ->first();
+
+        if ($template === null) {
+            return false;
+        }
+
+        return match ($field) {
+            'message_template_status_update' => $this->updateStatusFromWebhook($template, $value),
+            'template_category_update' => $this->updateCategoryFromWebhook($template, $value),
+            'message_template_quality_update' => $this->updateQualityFromWebhook($template, $value),
+            default => false,
+        };
+    }
+
     public function replaceComponents(WhatsAppTemplate $template, array $components): void
     {
         DB::transaction(function () use ($template, $components): void {
@@ -254,6 +278,7 @@ final class WhatsAppTemplateService
         return match (Str::upper(trim((string) $reason))) {
             'ABUSIVE_CONTENT',
             'SCAM' => 'A Meta identificou conteúdo abusivo ou enganoso. Remova promessas, ameaças e linguagem que possa induzir o Contato ao erro.',
+            'INCORRECT_FORMAT',
             'INVALID_FORMAT' => 'A estrutura do Template não segue o formato aceito. Confira as variáveis, botões e limites de caracteres.',
             'INCORRECT_CATEGORY' => 'A categoria escolhida não corresponde ao conteúdo. Escolha Utilidade para avisos operacionais e Marketing apenas para divulgação.',
             'TAG_CONTENT_MISMATCH' => 'O conteúdo não corresponde à categoria ou às tags declaradas. Revise o objetivo e a categoria do Template.',
@@ -430,6 +455,125 @@ final class WhatsAppTemplateService
         return $this->scalar($rating);
     }
 
+    private function updateStatusFromWebhook(WhatsAppTemplate $template, array $value): bool
+    {
+        $status = $this->webhookStatus($value['event'] ?? null);
+
+        if ($status === null) {
+            return false;
+        }
+
+        $oldStatus = $template->status->value;
+        $oldCategory = $template->assigned_category?->value;
+        $reason = $status === WhatsAppTemplateStatus::Rejected
+            ? $this->scalar($value['reason'] ?? ($value['rejected_reason'] ?? null))
+            : null;
+        $hasChanged = $oldStatus !== $status->value || $template->rejection_reason !== $reason;
+
+        DB::transaction(function () use ($template, $status, $reason, $hasChanged, $oldStatus, $oldCategory): void {
+            $template->forceFill([
+                'status' => $status,
+                'rejection_reason' => $reason,
+                'rejection_explanation' => $this->explainRejection($reason),
+                'last_synced_at' => now(),
+            ])->save();
+
+            if ($hasChanged) {
+                $this->recordChange(
+                    $template,
+                    'status_changed',
+                    $oldStatus,
+                    $status->value,
+                    $oldCategory,
+                    $oldCategory,
+                    $reason,
+                );
+            }
+        });
+
+        return true;
+    }
+
+    private function updateCategoryFromWebhook(WhatsAppTemplate $template, array $value): bool
+    {
+        $category = $this->category($value['new_category'] ?? null);
+
+        if ($category === null) {
+            return false;
+        }
+
+        $oldStatus = $template->status->value;
+        $oldCategory = $template->assigned_category?->value;
+
+        DB::transaction(function () use ($template, $category, $oldStatus, $oldCategory): void {
+            $template->forceFill([
+                'assigned_category' => $category,
+                'last_synced_at' => now(),
+            ])->save();
+
+            if ($oldCategory !== $category->value) {
+                $this->recordChange(
+                    $template,
+                    'category_changed',
+                    $oldStatus,
+                    $oldStatus,
+                    $oldCategory,
+                    $category->value,
+                );
+            }
+        });
+
+        return true;
+    }
+
+    private function updateQualityFromWebhook(WhatsAppTemplate $template, array $value): bool
+    {
+        $qualityRating = $this->scalar($value['new_quality_score'] ?? null);
+
+        if ($qualityRating === null) {
+            return false;
+        }
+
+        $oldQualityRating = $template->quality_rating;
+        $status = $template->status->value;
+        $category = $template->assigned_category?->value;
+
+        DB::transaction(function () use ($template, $qualityRating, $oldQualityRating, $status, $category): void {
+            $template->forceFill([
+                'quality_rating' => $qualityRating,
+                'last_synced_at' => now(),
+            ])->save();
+
+            if ($oldQualityRating !== $qualityRating) {
+                $this->recordChange(
+                    $template,
+                    'quality_changed',
+                    $status,
+                    $status,
+                    $category,
+                    $category,
+                    null,
+                    $oldQualityRating,
+                    $qualityRating,
+                );
+            }
+        });
+
+        return true;
+    }
+
+    private function webhookStatus(mixed $event): ?WhatsAppTemplateStatus
+    {
+        return match (Str::upper((string) $event)) {
+            'APPROVED' => WhatsAppTemplateStatus::Approved,
+            'REJECTED', 'IN_APPEAL' => WhatsAppTemplateStatus::Rejected,
+            'PAUSED' => WhatsAppTemplateStatus::Paused,
+            'DISABLED', 'LIMIT_EXCEEDED' => WhatsAppTemplateStatus::Disabled,
+            'DELETED', 'PENDING_DELETION' => WhatsAppTemplateStatus::Deleted,
+            default => null,
+        };
+    }
+
     private function request(WhatsAppAccount $account): PendingRequest
     {
         return Http::withToken($account->access_token)
@@ -489,6 +633,8 @@ final class WhatsAppTemplateService
         ?string $oldCategory = null,
         ?string $newCategory = null,
         ?string $reason = null,
+        ?string $oldQualityRating = null,
+        ?string $newQualityRating = null,
     ): void {
         WhatsAppTemplateHistory::create([
             'whatsapp_template_id' => $template->getKey(),
@@ -497,6 +643,8 @@ final class WhatsAppTemplateService
             'new_status' => $newStatus,
             'old_category' => $oldCategory,
             'new_category' => $newCategory,
+            'old_quality_rating' => $oldQualityRating,
+            'new_quality_rating' => $newQualityRating,
             'reason' => $reason,
             'explanation' => $this->explainRejection($reason),
             'created_at' => now(),
