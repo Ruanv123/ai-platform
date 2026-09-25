@@ -188,6 +188,8 @@ Route::middleware(['auth', EnsureUserHasTeam::class])->group(function () {
         ->name('channels.whatsapp.profile.texts');
     Route::post('channels/whatsapp/{channel}/profile/photo', [WhatsAppController::class, 'updateProfilePicture'])
         ->name('channels.whatsapp.profile.photo');
+    Route::post('channels/whatsapp/{channel}/profile/display-name', [WhatsAppController::class, 'requestDisplayName'])
+        ->name('channels.whatsapp.profile.display-name');
     Route::delete('channels/whatsapp/{channel}', [WhatsAppController::class, 'destroy'])
         ->name('channels.whatsapp.destroy');
     Route::patch('channels/whatsapp-test/{whatsappTestChannel}', [WhatsAppTestController::class, 'update'])

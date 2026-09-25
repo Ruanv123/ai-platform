@@ -57,7 +57,7 @@ it('defers the live Profile until the Perfil tab is open and reads the supported
             'verified_name' => 'Loja Aurora',
             'name_status' => 'APPROVED',
             'new_display_name' => 'Aurora Presentes',
-            'new_name_status' => 'PENDING',
+            'new_name_status' => 'PENDING_REVIEW',
         ]);
     });
 
@@ -79,7 +79,7 @@ it('defers the live Profile until the Perfil tab is open and reads the supported
             ->where('whatsappProfile.data.displayName', 'Loja Aurora')
             ->where('whatsappProfile.data.nameStatus', 'APPROVED')
             ->where('whatsappProfile.data.newDisplayName', 'Aurora Presentes')
-            ->where('whatsappProfile.data.newNameStatus', 'PENDING')
+            ->where('whatsappProfile.data.newNameStatus', 'PENDING_REVIEW')
             ->where('whatsappProfile.data.about', 'Atendimento todos os dias')
             ->where('whatsappProfile.data.description', 'Loja de presentes')
             ->where('whatsappProfile.data.address', 'Rua das Flores, 10')

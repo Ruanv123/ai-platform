@@ -9,6 +9,7 @@ use App\Enums\WhatsAppConnectionMethod;
 use App\Exceptions\WhatsAppProfileException;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Channels\SaveWhatsAppChannelRequest;
+use App\Http\Requests\Channels\UpdateWhatsAppDisplayNameRequest;
 use App\Http\Requests\Channels\UpdateWhatsAppProfilePictureRequest;
 use App\Http\Requests\Channels\UpdateWhatsAppProfileTextsRequest;
 use App\Models\Agent;
@@ -285,6 +286,29 @@ class WhatsAppController extends Controller
         Inertia::flash('toast', [
             'type' => 'success',
             'message' => 'Foto do Perfil do WhatsApp atualizada com sucesso.',
+        ]);
+
+        return to_route('channels.whatsapp.edit', ['tab' => 'perfil']);
+    }
+
+    public function requestDisplayName(
+        UpdateWhatsAppDisplayNameRequest $request,
+        Channel $channel,
+    ): RedirectResponse {
+        try {
+            $this->profileProvider->requestDisplayName($channel, $request->validated('name'));
+        } catch (WhatsAppProfileException $exception) {
+            Inertia::flash('toast', [
+                'type' => 'error',
+                'message' => $exception->getMessage(),
+            ]);
+
+            return to_route('channels.whatsapp.edit', ['tab' => 'perfil']);
+        }
+
+        Inertia::flash('toast', [
+            'type' => 'success',
+            'message' => 'Pedido de alteração do nome enviado para análise da Meta.',
         ]);
 
         return to_route('channels.whatsapp.edit', ['tab' => 'perfil']);
