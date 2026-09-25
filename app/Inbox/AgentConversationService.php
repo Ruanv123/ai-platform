@@ -17,6 +17,7 @@ use App\Models\Team;
 use App\Models\User;
 use App\WhatsApp\Output\WhatsAppOutputAdapterFactory;
 use App\WhatsApp\WhatsAppCustomerCareWindow;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
 use Symfony\Component\HttpKernel\Exception\ConflictHttpException;
 use Throwable;
@@ -371,7 +372,7 @@ final class AgentConversationService
     }
 
     /**
-     * @param  array{type?: string, content?: string, template?: string, parameters?: list<string>}  $data
+     * @param  array{type?: string, content?: string, template?: string, parameters?: list<string>, media?: UploadedFile}  $data
      */
     public function send(Contact $contact, Channel $channel, User $user, array $data): Message
     {
@@ -384,6 +385,7 @@ final class AgentConversationService
         $content = trim((string) ($data['content'] ?? ''));
         $template = trim((string) ($data['template'] ?? ''));
         $parameters = $data['parameters'] ?? [];
+        $media = $data['media'] ?? null;
 
         DB::transaction(function () use ($contact, $channel, $user): void {
             $state = $this->lockState($contact, $channel);
@@ -396,28 +398,32 @@ final class AgentConversationService
             }
         });
 
-        return DB::transaction(function () use ($contact, $channel, $user, $type, $content, $template, $parameters): Message {
+        return DB::transaction(function () use ($contact, $channel, $user, $type, $content, $template, $parameters, $media): Message {
             $state = $this->lockState($contact, $channel);
             if (! $state->is_paused || $state->assigned_user_id !== $user->getKey()) {
                 throw new ConflictHttpException('A responsabilidade da conversa mudou. Atualize o atendimento e tente novamente.');
             }
 
-            if ($type === 'text' && $this->customerCareWindow->hasExpired($channel, $this->lastIncomingMessage($contact, $channel))) {
+            if ($type !== 'template' && $this->customerCareWindow->hasExpired($channel, $this->lastIncomingMessage($contact, $channel))) {
                 return $this->recordFailedMessage(
                     $channel,
                     $contact,
                     $user,
                     $type,
-                    $content,
+                    $media instanceof UploadedFile ? $media->getClientOriginalName() : $content,
                     'customer_care_window_closed',
                 );
             }
 
             try {
                 $adapter = $this->outputAdapterFactory->make($channel);
-                $message = $type === 'template'
-                    ? $adapter->sendTemplate($channel, $contact, $template, $parameters)
-                    : $adapter->sendText($channel, $contact, $content);
+                $message = match ($type) {
+                    'template' => $adapter->sendTemplate($channel, $contact, $template, $parameters),
+                    'image', 'document', 'video' => $media instanceof UploadedFile
+                        ? $adapter->sendMedia($channel, $contact, $media, $type)
+                        : throw new \InvalidArgumentException('O arquivo enviado não foi encontrado.'),
+                    default => $adapter->sendText($channel, $contact, $content),
+                };
             } catch (Throwable $exception) {
                 report($exception);
 
@@ -426,7 +432,9 @@ final class AgentConversationService
                     $contact,
                     $user,
                     $type,
-                    $type === 'template' ? $this->templateContent($template, $parameters) : $content,
+                    $type === 'template'
+                        ? $this->templateContent($template, $parameters)
+                        : ($media instanceof UploadedFile ? $media->getClientOriginalName() : $content),
                     'provider_error',
                 );
             }
@@ -504,7 +512,7 @@ final class AgentConversationService
             'contact_id' => $contact->getKey(),
             'channel_id' => $channel->getKey(),
             'direction' => MessageDirection::Outgoing,
-            'payload_type' => $type === 'template' ? 'template' : 'text',
+            'payload_type' => in_array($type, ['template', 'image', 'document', 'video'], true) ? $type : 'text',
             'provider_message_id' => null,
             'sent_by_user_id' => $user->getKey(),
             'content' => $content,

@@ -9,7 +9,9 @@ use App\Models\WhatsAppAccount;
 use App\Models\WhatsAppTemplate;
 use App\WhatsApp\Output\AbstractWhatsAppOutputAdapter;
 use Illuminate\Http\Client\PendingRequest;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Http;
+use InvalidArgumentException;
 use RuntimeException;
 
 final class MetaOutputAdapter extends AbstractWhatsAppOutputAdapter
@@ -38,6 +40,59 @@ final class MetaOutputAdapter extends AbstractWhatsAppOutputAdapter
         }
 
         return $this->recordOutgoingText($channel, $contact, $content, $providerMessageId);
+    }
+
+    public function sendMedia(Channel $channel, Contact $contact, UploadedFile $file, string $type): Message
+    {
+        $this->assertContactBelongsToChannel($channel, $contact);
+
+        if (! in_array($type, ['image', 'document', 'video'], true)) {
+            throw new InvalidArgumentException('Tipo de mídia não suportado.');
+        }
+
+        $media = $this->storeOutgoingMedia($file);
+
+        try {
+            $phoneNumber = $this->phoneNumber($channel);
+            $uploadedMedia = $this->postStoredMedia(
+                $this->request($channel),
+                $this->mediaUrl($phoneNumber),
+                ['messaging_product' => 'whatsapp'],
+                $media,
+            );
+            $mediaId = $uploadedMedia->json('id');
+
+            if (! is_string($mediaId) || blank($mediaId)) {
+                throw new RuntimeException('A Meta não retornou o id da mídia enviada.');
+            }
+
+            $mediaContent = ['id' => $mediaId];
+            if ($type === 'document') {
+                $mediaContent['filename'] = $media['filename'];
+            }
+
+            $response = $this->request($channel)->post(
+                $this->messagesUrl($phoneNumber),
+                [
+                    'messaging_product' => 'whatsapp',
+                    'recipient_type' => 'individual',
+                    'to' => $contact->phone,
+                    'type' => $type,
+                    $type => $mediaContent,
+                ],
+            )->throw();
+            $providerMessageId = $this->providerMessageId($response->json());
+
+            if ($providerMessageId === null) {
+                throw new RuntimeException('A Meta não retornou o id da Mensagem com mídia enviada.');
+            }
+
+            return $this->recordOutgoingMedia($channel, $contact, $type, $media, $providerMessageId);
+        } catch (\Throwable $exception) {
+            $this->deleteStoredMedia($media);
+
+            throw $exception;
+        }
     }
 
     public function sendTemplate(Channel $channel, Contact $contact, string|WhatsAppTemplate $template, array $parameters = []): Message
@@ -152,6 +207,14 @@ final class MetaOutputAdapter extends AbstractWhatsAppOutputAdapter
         $graphVersion = trim((string) config('services.whatsapp.graph_api_version', 'v23.0'), '/');
 
         return $graphUrl.'/'.$graphVersion.'/'.rawurlencode($phoneNumberId).'/messages';
+    }
+
+    private function mediaUrl(string $phoneNumberId): string
+    {
+        $graphUrl = rtrim((string) config('services.whatsapp.graph_api_url', 'https://graph.facebook.com'), '/');
+        $graphVersion = trim((string) config('services.whatsapp.graph_api_version', 'v23.0'), '/');
+
+        return $graphUrl.'/'.$graphVersion.'/'.rawurlencode($phoneNumberId).'/media';
     }
 
     /**

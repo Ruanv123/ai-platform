@@ -5,14 +5,18 @@ import {
     ChevronLeft,
     ChevronRight,
     Clock3,
+    FileText,
+    ImagePlus,
     PanelRight,
     PanelRightClose,
     Search,
     Send,
     UserRound,
     Users,
+    Video,
 } from 'lucide-react';
 import {
+    type ChangeEvent,
     type FormEvent,
     type ReactNode,
     useCallback,
@@ -157,6 +161,83 @@ type Props = {
     selected: SelectedConversation | null;
     currentUserId: number;
 };
+
+type MessageType = 'text' | 'template' | 'image' | 'document' | 'video';
+
+type OutgoingMediaOption = {
+    label: string;
+    accept: string;
+    extensions: string[];
+    mimeTypes: string[];
+    maxBytes: number;
+    maxLabel: string;
+    invalidTypeMessage: string;
+    invalidSizeMessage: string;
+};
+
+const outgoingMediaOptions: Record<'image' | 'document' | 'video', OutgoingMediaOption> = {
+    image: {
+        label: 'Imagem',
+        accept: '.jpg,.jpeg,.png,image/jpeg,image/png',
+        extensions: ['jpg', 'jpeg', 'png'],
+        mimeTypes: ['image/jpeg', 'image/png'],
+        maxBytes: 5 * 1024 * 1024,
+        maxLabel: '5 MB',
+        invalidTypeMessage: 'Escolha uma imagem JPEG ou PNG.',
+        invalidSizeMessage: 'A imagem deve ter no máximo 5 MB.',
+    },
+    document: {
+        label: 'Documento',
+        accept: '.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt',
+        extensions: ['pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'txt'],
+        mimeTypes: [
+            'application/pdf',
+            'application/msword',
+            'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+            'application/vnd.ms-excel',
+            'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            'application/vnd.ms-powerpoint',
+            'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+            'text/plain',
+        ],
+        maxBytes: 100 * 1024 * 1024,
+        maxLabel: '100 MB',
+        invalidTypeMessage: 'Escolha um documento PDF, DOC, DOCX, XLS, XLSX, PPT, PPTX ou TXT.',
+        invalidSizeMessage: 'O documento deve ter no máximo 100 MB.',
+    },
+    video: {
+        label: 'Vídeo',
+        accept: '.mp4,.3gp,video/mp4,video/3gpp',
+        extensions: ['mp4', '3gp'],
+        mimeTypes: ['video/mp4', 'video/3gpp'],
+        maxBytes: 16 * 1024 * 1024,
+        maxLabel: '16 MB',
+        invalidTypeMessage: 'Escolha um vídeo MP4 ou 3GP.',
+        invalidSizeMessage: 'O vídeo deve ter no máximo 16 MB.',
+    },
+};
+
+const deliveryStatusLabels: Record<string, string> = {
+    pending: 'Aguardando envio',
+    sent: 'Enviada',
+    delivered: 'Entregue',
+    read: 'Lida',
+    failed: 'Falhou',
+};
+
+function outgoingMediaValidationMessage(file: File, type: 'image' | 'document' | 'video'): string | null {
+    const option = outgoingMediaOptions[type];
+    const extension = file.name.split('.').pop()?.toLowerCase();
+    if (!option.extensions.includes(extension ?? '') || (file.type !== '' && !option.mimeTypes.includes(file.type))) {
+        return option.invalidTypeMessage;
+    }
+
+    if (file.size > option.maxBytes) {
+        return option.invalidSizeMessage;
+    }
+
+    return null;
+}
 
 const realtimeProps = ['conversations', 'counts', 'selected'];
 
@@ -520,7 +601,7 @@ function SelectedConversationView({
     currentUserId: number;
 }) {
     const [showDetails, setShowDetails] = useState(false);
-    const [messageType, setMessageType] = useState<'text' | 'template'>('text');
+    const [messageType, setMessageType] = useState<MessageType>('text');
 
     return (
         <>
@@ -549,15 +630,17 @@ function ConversationThread({
     currentUserId: number;
     showDetails: boolean;
     onToggleDetails: () => void;
-    messageType: 'text' | 'template';
-    onMessageTypeChange: (type: 'text' | 'template') => void;
+    messageType: MessageType;
+    onMessageTypeChange: (type: MessageType) => void;
 }) {
     const form = useForm({
         type: messageType,
         content: '',
         template: '',
         parameters: '',
+        media: null as File | null,
     });
+    const mediaInputRef = useRef<HTMLInputElement | null>(null);
     const messageScrollRef = useRef<HTMLDivElement | null>(null);
     const shouldFollowLatestRef = useRef(true);
     const hasPlacedInitialScrollRef = useRef(false);
@@ -612,18 +695,63 @@ function ConversationThread({
         form.transform((data) => ({
             ...data,
             type: messageType,
-            parameters: data.parameters
-                .split('\n')
-                .map((parameter) => parameter.trim())
-                .filter(Boolean),
+            parameters:
+                messageType === 'template'
+                    ? data.parameters
+                          .split('\n')
+                          .map((parameter) => parameter.trim())
+                          .filter(Boolean)
+                    : [],
         }));
         form.post(messagesStore({
             contact: selected.contact.id,
             channel: selected.channel.id,
         }).url, {
             preserveScroll: true,
-            onSuccess: () => form.reset('content', 'template', 'parameters'),
+            onSuccess: () => {
+                form.reset('content', 'template', 'parameters', 'media');
+                if (mediaInputRef.current !== null) {
+                    mediaInputRef.current.value = '';
+                }
+            },
         });
+    };
+
+    const selectMessageType = (type: MessageType) => {
+        onMessageTypeChange(type);
+        form.clearErrors('media');
+
+        if (type !== messageType) {
+            form.setData('media', null);
+            if (mediaInputRef.current !== null) {
+                mediaInputRef.current.value = '';
+            }
+        }
+    };
+
+    const selectMediaFile = (event: ChangeEvent<HTMLInputElement>) => {
+        const file = event.currentTarget.files?.[0] ?? null;
+
+        if (file === null) {
+            form.setData('media', null);
+            return;
+        }
+
+        if (messageType !== 'image' && messageType !== 'document' && messageType !== 'video') {
+            form.setData('media', null);
+            return;
+        }
+
+        const error = outgoingMediaValidationMessage(file, messageType);
+        if (error !== null) {
+            form.setData('media', null);
+            form.setError('media', error);
+            event.currentTarget.value = '';
+            return;
+        }
+
+        form.clearErrors('media');
+        form.setData('media', file);
     };
 
     const takeConversation = () => {
@@ -796,10 +924,10 @@ function ConversationThread({
                     </div>
                 )}
                 <form onSubmit={sendMessage} className="grid gap-2">
-                    <div className="flex gap-1">
+                    <div className="flex flex-wrap gap-1">
                         <button
                             type="button"
-                            onClick={() => onMessageTypeChange('text')}
+                            onClick={() => selectMessageType('text')}
                             className={cn(
                                 'rounded px-2 py-1 text-xs font-medium',
                                 messageType === 'text'
@@ -811,7 +939,7 @@ function ConversationThread({
                         </button>
                         <button
                             type="button"
-                            onClick={() => onMessageTypeChange('template')}
+                            onClick={() => selectMessageType('template')}
                             className={cn(
                                 'rounded px-2 py-1 text-xs font-medium',
                                 messageType === 'template'
@@ -821,6 +949,31 @@ function ConversationThread({
                         >
                             Template
                         </button>
+                        {(['image', 'document', 'video'] as const).map((type) => {
+                            const Icon = type === 'image'
+                                ? ImagePlus
+                                : type === 'document'
+                                  ? FileText
+                                  : Video;
+
+                            return (
+                                <button
+                                    key={type}
+                                    type="button"
+                                    onClick={() => selectMessageType(type)}
+                                    aria-pressed={messageType === type}
+                                    className={cn(
+                                        'inline-flex items-center gap-1 rounded px-2 py-1 text-xs font-medium',
+                                        messageType === type
+                                            ? 'bg-muted text-foreground'
+                                            : 'text-muted-foreground',
+                                    )}
+                                >
+                                    <Icon className="size-3.5" />
+                                    {outgoingMediaOptions[type].label}
+                                </button>
+                            );
+                        })}
                     </div>
                     {messageType === 'template' ? (
                         <>
@@ -845,7 +998,7 @@ function ConversationThread({
                                 disabled={!selected.canSend || form.processing}
                             />
                         </>
-                    ) : (
+                    ) : messageType === 'text' ? (
                         <textarea
                             value={form.data.content}
                             onChange={(event) =>
@@ -863,10 +1016,41 @@ function ConversationThread({
                                 form.processing
                             }
                         />
+                    ) : (
+                        <div className="grid gap-1.5">
+                            <label
+                                htmlFor="inbox-media"
+                                className="text-muted-foreground text-xs"
+                            >
+                                {outgoingMediaOptions[messageType].label} · até{' '}
+                                {outgoingMediaOptions[messageType].maxLabel}
+                            </label>
+                            <input
+                                ref={mediaInputRef}
+                                id="inbox-media"
+                                type="file"
+                                accept={outgoingMediaOptions[messageType].accept}
+                                onChange={selectMediaFile}
+                                disabled={
+                                    !selected.canSend ||
+                                    !selected.window.open ||
+                                    form.processing
+                                }
+                                className="border-border/70 file:bg-muted file:text-foreground rounded-lg border px-3 py-2 text-xs file:mr-3 file:rounded file:border-0 file:px-2 file:py-1"
+                            />
+                            <span className="text-muted-foreground text-xs">
+                                {form.data.media?.name ?? 'Selecione um arquivo para anexar.'}
+                            </span>
+                        </div>
                     )}
                     {form.errors.content && (
                         <p className="text-destructive text-xs">
                             {form.errors.content}
+                        </p>
+                    )}
+                    {form.errors.media && (
+                        <p className="text-destructive text-xs" role="alert">
+                            {form.errors.media}
                         </p>
                     )}
                     <div className="flex flex-wrap items-center gap-3">
@@ -911,7 +1095,7 @@ function ConversationThread({
                             disabled={
                                 !selected.canSend ||
                                 form.processing ||
-                                (messageType === 'text' &&
+                                (messageType !== 'template' &&
                                     !selected.window.open)
                             }
                         >
@@ -972,7 +1156,7 @@ function MessageBubble({ message }: { message: Message }) {
                             <a href={message.mediaUrl} target="_blank" rel="noreferrer">
                                 <img
                                     src={message.mediaUrl}
-                                    alt={message.mediaFilename ?? 'Imagem enviada pelo Contato'}
+                                    alt={message.mediaFilename ?? 'Imagem da mensagem'}
                                     className="max-h-72 max-w-full rounded-lg object-contain"
                                     onError={() => setMediaUnavailable(true)}
                                 />
@@ -1043,6 +1227,9 @@ function MessageBubble({ message }: { message: Message }) {
                     )}
                 >
                     {message.sender} · {formatDate(message.createdAt)}
+                    {outgoing && message.deliveryStatus !== null && (
+                        <> · {deliveryStatusLabels[message.deliveryStatus] ?? 'Enviada'}</>
+                    )}
                 </span>
             </div>
         </div>
