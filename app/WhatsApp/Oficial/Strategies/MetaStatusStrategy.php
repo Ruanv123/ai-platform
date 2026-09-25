@@ -12,6 +12,11 @@ use Illuminate\Support\Facades\DB;
 
 final class MetaStatusStrategy implements MetaStrategy
 {
+    public function shouldDispatchResponse(): bool
+    {
+        return false;
+    }
+
     /**
      * @param  array<string, mixed>  $payload
      */
