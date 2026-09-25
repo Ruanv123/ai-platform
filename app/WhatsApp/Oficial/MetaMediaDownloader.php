@@ -8,6 +8,8 @@ use RuntimeException;
 
 final class MetaMediaDownloader
 {
+    public function __construct(private readonly MetaGraphApiResponseHandler $responseHandler) {}
+
     /**
      * Download media from Meta's two-step media API.
      *
@@ -31,8 +33,9 @@ final class MetaMediaDownloader
         $metadata = Http::withToken($account->access_token)
             ->connectTimeout(3)
             ->timeout(10)
-            ->get($graphUrl.'/'.$graphVersion.'/'.rawurlencode($mediaId))
-            ->throw();
+            ->get($graphUrl.'/'.$graphVersion.'/'.rawurlencode($mediaId));
+        $this->responseHandler->markChannelUnavailableForInvalidToken($metadata, $channel);
+        $metadata->throw();
         $mediaUrl = $metadata->json('url');
 
         if (! is_string($mediaUrl) || blank($mediaUrl)) {
@@ -42,8 +45,9 @@ final class MetaMediaDownloader
         $response = Http::withToken($account->access_token)
             ->connectTimeout(3)
             ->timeout(20)
-            ->get($mediaUrl)
-            ->throw();
+            ->get($mediaUrl);
+        $this->responseHandler->markChannelUnavailableForInvalidToken($response, $channel);
+        $response->throw();
         $resolvedMimeType = $mimeType
             ?? $this->stringValue($metadata->json('mime_type'))
             ?? $this->contentType($response->header('Content-Type'));

@@ -17,6 +17,7 @@ use App\Models\Agent;
 use App\Models\Channel;
 use App\Models\WhatsAppAccount;
 use App\WhatsApp\Oficial\MetaErrorTranslator;
+use App\WhatsApp\Oficial\MetaGraphApiResponseHandler;
 use App\WhatsApp\Profiles\WhatsAppProfileProvider;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\RedirectResponse;
@@ -161,8 +162,11 @@ class WhatsAppController extends Controller
     /**
      * Test the saved credentials against the WhatsApp Graph API.
      */
-    public function test(Channel $channel, MetaErrorTranslator $errorTranslator): RedirectResponse
-    {
+    public function test(
+        Channel $channel,
+        MetaErrorTranslator $errorTranslator,
+        MetaGraphApiResponseHandler $responseHandler,
+    ): RedirectResponse {
         Gate::authorize('update', $channel);
 
         $phoneNumber = $channel->whatsappPhoneNumber()->firstOrFail();
@@ -175,8 +179,9 @@ class WhatsAppController extends Controller
                 ->withToken($account->access_token)
                 ->get(
                     rtrim((string) config('services.whatsapp.graph_api_url'), '/').'/'.config('services.whatsapp.graph_api_version').'/'.$phoneNumber->phone_number_id,
-                    ['fields' => 'display_phone_number,verified_name,quality_rating'],
+                    ['fields' => 'display_phone_number,verified_name,quality_rating,name_status,messaging_limit_tier'],
                 );
+            $responseHandler->markChannelUnavailableForInvalidToken($response, $channel);
 
             if ($response->successful()) {
                 DB::transaction(function () use ($channel, $phoneNumber, $account, $response, $testedAt): void {
@@ -188,6 +193,8 @@ class WhatsAppController extends Controller
                         'display_phone_number' => $response->json('display_phone_number'),
                         'verified_name' => $response->json('verified_name'),
                         'quality_rating' => $response->json('quality_rating'),
+                        'name_status' => $response->json('name_status'),
+                        'messaging_limit_tier' => $response->json('messaging_limit_tier'),
                     ]);
                     $account->update(['last_tested_at' => $testedAt]);
                 });
@@ -214,6 +221,8 @@ class WhatsAppController extends Controller
                 'display_phone_number' => null,
                 'verified_name' => null,
                 'quality_rating' => null,
+                'name_status' => null,
+                'messaging_limit_tier' => null,
             ]);
             $account->update(['last_tested_at' => $testedAt]);
         });
@@ -325,6 +334,8 @@ class WhatsAppController extends Controller
             'displayPhoneNumber' => $phoneNumber?->display_phone_number,
             'verifiedName' => $phoneNumber?->verified_name,
             'qualityRating' => $phoneNumber?->quality_rating,
+            'nameStatus' => $phoneNumber?->name_status,
+            'messagingLimitTier' => $phoneNumber?->messaging_limit_tier,
             'credentialsSavedAt' => $account?->created_at?->toIso8601String(),
             'lastTestedAt' => $account?->last_tested_at?->toIso8601String(),
             'webhookVerifiedAt' => $account?->webhook_verified_at?->toIso8601String(),

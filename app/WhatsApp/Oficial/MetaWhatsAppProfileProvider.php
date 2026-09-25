@@ -17,7 +17,10 @@ final class MetaWhatsAppProfileProvider implements WhatsAppProfileProvider
 
     private const NUMBER_FIELDS = 'verified_name,name_status,new_display_name,new_name_status';
 
-    public function __construct(private MetaErrorTranslator $errorTranslator) {}
+    public function __construct(
+        private MetaErrorTranslator $errorTranslator,
+        private MetaGraphApiResponseHandler $responseHandler,
+    ) {}
 
     public function capabilities(): WhatsAppProfileCapabilities
     {
@@ -45,6 +48,7 @@ final class MetaWhatsAppProfileProvider implements WhatsAppProfileProvider
                 ->timeout(10)
                 ->withToken($account->access_token)
                 ->get($numberUrl.'/whatsapp_business_profile', ['fields' => self::PROFILE_FIELDS]);
+            $this->responseHandler->markChannelUnavailableForInvalidToken($profile, $channel);
 
             if (! $profile->successful()) {
                 throw new WhatsAppProfileException($this->errorTranslator->translate($profile->json('error')));
@@ -54,6 +58,7 @@ final class MetaWhatsAppProfileProvider implements WhatsAppProfileProvider
                 ->timeout(10)
                 ->withToken($account->access_token)
                 ->get($numberUrl, ['fields' => self::NUMBER_FIELDS]);
+            $this->responseHandler->markChannelUnavailableForInvalidToken($number, $channel);
 
             if (! $number->successful()) {
                 throw new WhatsAppProfileException($this->errorTranslator->translate($number->json('error')));
@@ -120,6 +125,7 @@ final class MetaWhatsAppProfileProvider implements WhatsAppProfileProvider
                 ->timeout(10)
                 ->withToken($account->access_token)
                 ->post($url, $payload);
+            $this->responseHandler->markChannelUnavailableForInvalidToken($response, $channel);
 
             if (! $response->successful()) {
                 throw new WhatsAppProfileException($this->errorTranslator->translate($response->json('error')));
@@ -155,6 +161,7 @@ final class MetaWhatsAppProfileProvider implements WhatsAppProfileProvider
                     'file_type' => $mimeType,
                     'file_name' => 'whatsapp-profile.'.$extension,
                 ]));
+            $this->responseHandler->markChannelUnavailableForInvalidToken($session, $channel);
 
             if (! $session->successful()) {
                 throw new WhatsAppProfileException($this->errorTranslator->translate($session->json('error')));
@@ -175,6 +182,7 @@ final class MetaWhatsAppProfileProvider implements WhatsAppProfileProvider
                 ])
                 ->withBody($photo->getContent(), $mimeType)
                 ->post($baseUrl.'/'.$uploadId);
+            $this->responseHandler->markChannelUnavailableForInvalidToken($upload, $channel);
 
             if (! $upload->successful()) {
                 throw new WhatsAppProfileException($this->errorTranslator->translate($upload->json('error')));
@@ -193,6 +201,7 @@ final class MetaWhatsAppProfileProvider implements WhatsAppProfileProvider
                     'messaging_product' => 'whatsapp',
                     'profile_picture_handle' => $handle,
                 ]);
+            $this->responseHandler->markChannelUnavailableForInvalidToken($profile, $channel);
 
             if (! $profile->successful()) {
                 throw new WhatsAppProfileException($this->errorTranslator->translate($profile->json('error')));
@@ -218,6 +227,7 @@ final class MetaWhatsAppProfileProvider implements WhatsAppProfileProvider
                 ->timeout(10)
                 ->withToken($account->access_token)
                 ->post($url, ['new_display_name' => $displayName]);
+            $this->responseHandler->markChannelUnavailableForInvalidToken($response, $channel);
 
             if (! $response->successful()) {
                 throw new WhatsAppProfileException($this->errorTranslator->translate($response->json('error')));

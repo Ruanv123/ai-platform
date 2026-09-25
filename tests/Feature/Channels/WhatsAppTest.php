@@ -55,6 +55,10 @@ it('renders the WhatsApp channel without returning its secrets', function () {
         'app_id' => '987654321012345',
     ], [
         'phone_number_id' => '15551234567890',
+        'verified_name' => 'Clínica Exemplo',
+        'quality_rating' => 'GREEN',
+        'name_status' => 'APPROVED',
+        'messaging_limit_tier' => 'TIER_1K',
     ]);
 
     $channel->whatsappPhoneNumber->whatsappAccount->update([
@@ -69,6 +73,10 @@ it('renders the WhatsApp channel without returning its secrets', function () {
         ->where('whatsapp.id', $channel->id)
         ->where('whatsapp.appId', '987654321012345')
         ->where('whatsapp.status', 'connected')
+        ->where('whatsapp.verifiedName', 'Clínica Exemplo')
+        ->where('whatsapp.qualityRating', 'GREEN')
+        ->where('whatsapp.nameStatus', 'APPROVED')
+        ->where('whatsapp.messagingLimitTier', 'TIER_1K')
         ->where('webhookUrl', route('webhooks.whatsapp.app-proprio'))
         ->where('whatsapp.accessTokenSet', true)
         ->where('whatsapp.accessTokenMasked', '••••••••')
@@ -212,10 +220,12 @@ it('tests a WhatsApp connection and stores the Meta response on the number and a
     $phoneNumber->whatsappAccount->update(['access_token' => 'valid-token']);
     $endpoint = rtrim(config('services.whatsapp.graph_api_url'), '/').'/'.config('services.whatsapp.graph_api_version').'/15551234567890';
     Http::fake([
-        $endpoint.'?fields=display_phone_number%2Cverified_name%2Cquality_rating' => Http::response([
+        $endpoint.'?fields=display_phone_number%2Cverified_name%2Cquality_rating%2Cname_status%2Cmessaging_limit_tier' => Http::response([
             'display_phone_number' => '+55 11 99999-8888',
             'verified_name' => 'Empresa Teste',
             'quality_rating' => 'GREEN',
+            'name_status' => 'APPROVED',
+            'messaging_limit_tier' => 'TIER_1K',
         ]),
     ]);
 
@@ -234,6 +244,8 @@ it('tests a WhatsApp connection and stores the Meta response on the number and a
         ->and($phoneNumber->display_phone_number)->toBe('+55 11 99999-8888')
         ->and($phoneNumber->verified_name)->toBe('Empresa Teste')
         ->and($phoneNumber->quality_rating)->toBe('GREEN')
+        ->and($phoneNumber->name_status)->toBe('APPROVED')
+        ->and($phoneNumber->messaging_limit_tier)->toBe('TIER_1K')
         ->and($phoneNumber->whatsappAccount->last_tested_at)->not->toBeNull();
 });
 
@@ -243,7 +255,7 @@ it('translates a Meta connection error and stores the failed channel status', fu
     [$channel, $phoneNumber] = createWhatsAppChannel($user);
     $endpoint = rtrim(config('services.whatsapp.graph_api_url'), '/').'/'.config('services.whatsapp.graph_api_version').'/'.$phoneNumber->phone_number_id;
     Http::fake([
-        $endpoint.'?fields=display_phone_number%2Cverified_name%2Cquality_rating' => Http::response([
+        $endpoint.'?fields=display_phone_number%2Cverified_name%2Cquality_rating%2Cname_status%2Cmessaging_limit_tier' => Http::response([
             'error' => ['code' => 190, 'type' => 'OAuthException'],
         ], 401),
     ]);

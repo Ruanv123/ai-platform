@@ -47,6 +47,48 @@ const emptyReadiness: ChannelReadiness = {
     agent: null,
 };
 
+function formatQualityRating(rating: string | null): string {
+    if (rating === null) {
+        return '—';
+    }
+
+    return {
+        GREEN: 'Alta',
+        YELLOW: 'Média',
+        RED: 'Baixa',
+        UNKNOWN: 'Indisponível',
+    }[rating.toUpperCase()] ?? rating;
+}
+
+function formatNameStatus(status: string | null): string {
+    if (status === null) {
+        return '—';
+    }
+
+    return {
+        APPROVED: 'Aprovado',
+        PENDING: 'Em análise',
+        PENDING_REVIEW: 'Em análise',
+        DEFERRED: 'Análise adiada',
+        REJECTED: 'Recusado',
+        DECLINED: 'Recusado',
+        AVAILABLE_WITHOUT_REVIEW: 'Disponível sem revisão',
+        NONE: 'Não informado',
+    }[status.toUpperCase()] ?? status;
+}
+
+function formatMessagingLimitTier(tier: string | null): string {
+    if (tier === null) {
+        return '—';
+    }
+
+    if (tier.toUpperCase() === 'TIER_UNLIMITED') {
+        return 'Ilimitado';
+    }
+
+    return tier.replace(/^TIER_/i, 'Tier ');
+}
+
 export default function WhatsAppConnectionPanel({
     whatsapp,
     agents,
@@ -231,7 +273,15 @@ export default function WhatsAppConnectionPanel({
                                     },
                                     {
                                         label: 'Qualidade',
-                                        value: whatsapp.qualityRating,
+                                        value: formatQualityRating(whatsapp.qualityRating),
+                                    },
+                                    {
+                                        label: 'Limite de mensagens',
+                                        value: formatMessagingLimitTier(whatsapp.messagingLimitTier),
+                                    },
+                                    {
+                                        label: 'Estado do nome',
+                                        value: formatNameStatus(whatsapp.nameStatus),
                                     },
                                 ].map((fact) => (
                                     <div
@@ -242,7 +292,7 @@ export default function WhatsAppConnectionPanel({
                                             {fact.label}
                                         </dt>
                                         <dd className="text-sm font-medium tabular-nums">
-                                            {fact.value ?? '—'}
+                                            {fact.value}
                                         </dd>
                                     </div>
                                 ))}

@@ -23,6 +23,7 @@ final class MetaEventProcessor
         private readonly MetaMediaDownloader $mediaDownloader,
         private readonly IncomingMediaStorage $mediaStorage,
         private readonly IncomingMessageResponseDispatcher $responseDispatcher,
+        private readonly MetaAccountHealthProcessor $accountHealthProcessor,
     ) {}
 
     /**
@@ -32,7 +33,14 @@ final class MetaEventProcessor
      */
     public function process(Channel $channel, array $payload): void
     {
-        if (data_get($payload, 'entry.0.changes.0.field') !== 'messages') {
+        $field = data_get($payload, 'entry.0.changes.0.field');
+        $value = data_get($payload, 'entry.0.changes.0.value');
+
+        if ($field !== 'messages') {
+            if (is_string($field) && is_array($value)) {
+                $this->accountHealthProcessor->process($channel, $field, $value);
+            }
+
             return;
         }
 

@@ -8,6 +8,7 @@ use App\Models\Channel;
 use App\Models\Contact;
 use App\Models\Message;
 use App\Models\WhatsAppTemplate;
+use Closure;
 use Illuminate\Http\Client\PendingRequest;
 use Illuminate\Http\Client\Response;
 use Illuminate\Http\UploadedFile;
@@ -38,6 +39,7 @@ abstract class AbstractWhatsAppOutputAdapter implements WhatsAppOutputAdapter
         string $url,
         array $data,
         array $media,
+        ?Closure $beforeThrow = null,
     ): Response {
         $stream = Storage::disk('whatsapp_media')->readStream($media['path']);
 
@@ -46,10 +48,13 @@ abstract class AbstractWhatsAppOutputAdapter implements WhatsAppOutputAdapter
         }
 
         try {
-            return $request
+            $response = $request
                 ->attach('file', $stream, $media['filename'], ['Content-Type' => $media['mime_type']])
-                ->post($url, $data)
-                ->throw();
+                ->post($url, $data);
+
+            $beforeThrow?->__invoke($response);
+
+            return $response->throw();
         } finally {
             fclose($stream);
         }

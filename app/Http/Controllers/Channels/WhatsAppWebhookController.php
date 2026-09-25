@@ -184,63 +184,140 @@ class WhatsAppWebhookController extends Controller
         }
 
         foreach ($changes as $change) {
-            if (! is_array($change) || ($change['field'] ?? null) !== 'messages') {
+            if (! is_array($change)) {
                 continue;
             }
 
+            $field = $change['field'] ?? null;
             $value = $change['value'] ?? [];
 
             if (! is_array($value)) {
                 continue;
             }
 
-            $phoneNumberId = data_get($value, 'metadata.phone_number_id');
+            if ($field === 'messages') {
+                $this->dispatchMessageEvents($account, $entry, $payload, $value);
 
-            if (! is_scalar($phoneNumberId) || blank($phoneNumberId)) {
                 continue;
             }
 
-            $phoneNumber = WhatsAppPhoneNumber::query()
-                ->where('whatsapp_account_id', $account->getKey())
-                ->where('phone_number_id', (string) $phoneNumberId)
-                ->with('channel')
-                ->first();
-            $channel = $phoneNumber?->channel;
-
-            if ($channel === null || $channel->type !== ChannelType::WhatsApp) {
+            if (! in_array($field, [
+                'account_update',
+                'account_review_update',
+                'phone_number_quality_update',
+                'phone_number_name_update',
+            ], true)) {
                 continue;
             }
 
-            foreach (['messages', 'statuses'] as $itemsKey) {
-                $items = $value[$itemsKey] ?? [];
+            $eventPayload = $payload;
+            $eventPayload['entry'] = [[
+                'id' => $entry['id'] ?? $account->waba_id,
+                'changes' => [$change],
+            ]];
 
-                if (! is_array($items)) {
+            foreach ($this->channelsForHealthEvent($account, (string) $field, $value) as $channel) {
+                ProcessWhatsAppWebhook::dispatch($channel->getKey(), $eventPayload);
+            }
+        }
+    }
+
+    private function dispatchMessageEvents(WhatsAppAccount $account, array $entry, array $payload, array $value): void
+    {
+        $phoneNumberId = data_get($value, 'metadata.phone_number_id');
+
+        if (! is_scalar($phoneNumberId) || blank($phoneNumberId)) {
+            return;
+        }
+
+        $phoneNumber = WhatsAppPhoneNumber::query()
+            ->where('whatsapp_account_id', $account->getKey())
+            ->where('phone_number_id', (string) $phoneNumberId)
+            ->with('channel')
+            ->first();
+        $channel = $phoneNumber?->channel;
+
+        if ($channel === null || $channel->type !== ChannelType::WhatsApp) {
+            return;
+        }
+
+        foreach (['messages', 'statuses'] as $itemsKey) {
+            $items = $value[$itemsKey] ?? [];
+
+            if (! is_array($items)) {
+                continue;
+            }
+
+            foreach ($items as $item) {
+                if (! is_array($item)) {
                     continue;
                 }
 
-                foreach ($items as $item) {
-                    if (! is_array($item)) {
-                        continue;
-                    }
+                $itemValue = array_merge($value, [
+                    'messages' => [],
+                    'statuses' => [],
+                    $itemsKey => [$item],
+                ]);
+                $itemPayload = $payload;
+                $itemPayload['entry'] = [[
+                    'id' => $entry['id'],
+                    'changes' => [[
+                        'field' => 'messages',
+                        'value' => $itemValue,
+                    ]],
+                ]];
 
-                    $itemValue = array_merge($value, [
-                        'messages' => [],
-                        'statuses' => [],
-                        $itemsKey => [$item],
-                    ]);
-                    $itemPayload = $payload;
-                    $itemPayload['entry'] = [[
-                        'id' => $entry['id'],
-                        'changes' => [[
-                            'field' => 'messages',
-                            'value' => $itemValue,
-                        ]],
-                    ]];
-
-                    ProcessWhatsAppWebhook::dispatch($channel->getKey(), $itemPayload);
-                }
+                ProcessWhatsAppWebhook::dispatch($channel->getKey(), $itemPayload);
             }
         }
+    }
+
+    private function channelsForHealthEvent(WhatsAppAccount $account, string $field, array $value): array
+    {
+        $phoneNumber = $this->phoneNumberForHealthEvent($account, $value);
+
+        if ($phoneNumber?->channel !== null && $phoneNumber->channel->type === ChannelType::WhatsApp) {
+            return [$phoneNumber->channel];
+        }
+
+        if (! in_array($field, ['account_update', 'account_review_update'], true)) {
+            return [];
+        }
+
+        return $account->phoneNumbers()
+            ->with('channel')
+            ->get()
+            ->pluck('channel')
+            ->filter(fn ($channel): bool => $channel !== null && $channel->type === ChannelType::WhatsApp)
+            ->values()
+            ->all();
+    }
+
+    private function phoneNumberForHealthEvent(WhatsAppAccount $account, array $value): ?WhatsAppPhoneNumber
+    {
+        $phoneNumberId = $value['phone_number_id'] ?? data_get($value, 'metadata.phone_number_id');
+        $phoneValues = array_filter([
+            $value['display_phone_number'] ?? null,
+            $value['phone_number'] ?? null,
+            $value['business_phone'] ?? null,
+        ], fn (mixed $number): bool => is_scalar($number) && filled($number));
+        $normalizedPhoneNumbers = array_map(
+            fn (mixed $number): string => (string) preg_replace('/\D+/', '', (string) $number),
+            $phoneValues,
+        );
+
+        return $account->phoneNumbers()
+            ->with('channel')
+            ->get()
+            ->first(function (WhatsAppPhoneNumber $phoneNumber) use ($phoneNumberId, $normalizedPhoneNumbers): bool {
+                if (is_scalar($phoneNumberId) && (string) $phoneNumberId === $phoneNumber->phone_number_id) {
+                    return true;
+                }
+
+                $storedPhoneNumber = (string) preg_replace('/\D+/', '', (string) $phoneNumber->display_phone_number);
+
+                return $storedPhoneNumber !== '' && in_array($storedPhoneNumber, $normalizedPhoneNumbers, true);
+            });
     }
 
     private function hasValidOwnAppSignature(string $rawBody, string $signature): bool
