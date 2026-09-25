@@ -3,8 +3,8 @@
 namespace Database\Factories;
 
 use App\Enums\WhatsAppConnectionMethod;
+use App\Models\Team;
 use App\Models\WhatsAppAccount;
-use App\Models\WhatsAppPhoneNumber;
 use Illuminate\Database\Eloquent\Factories\Factory;
 use Illuminate\Support\Str;
 
@@ -21,14 +21,30 @@ class WhatsAppAccountFactory extends Factory
     public function definition(): array
     {
         return [
-            'whatsapp_phone_number_id' => WhatsAppPhoneNumber::factory(),
-            'method' => WhatsAppConnectionMethod::Manual,
-            'waba_id' => fake()->numerify('##########'),
+            'team_id' => Team::factory(),
+            'connection_method' => WhatsAppConnectionMethod::OwnApp,
+            'waba_id' => fake()->unique()->numerify('##########'),
+            'business_id' => null,
+            'name' => null,
+            'app_id' => null,
             'access_token' => 'access-token-'.Str::random(20),
             'app_secret' => 'app-secret-'.Str::random(20),
             'verify_token' => Str::random(64),
             'webhook_verified_at' => null,
+            'subscribed_at' => null,
+            'ban_state' => null,
+            'review_status' => null,
             'last_tested_at' => null,
         ];
+    }
+
+    public function techProvider(): static
+    {
+        return $this->state(fn (): array => [
+            'connection_method' => WhatsAppConnectionMethod::TechProvider,
+            'app_id' => null,
+            'app_secret' => null,
+            'verify_token' => null,
+        ]);
     }
 }

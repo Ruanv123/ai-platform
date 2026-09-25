@@ -52,13 +52,13 @@ function createOfficialResponseFlowTestChannel(): Channel
         'type' => ChannelType::WhatsApp,
         'agent_id' => $agent->getKey(),
     ]);
-    $phoneNumber = WhatsAppPhoneNumber::factory()->for($channel)->create([
-        'phone_number_id' => 'official-phone-number-id',
-    ]);
-
-    WhatsAppAccount::factory()->for($phoneNumber, 'phoneNumber')->create([
+    $account = WhatsAppAccount::factory()->for($team, 'team')->create([
         'access_token' => 'official-access-token',
         'app_secret' => 'official-app-secret',
+    ]);
+    $phoneNumber = WhatsAppPhoneNumber::factory()->for($channel)->create([
+        'phone_number_id' => 'official-phone-number-id',
+        'whatsapp_account_id' => $account->getKey(),
     ]);
 
     return $channel;

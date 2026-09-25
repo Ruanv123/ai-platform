@@ -5,6 +5,7 @@ use App\Enums\ChannelType;
 use App\Enums\TeamRole;
 use App\Models\Channel;
 use App\Models\User;
+use App\Models\WhatsAppAccount;
 use App\Models\WhatsAppPhoneNumber;
 use Illuminate\Http\Client\Request as ClientRequest;
 use Illuminate\Http\Testing\File;
@@ -18,16 +19,16 @@ function createWhatsAppProfilePictureChannel(User $user, ?string $appId = '12345
         'status' => ChannelStatus::Connected,
         'last_error' => $lastError,
     ]);
-    $phoneNumber = WhatsAppPhoneNumber::factory()->for($channel)->create([
-        'phone_number_id' => '15551234567890',
-    ]);
-    $account = $phoneNumber->whatsappAccount()->create([
-        'method' => 'manual',
+    $account = WhatsAppAccount::factory()->for($user->company(), 'team')->create([
+        'connection_method' => 'own_app',
         'waba_id' => '102030405060708',
         'app_id' => $appId,
         'access_token' => 'profile-access-token',
         'app_secret' => 'profile-app-secret',
         'verify_token' => 'profile-verify-token',
+    ]);
+    $phoneNumber = WhatsAppPhoneNumber::factory()->for($channel)->for($account, 'whatsappAccount')->create([
+        'phone_number_id' => '15551234567890',
     ]);
 
     return [$channel, $phoneNumber, $account];

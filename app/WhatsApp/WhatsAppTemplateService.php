@@ -20,7 +20,6 @@ final class WhatsAppTemplateService
      */
     public function submit(WhatsAppTemplate $template): WhatsAppTemplate
     {
-        $template->loadMissing('account.phoneNumber.channel');
         $account = $template->account;
         $this->assertValidDraft($template);
 

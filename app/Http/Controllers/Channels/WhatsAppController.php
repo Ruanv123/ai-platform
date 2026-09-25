@@ -114,17 +114,18 @@ class WhatsAppController extends Controller
                 'last_error' => null,
             ]);
 
-            $phoneNumber = $channel->whatsappPhoneNumber()->create([
-                'phone_number_id' => $validated['phone_number_id'],
-            ]);
-
-            $phoneNumber->whatsappAccount()->create([
-                'method' => WhatsAppConnectionMethod::Manual,
+            $account = $team->whatsappAccounts()->create([
+                'connection_method' => WhatsAppConnectionMethod::OwnApp,
                 'waba_id' => $validated['waba_id'],
                 'app_id' => $validated['app_id'] ?? null,
                 'access_token' => $validated['access_token'],
                 'app_secret' => $validated['app_secret'],
                 'verify_token' => $this->generateVerifyToken(),
+            ]);
+
+            $channel->whatsappPhoneNumber()->create([
+                'whatsapp_account_id' => $account->getKey(),
+                'phone_number_id' => $validated['phone_number_id'],
             ]);
         });
 
@@ -296,7 +297,15 @@ class WhatsAppController extends Controller
     public function destroy(Channel $channel): RedirectResponse
     {
         Gate::authorize('delete', $channel);
-        $channel->delete();
+
+        DB::transaction(function () use ($channel): void {
+            $account = $channel->whatsappPhoneNumber?->whatsappAccount;
+            $channel->delete();
+
+            if ($account !== null && $account->phoneNumbers()->doesntExist()) {
+                $account->delete();
+            }
+        });
 
         Inertia::flash('toast', [
             'type' => 'success',
@@ -326,7 +335,7 @@ class WhatsAppController extends Controller
             'appSecretSet' => $canManage && filled($account?->app_secret),
             'appSecretMasked' => $canManage ? $this->maskSecret($account?->app_secret) : null,
             'verifyToken' => $canManage ? $account?->verify_token : null,
-            'method' => $account?->method?->value,
+            'method' => $account?->connection_method?->value,
             'status' => $channel->status->value,
             'statusLabel' => $channel->status->label(),
             'lastError' => $channel->last_error,

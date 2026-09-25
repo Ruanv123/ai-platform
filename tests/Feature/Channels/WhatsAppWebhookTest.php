@@ -1,6 +1,16 @@
 <?php
 
 use App\Models\WhatsAppAccount;
+use App\Models\WhatsAppPhoneNumber;
+
+function createWhatsAppWebhookAccount(string $appSecret = 'app-secret'): array
+{
+    $phoneNumber = WhatsAppPhoneNumber::factory()->create();
+    $account = $phoneNumber->whatsappAccount;
+    $account->update(['app_secret' => $appSecret]);
+
+    return [$account, $phoneNumber];
+}
 
 it('returns the challenge and records verification for a matching public handshake', function () {
     $account = WhatsAppAccount::factory()->create([
@@ -50,10 +60,8 @@ function whatsappWebhookBody(string $phoneNumberId): string
 }
 
 it('returns 200 for a valid signed event resolved through the phone number and channel', function () {
-    $account = WhatsAppAccount::factory()->create([
-        'app_secret' => 'app-secret',
-    ]);
-    $body = whatsappWebhookBody($account->phoneNumber->phone_number_id);
+    [, $phoneNumber] = createWhatsAppWebhookAccount();
+    $body = whatsappWebhookBody($phoneNumber->phone_number_id);
     $signature = 'sha256='.hash_hmac('sha256', $body, 'app-secret');
 
     $response = $this->call('POST', route('webhooks.whatsapp'), [], [], [], [
@@ -65,10 +73,8 @@ it('returns 200 for a valid signed event resolved through the phone number and c
 });
 
 it('returns 403 for an invalid or missing event signature', function (?string $signature) {
-    $account = WhatsAppAccount::factory()->create([
-        'app_secret' => 'app-secret',
-    ]);
-    $body = whatsappWebhookBody($account->phoneNumber->phone_number_id);
+    [, $phoneNumber] = createWhatsAppWebhookAccount();
+    $body = whatsappWebhookBody($phoneNumber->phone_number_id);
 
     $response = $this->call('POST', route('webhooks.whatsapp'), [], [], [], array_filter([
         'CONTENT_TYPE' => 'application/json',
@@ -82,9 +88,7 @@ it('returns 403 for an invalid or missing event signature', function (?string $s
 ]);
 
 it('returns 403 for a valid signature from an unknown phone number', function () {
-    $account = WhatsAppAccount::factory()->create([
-        'app_secret' => 'app-secret',
-    ]);
+    createWhatsAppWebhookAccount();
     $body = whatsappWebhookBody('unknown-phone-number');
     $signature = 'sha256='.hash_hmac('sha256', $body, 'app-secret');
 

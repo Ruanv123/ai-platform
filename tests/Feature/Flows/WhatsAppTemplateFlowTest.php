@@ -15,7 +15,6 @@ use App\Models\FlowExecution;
 use App\Models\FlowVersion;
 use App\Models\Message;
 use App\Models\User;
-use App\Models\WhatsAppAccount;
 use App\Models\WhatsAppPhoneNumber;
 use App\Models\WhatsAppTemplate;
 use Illuminate\Support\Facades\Http;
@@ -25,11 +24,11 @@ function whatsappTemplateFlowGraph(array $nodes, array $edges = []): array
     return ['version' => 1, 'nodes' => $nodes, 'edges' => $edges];
 }
 
-function createWhatsAppTemplateFlow(User $user, string $purpose): array
+function createWhatsAppTemplateFlow(User $user, string $purpose, ChannelType $channelType = ChannelType::WhatsApp): array
 {
-    $channel = Channel::factory()->for($user->company())->create(['type' => ChannelType::WhatsApp]);
+    $channel = Channel::factory()->for($user->company())->create(['type' => $channelType]);
     $phone = WhatsAppPhoneNumber::factory()->for($channel)->create(['phone_number_id' => uniqid('flow-phone-', true)]);
-    $account = WhatsAppAccount::factory()->for($phone, 'phoneNumber')->create();
+    $account = $phone->whatsappAccount;
     $template = WhatsAppTemplate::factory()->for($account, 'account')->create([
         'requested_category' => $purpose,
         'assigned_category' => $purpose,
@@ -97,7 +96,8 @@ it('allows a template after consent is granted and rejects it after that purpose
         ->toBe(FlowExecutionStatus::Completed);
     $this->assertDatabaseHas('messages', ['contact_id' => $contact->id, 'payload_type' => 'template']);
 
-    [$secondChannel, $secondContact, $secondFlow] = createWhatsAppTemplateFlow($user, $purpose);
+    $secondUser = User::factory()->withTeam()->create();
+    [$secondChannel, $secondContact, $secondFlow] = createWhatsAppTemplateFlow($secondUser, $purpose);
     $consents->grant($secondContact, ConsentPurpose::from($purpose), 'test');
     $consents->revoke($secondContact, ConsentPurpose::from($purpose), 'test');
     app(FlowEngine::class)->handleWebhook($secondFlow, $secondChannel, ['event' => 'template.send'], $secondContact);

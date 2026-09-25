@@ -7,6 +7,7 @@ use App\Models\Channel;
 use App\Models\User;
 use App\Models\WhatsAppAccount;
 use App\Models\WhatsAppPhoneNumber;
+use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\Http;
 use Inertia\Testing\AssertableInertia as Assert;
 
@@ -24,10 +25,13 @@ function whatsappDetails(array $overrides = []): array
 function createWhatsAppChannel(User $user, array $channelAttributes = [], array $accountAttributes = [], array $phoneAttributes = []): array
 {
     $channel = Channel::factory()->for($user->company())->create($channelAttributes);
-    $phoneNumber = WhatsAppPhoneNumber::factory()->for($channel)->create($phoneAttributes);
     $account = WhatsAppAccount::factory()
-        ->for($phoneNumber, 'phoneNumber')
+        ->for($user->company(), 'team')
         ->create($accountAttributes);
+    $phoneNumber = WhatsAppPhoneNumber::factory()
+        ->for($channel)
+        ->for($account, 'whatsappAccount')
+        ->create($phoneAttributes);
 
     return [$channel, $phoneNumber, $account];
 }
@@ -99,7 +103,7 @@ it('allows an owner to configure one WhatsApp channel with its account and numbe
     $this->assertDatabaseHas('whatsapp_accounts', [
         'waba_id' => '102030405060708',
         'app_id' => '123456789012345',
-        'method' => 'manual',
+        'connection_method' => 'own_app',
     ]);
 
     $channel = Channel::query()->whereBelongsTo($team)->firstOrFail();
@@ -108,21 +112,12 @@ it('allows an owner to configure one WhatsApp channel with its account and numbe
         ->and($channel->whatsappPhoneNumber->whatsappAccount->app_secret)->toBe('old-app-secret');
 });
 
-it('allows multiple official WhatsApp channels for the same company', function () {
+it('prevents a company from creating multiple official WhatsApp channels', function () {
     $user = User::factory()->withTeam()->create();
     createWhatsAppChannel($user);
 
-    $response = $this->actingAs($user)->post(
-        route('channels.whatsapp.store'),
-        whatsappDetails(),
-    );
-
-    $response->assertRedirect(route('channels.whatsapp.edit'));
-    $this->assertDatabaseCount('channels', 2);
-    $this->assertDatabaseHas('whatsapp_accounts', [
-        'waba_id' => '102030405060708',
-        'app_id' => null,
-    ]);
+    expect(fn () => Channel::factory()->for($user->company())->create())
+        ->toThrow(QueryException::class);
 });
 
 it('rejects an App ID longer than 255 characters', function () {

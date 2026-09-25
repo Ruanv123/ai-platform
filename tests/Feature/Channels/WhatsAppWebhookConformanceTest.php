@@ -36,11 +36,12 @@ function createWhatsAppConformanceChannel(ChannelType $channelType): Channel
     ]);
 
     if ($channelType === ChannelType::WhatsApp) {
+        $account = WhatsAppAccount::factory()->for($channel->team, 'team')->create([
+            'app_secret' => 'conformance-app-secret',
+        ]);
         $phoneNumber = WhatsAppPhoneNumber::factory()->for($channel)->create([
             'phone_number_id' => 'official-phone-number-id',
-        ]);
-        WhatsAppAccount::factory()->for($phoneNumber, 'phoneNumber')->create([
-            'app_secret' => 'conformance-app-secret',
+            'whatsapp_account_id' => $account->getKey(),
         ]);
     } else {
         WhatsAppTestConnection::factory()->for($channel)->create([
@@ -155,7 +156,7 @@ it('records an unsupported event with the raw provider type', function (
         'channel_id' => $channel->id,
         'payload_type' => $expectedEventType,
         'direction' => MessageDirection::Incoming->value,
-        'content' => null,
+        'content' => 'Figurinha não exibida',
     ]);
 })->with('WhatsApp webhook channels');
 

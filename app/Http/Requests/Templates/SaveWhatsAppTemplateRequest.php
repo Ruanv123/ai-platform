@@ -54,7 +54,7 @@ class SaveWhatsAppTemplateRequest extends FormRequest
         $teamId = $this->user()?->company()?->getKey();
 
         return $teamId !== null && $template->account()
-            ->whereHas('phoneNumber.channel', fn ($query) => $query->where('team_id', $teamId))
+            ->where('team_id', $teamId)
             ->exists();
     }
 }

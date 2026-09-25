@@ -20,11 +20,12 @@ function createWhatsAppOutputChannel(ChannelType $channelType): Channel
     ]);
 
     if ($channelType === ChannelType::WhatsApp) {
+        $account = WhatsAppAccount::factory()->for($channel->team, 'team')->create([
+            'access_token' => 'official-access-token',
+        ]);
         $phoneNumber = WhatsAppPhoneNumber::factory()->for($channel)->create([
             'phone_number_id' => 'official-phone-number-id',
-        ]);
-        WhatsAppAccount::factory()->for($phoneNumber, 'phoneNumber')->create([
-            'access_token' => 'official-access-token',
+            'whatsapp_account_id' => $account->getKey(),
         ]);
     } else {
         WhatsAppTestConnection::factory()->for($channel)->create([
