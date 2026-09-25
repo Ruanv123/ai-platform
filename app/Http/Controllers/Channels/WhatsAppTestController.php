@@ -4,11 +4,13 @@ namespace App\Http\Controllers\Channels;
 
 use App\Enums\ChannelStatus;
 use App\Enums\ChannelType;
+use App\Exceptions\WhatsAppProfileException;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Channels\SaveWhatsAppTestChannelRequest;
 use App\Models\Agent;
 use App\Models\Channel;
 use App\Models\User;
+use App\WhatsApp\Profiles\WhatsAppProfileProvider;
 use App\WhatsApp\Testes\EvolutionGoClient;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -24,6 +26,7 @@ class WhatsAppTestController extends Controller
 {
     public function __construct(
         private readonly EvolutionGoClient $evolutionGo,
+        private readonly WhatsAppProfileProvider $profileProvider,
     ) {}
 
     /**
@@ -45,11 +48,38 @@ class WhatsAppTestController extends Controller
             ->with(['agent:id,name', 'whatsappTestConnection'])
             ->first();
         $canManage = $channel !== null && $user->can('update', $channel);
+        $activeTab = $request->query('tab') === 'perfil' ? 'perfil' : 'conexao';
 
         return Inertia::render('channels/whatsapp-test', [
+            'activeTab' => $activeTab,
             'whatsappTest' => $channel === null
                     ? null
-                    : $this->toFrontend($channel, $canManage),
+                    : $this->toFrontend($channel, $canManage, $activeTab === 'conexao'),
+            'whatsappProfileCapabilities' => $this->profileProvider->capabilities()->toArray(),
+            'whatsappProfile' => $activeTab === 'perfil'
+                ? Inertia::defer(function () use ($channel): array {
+                    if ($channel === null || $channel->status !== ChannelStatus::Connected) {
+                        return ['state' => 'not_connected'];
+                    }
+
+                    try {
+                        return [
+                            'state' => 'ready',
+                            'data' => $this->profileProvider->read($channel)->toArray(),
+                        ];
+                    } catch (WhatsAppProfileException $exception) {
+                        Inertia::flash('toast', [
+                            'type' => 'error',
+                            'message' => $exception->getMessage(),
+                        ]);
+
+                        return [
+                            'state' => 'error',
+                            'message' => $exception->getMessage(),
+                        ];
+                    }
+                })
+                : null,
             'agents' => $team
                 ->agents()
                 ->orderBy('name')
@@ -193,14 +223,14 @@ class WhatsAppTestController extends Controller
      *
      * @return array<string, mixed>
      */
-    private function toFrontend(Channel $channel, bool $canManage): array
+    private function toFrontend(Channel $channel, bool $canManage, bool $includeQrCode): array
     {
         $connection = $channel->whatsappTestConnection;
 
         return [
             'id' => $channel->id,
             'name' => $connection?->name,
-            'qrcode' => $canManage ? $this->liveQrCode($channel) : null,
+            'qrcode' => $canManage && $includeQrCode ? $this->liveQrCode($channel) : null,
             'status' => $channel->status->value,
             'statusLabel' => $channel->status->label(),
             'lastError' => $channel->last_error,
