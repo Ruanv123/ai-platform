@@ -17,7 +17,7 @@ final class EvolutionGoWhatsAppProfileProvider implements WhatsAppProfileProvide
     {
         return new WhatsAppProfileCapabilities(
             readableFields: ['profilePicture', 'displayName', 'about'],
-            editableFields: [],
+            editableFields: ['about'],
             canRequestDisplayName: false,
         );
     }
@@ -60,6 +60,25 @@ final class EvolutionGoWhatsAppProfileProvider implements WhatsAppProfileProvide
 
     public function updateTexts(Channel $channel, array $values): void
     {
-        throw new WhatsAppProfileException('A edição de textos não está disponível no WhatsApp de testes.');
+        $connection = $channel->whatsappTestConnection;
+
+        if ($connection === null) {
+            throw new WhatsAppProfileException('O Perfil do WhatsApp não está disponível para este Canal.');
+        }
+
+        $about = $values['about'] ?? null;
+
+        if (! is_string($about) || trim($about) === '') {
+            throw new WhatsAppProfileException('O recado precisa ter pelo menos 1 caractere.');
+        }
+
+        try {
+            $this->evolutionGo->updateProfileAbout(
+                $connection->access_token,
+                $about,
+            );
+        } catch (RuntimeException $exception) {
+            throw new WhatsAppProfileException($exception->getMessage(), 0, $exception);
+        }
     }
 }

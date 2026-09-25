@@ -5,6 +5,7 @@ import type {
     WhatsAppChannelDetails,
 } from '@/components/channels/whatsapp-channel-types';
 import WhatsAppProfileTab from '@/components/channels/whatsapp-profile-tab';
+import { updateProfileTexts as updateWhatsAppProfileTexts } from '@/actions/App/Http/Controllers/Channels/WhatsAppController';
 import type {
     WhatsAppProfileCapabilities,
     WhatsAppProfileCategoryOption,
@@ -35,6 +36,9 @@ export default function WhatsApp({
 }: Props) {
     const connectionUrl = whatsappEdit({ query: { tab: 'conexao' } }).url;
     const profileUrl = whatsappEdit({ query: { tab: 'perfil' } }).url;
+    const updateTextsUrl = whatsapp === null
+        ? null
+        : updateWhatsAppProfileTexts(whatsapp.id).url;
 
     return (
         <>
@@ -96,6 +100,7 @@ export default function WhatsApp({
                             capabilities={whatsappProfileCapabilities}
                             connectionUrl={connectionUrl}
                             channelId={whatsapp?.id ?? null}
+                            updateTextsUrl={updateTextsUrl}
                             canEdit={permissions.canManageChannels}
                             categories={whatsappProfileCategories}
                         />

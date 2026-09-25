@@ -63,6 +63,7 @@ describe('WhatsAppProfileView', () => {
                 capabilities={capabilities}
                 connectionUrl="/channels/whatsapp?tab=conexao"
                 channelId={null}
+                updateTextsUrl={null}
                 canEdit={false}
                 categories={[]}
             />,
@@ -84,6 +85,7 @@ describe('WhatsAppProfileView', () => {
                 capabilities={capabilities}
                 connectionUrl="/channels/whatsapp?tab=conexao"
                 channelId={null}
+                updateTextsUrl={null}
                 canEdit={false}
                 categories={[]}
             />,
@@ -107,6 +109,7 @@ describe('WhatsAppProfileView', () => {
                 capabilities={capabilities}
                 connectionUrl="/channels/whatsapp?tab=conexao"
                 channelId={null}
+                updateTextsUrl={null}
                 canEdit={false}
                 categories={[]}
             />,
@@ -137,6 +140,7 @@ describe('WhatsAppProfileView', () => {
                 }}
                 connectionUrl="/channels/whatsapp?tab=conexao"
                 channelId="channel-1"
+                updateTextsUrl="/channels/whatsapp-test/channel-1/profile/texts"
                 canEdit={false}
                 categories={[{ value: 'RETAIL', label: 'Varejo' }]}
             />,
@@ -149,5 +153,29 @@ describe('WhatsAppProfileView', () => {
         expect(screen.getByLabelText('Site 1')).toBeDisabled();
         expect(screen.getByRole('combobox', { name: 'Categoria' })).toBeDisabled();
         expect(screen.queryByRole('button', { name: 'Salvar' })).not.toBeInTheDocument();
+    });
+
+    it('lets an Owner edit only the Evolution Go recado while keeping the display name read-only', () => {
+        render(
+            <WhatsAppProfileView
+                profile={profile}
+                capabilities={{
+                    readableFields: ['displayName', 'about'],
+                    editableFields: ['about'],
+                    canRequestDisplayName: false,
+                }}
+                connectionUrl="/channels/whatsapp-test?tab=conexao"
+                channelId="channel-1"
+                updateTextsUrl="/channels/whatsapp-test/channel-1/profile/texts"
+                canEdit
+                categories={[]}
+            />,
+        );
+
+        expect(screen.getByText('Nome de exibição')).toBeInTheDocument();
+        expect(screen.getByText('Loja Aurora')).toBeInTheDocument();
+        expect(screen.getByLabelText('Recado')).toBeEnabled();
+        expect(screen.queryByText('Descrição')).not.toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'Salvar' })).toBeInTheDocument();
     });
 });

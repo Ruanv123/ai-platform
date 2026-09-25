@@ -21,6 +21,7 @@ type Props = {
     capabilities: WhatsAppProfileCapabilities;
     connectionUrl: string;
     channelId: string | null;
+    updateTextsUrl: string | null;
     canEdit: boolean;
     categories: WhatsAppProfileCategoryOption[];
 };
@@ -45,6 +46,7 @@ export default function WhatsAppProfileView({
     capabilities,
     connectionUrl,
     channelId,
+    updateTextsUrl,
     canEdit,
     categories,
 }: Props) {
@@ -180,10 +182,12 @@ export default function WhatsAppProfileView({
                         </div>
                     ))}
                 </dl>
-                {channelId !== null && editableTextFields.length > 0 && (
+                {channelId !== null &&
+                    updateTextsUrl !== null &&
+                    editableTextFields.length > 0 && (
                     <WhatsAppProfileTextForm
                         key={JSON.stringify(data)}
-                        channelId={channelId}
+                        updateTextsUrl={updateTextsUrl}
                         profile={data}
                         editableFields={editableTextFields}
                         canEdit={canEdit}

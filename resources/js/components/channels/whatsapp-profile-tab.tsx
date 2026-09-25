@@ -11,6 +11,7 @@ type Props = {
     capabilities: WhatsAppProfileCapabilities;
     connectionUrl: string;
     channelId: string | null;
+    updateTextsUrl: string | null;
     canEdit: boolean;
     categories?: WhatsAppProfileCategoryOption[];
 };
@@ -19,6 +20,7 @@ export default function WhatsAppProfileTab({
     capabilities,
     connectionUrl,
     channelId,
+    updateTextsUrl,
     canEdit,
     categories = [],
 }: Props) {
@@ -38,6 +40,7 @@ export default function WhatsAppProfileTab({
                         capabilities={capabilities}
                         connectionUrl={connectionUrl}
                         channelId={channelId}
+                        updateTextsUrl={updateTextsUrl}
                         canEdit={canEdit}
                         categories={categories}
                     />
