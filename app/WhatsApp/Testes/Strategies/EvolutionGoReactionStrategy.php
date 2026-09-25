@@ -10,6 +10,11 @@ final class EvolutionGoReactionStrategy implements EvolutionGoStrategy
 {
     public function __construct(private readonly MessageReactionUpdater $reactionUpdater) {}
 
+    public function shouldDispatchResponse(): bool
+    {
+        return false;
+    }
+
     public function handle(Channel $channel, array $payload): ?Message
     {
         $reaction = data_get($payload, 'data.Message.reactionMessage');
