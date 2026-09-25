@@ -109,13 +109,17 @@ it('allows an Owner and an Admin to replace the test Profile photo with an expir
         && $request['image'] === $imageUrl);
 
     parse_str((string) parse_url($imageUrl, PHP_URL_QUERY), $query);
-    $photoFilename = basename((string) parse_url($imageUrl, PHP_URL_PATH));
+    $photoPathSegments = explode('/', trim((string) parse_url($imageUrl, PHP_URL_PATH), '/'));
+    $photoExtension = array_pop($photoPathSegments);
+    $photoToken = array_pop($photoPathSegments);
+    $photoFilename = $photoToken.'.'.$photoExtension;
 
     expect(filter_var($imageUrl, FILTER_VALIDATE_URL))->not->toBeFalse()
         ->and($query)->toHaveKeys(['expires', 'signature'])
         ->and((int) $query['expires'] - now()->timestamp)->toBeGreaterThanOrEqual(297)
         ->toBeLessThanOrEqual(300)
-        ->and($photoFilename)->toMatch('/\A[A-Za-z0-9]{64}\.png\z/')
+        ->and($photoToken)->toMatch('/\A[A-Za-z0-9]{64}\z/')
+        ->and($photoExtension)->toBe('png')
         ->and($channel->fresh()->status)->toBe(ChannelStatus::Connected)
         ->and($channel->fresh()->last_error)->toBe('Erro anterior preservado.');
 
