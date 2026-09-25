@@ -66,7 +66,7 @@ function mediaSendingExecution(User $user, ChannelType $channelType): FlowExecut
 function validOutgoingMedia(string $type): UploadedFile
 {
     return match ($type) {
-        'image' => UploadedFile::fake()->image('foto.jpg'),
+        'image' => UploadedFile::fake()->create('foto.jpg', 1, 'image/jpeg'),
         'document' => UploadedFile::fake()->create('orcamento.pdf', 1, 'application/pdf'),
         'video' => UploadedFile::fake()->create('demonstracao.mp4', 1, 'video/mp4'),
     };
