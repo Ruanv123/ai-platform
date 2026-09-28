@@ -120,6 +120,28 @@ it('records a provider text response for each WhatsApp channel', function (Chann
     });
 })->with('WhatsApp output channels');
 
+it('restores the Brazilian mobile ninth digit omitted by the Meta wa_id', function (string $storedPhone, string $expectedRecipient) {
+    $channel = createWhatsAppOutputChannel(ChannelType::WhatsApp);
+    $contact = Contact::factory()->for($channel->team)->create([
+        'phone' => $storedPhone,
+    ]);
+    $adapter = app(WhatsAppOutputAdapterFactory::class)->make($channel);
+
+    Http::preventStrayRequests();
+    Http::fake([
+        'https://graph.facebook.com/v23.0/official-phone-number-id/messages' => Http::response(['messages' => [['id' => 'official-outgoing-message-1']]]),
+    ]);
+
+    $adapter->sendText($channel, $contact, 'Resposta do Agente.');
+
+    Http::assertSent(fn (Request $request): bool => $request['to'] === $expectedRecipient);
+})->with([
+    'mobile without ninth digit' => ['553186441470', '5531986441470'],
+    'mobile with ninth digit' => ['5531986441470', '5531986441470'],
+    'landline' => ['553132221470', '553132221470'],
+    'non-Brazilian number' => ['14155550123', '14155550123'],
+]);
+
 it('marks the incoming message as read and shows typing for each WhatsApp channel', function (ChannelType $channelType) {
     $channel = createWhatsAppOutputChannel($channelType);
     [$contact, $message] = createWhatsAppOutputMessage($channel);

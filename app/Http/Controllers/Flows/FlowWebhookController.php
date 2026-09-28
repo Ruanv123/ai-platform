@@ -7,9 +7,9 @@ use App\Http\Controllers\Controller;
 use App\Models\Channel;
 use App\Models\Contact;
 use App\Models\Flow;
+use App\WhatsApp\E164PhoneNumber;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Str;
 
 class FlowWebhookController extends Controller
 {
@@ -71,8 +71,6 @@ class FlowWebhookController extends Controller
             return null;
         }
 
-        $phone = preg_replace('/\D+/', '', (string) $value);
-
-        return is_string($phone) && filled($phone) ? Str::substr($phone, 0, 32) : null;
+        return E164PhoneNumber::format((string) $value);
     }
 }

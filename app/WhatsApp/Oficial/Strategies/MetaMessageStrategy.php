@@ -6,6 +6,7 @@ use App\Enums\MessageDirection;
 use App\Models\Channel;
 use App\Models\Contact;
 use App\Models\Message;
+use App\WhatsApp\E164PhoneNumber;
 use App\WhatsApp\Media\IncomingMediaResolver;
 use App\WhatsApp\Media\IncomingMediaStorage;
 use App\WhatsApp\Oficial\MetaMediaDownloader;
@@ -38,7 +39,8 @@ abstract class MetaMessageStrategy implements MetaStrategy
             return null;
         }
 
-        $phone = $this->stringValue($messageData, 'from');
+        $waId = $this->stringValue($messageData, 'from');
+        $phone = $waId === null ? null : E164PhoneNumber::format($waId);
 
         if ($phone === null) {
             return null;
@@ -48,7 +50,7 @@ abstract class MetaMessageStrategy implements MetaStrategy
             'team_id' => $channel->team_id,
             'phone' => $phone,
         ]);
-        $contactName = $this->contactName($payload, $phone);
+        $contactName = $this->contactName($payload, $waId);
 
         if ($contactName !== null && $contact->name !== $contactName) {
             $contact->name = $contactName;
@@ -215,7 +217,7 @@ abstract class MetaMessageStrategy implements MetaStrategy
     /**
      * @param  array<string, mixed>  $payload
      */
-    private function contactName(array $payload, string $phone): ?string
+    private function contactName(array $payload, string $waId): ?string
     {
         $contacts = $this->value($payload)['contacts'] ?? [];
 
@@ -224,7 +226,7 @@ abstract class MetaMessageStrategy implements MetaStrategy
         }
 
         foreach ($contacts as $contact) {
-            if (! is_array($contact) || ($contact['wa_id'] ?? null) !== $phone) {
+            if (! is_array($contact) || ($contact['wa_id'] ?? null) !== $waId) {
                 continue;
             }
 

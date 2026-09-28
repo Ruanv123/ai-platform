@@ -18,6 +18,16 @@ it('keeps contacts unique by phone within an Empresa', function () {
         ->toThrow(QueryException::class);
 });
 
+it('stores the contact phone as E.164', function () {
+    $team = Team::factory()->create();
+
+    $contact = Contact::factory()->for($team)->create(['phone' => '55 (31) 8644-1470']);
+
+    expect($contact->fresh()->phone)->toBe('+5531986441470')
+        ->and(fn () => Contact::factory()->for($team)->create(['phone' => '5531986441470']))
+        ->toThrow(QueryException::class);
+});
+
 it('stores message direction, delivery status and response state through its factory states', function () {
     $team = Team::factory()->create();
     $contact = Contact::factory()->for($team)->create();

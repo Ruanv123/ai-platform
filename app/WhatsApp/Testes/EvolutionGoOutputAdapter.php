@@ -7,6 +7,7 @@ use App\Models\Contact;
 use App\Models\Message;
 use App\Models\WhatsAppTemplate;
 use App\Models\WhatsAppTestConnection;
+use App\WhatsApp\E164PhoneNumber;
 use App\WhatsApp\Output\AbstractWhatsAppOutputAdapter;
 use Illuminate\Http\Client\PendingRequest;
 use Illuminate\Support\Facades\Http;
@@ -21,7 +22,7 @@ final class EvolutionGoOutputAdapter extends AbstractWhatsAppOutputAdapter
         $response = $this->request($connection)->post(
             $this->endpoint($connection, 'send/text'),
             [
-                'number' => $contact->phone,
+                'number' => E164PhoneNumber::recipient($contact->phone),
                 'text' => $content,
             ],
         )->throw();
@@ -48,7 +49,7 @@ final class EvolutionGoOutputAdapter extends AbstractWhatsAppOutputAdapter
         $this->request($connection)->post(
             $this->endpoint($connection, 'message/markread'),
             [
-                'number' => $message->contact->phone,
+                'number' => E164PhoneNumber::recipient($message->contact->phone),
                 'id' => [$message->provider_message_id],
             ],
         )->throw();
@@ -61,7 +62,7 @@ final class EvolutionGoOutputAdapter extends AbstractWhatsAppOutputAdapter
         $this->request($connection)->post(
             $this->endpoint($connection, 'message/presence'),
             [
-                'number' => $message->contact->phone,
+                'number' => E164PhoneNumber::recipient($message->contact->phone),
                 'state' => 'composing',
                 'delay' => 5000,
             ],

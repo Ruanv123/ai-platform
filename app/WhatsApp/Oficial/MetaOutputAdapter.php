@@ -7,6 +7,7 @@ use App\Models\Contact;
 use App\Models\Message;
 use App\Models\WhatsAppAccount;
 use App\Models\WhatsAppTemplate;
+use App\WhatsApp\E164PhoneNumber;
 use App\WhatsApp\Output\AbstractWhatsAppOutputAdapter;
 use Illuminate\Http\Client\PendingRequest;
 use Illuminate\Support\Facades\Http;
@@ -23,7 +24,7 @@ final class MetaOutputAdapter extends AbstractWhatsAppOutputAdapter
             [
                 'messaging_product' => 'whatsapp',
                 'recipient_type' => 'individual',
-                'to' => $contact->phone,
+                'to' => E164PhoneNumber::recipient($contact->phone),
                 'type' => 'text',
                 'text' => [
                     'preview_url' => false,
@@ -67,7 +68,7 @@ final class MetaOutputAdapter extends AbstractWhatsAppOutputAdapter
             $this->messagesUrl($this->phoneNumber($channel)),
             [
                 'messaging_product' => 'whatsapp',
-                'to' => $contact->phone,
+                'to' => E164PhoneNumber::recipient($contact->phone),
                 'type' => 'template',
                 'template' => [
                     'name' => $template instanceof WhatsAppTemplate ? $template->name : $template,

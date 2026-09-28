@@ -46,7 +46,7 @@ it('accepts a test webhook without authentication or a CSRF token', function () 
         'content' => 'Olá, preciso de ajuda com meu pedido.',
     ]);
     $this->assertDatabaseHas('contacts', [
-        'phone' => '5511999999999',
+        'phone' => '+5511999999999',
         'name' => 'Ana Souza',
     ]);
 });
@@ -155,7 +155,7 @@ it('resolves the Contact phone from the alternate JID when the chat is addressed
     $this->postJson(route('webhooks.whatsapp-test'), $sent)->assertOk();
 
     $this->assertDatabaseCount('contacts', 1);
-    $this->assertDatabaseHas('contacts', ['phone' => '5511999999999', 'name' => 'Ana Souza']);
+    $this->assertDatabaseHas('contacts', ['phone' => '+5511999999999', 'name' => 'Ana Souza']);
     $this->assertDatabaseCount('messages', 2);
 });
 

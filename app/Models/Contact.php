@@ -3,8 +3,10 @@
 namespace App\Models;
 
 use App\Concerns\BelongsToTeam;
+use App\WhatsApp\E164PhoneNumber;
 use Database\Factories\ContactFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
+use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -84,6 +86,18 @@ class Contact extends Model
     public function appointments(): HasMany
     {
         return $this->hasMany(Appointment::class);
+    }
+
+    /**
+     * Store the phone as E.164 whenever it is a valid phone number.
+     *
+     * @return Attribute<string, string>
+     */
+    protected function phone(): Attribute
+    {
+        return Attribute::make(
+            set: fn (string $value): string => E164PhoneNumber::format($value) ?? $value,
+        );
     }
 
     protected function casts(): array

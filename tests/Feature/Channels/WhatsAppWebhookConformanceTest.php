@@ -98,7 +98,7 @@ it('creates the contact and records each core incoming message', function (
     $response->assertOk()->assertContent('EVENT_RECEIVED');
     $this->assertDatabaseHas('contacts', [
         'team_id' => $channel->team_id,
-        'phone' => '5511999999999',
+        'phone' => '+5511999999999',
         'name' => 'Ana Souza',
     ]);
     $expectedContent = match (true) {
@@ -156,6 +156,30 @@ it('records an unsupported event with the raw provider type', function (
         'payload_type' => $expectedEventType,
         'direction' => MessageDirection::Incoming->value,
         'content' => null,
+    ]);
+})->with('WhatsApp webhook channels');
+
+it('reuses the E.164 contact when the sender omits the Brazilian ninth digit', function (
+    ChannelType $channelType,
+    string $routeName,
+    string $fixtureDirectory,
+) {
+    $channel = createWhatsAppConformanceChannel($channelType);
+    $contact = Contact::factory()->for($channel->team)->create([
+        'phone' => '+5531986441470',
+    ]);
+    $payload = json_decode(
+        str_replace('5511999999999', '553186441470', json_encode(whatsappConformanceFixture($fixtureDirectory, 'message-text'), JSON_THROW_ON_ERROR)),
+        true,
+        flags: JSON_THROW_ON_ERROR,
+    );
+
+    postWhatsAppConformanceWebhook($this, $channelType, $routeName, $payload)->assertOk();
+
+    $this->assertDatabaseCount('contacts', 1);
+    $this->assertDatabaseHas('messages', [
+        'contact_id' => $contact->id,
+        'direction' => MessageDirection::Incoming->value,
     ]);
 })->with('WhatsApp webhook channels');
 

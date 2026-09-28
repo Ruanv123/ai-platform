@@ -20,7 +20,7 @@ class ContactFactory extends Factory
     {
         return [
             'team_id' => Team::factory(),
-            'phone' => fake()->unique()->numerify('55119########'),
+            'phone' => fake()->unique()->numerify('+55119########'),
             'name' => fake()->name(),
         ];
     }

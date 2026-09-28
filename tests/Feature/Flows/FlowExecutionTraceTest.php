@@ -106,7 +106,7 @@ it('renders the failed node and all unreached nodes on the execution detail scre
         ->where('execution.id', $execution->getKey())
         ->where('execution.flowName', 'Recepção principal')
         ->where('execution.contact.name', 'Ana Souza')
-        ->where('execution.contact.phone', '5511999999999')
+        ->where('execution.contact.phone', '+5511999999999')
         ->where('execution.channel.label', 'WhatsApp de testes')
         ->where('execution.version', 4)
         ->where('execution.status', 'failed')

@@ -7,6 +7,7 @@ use App\Enums\MessageDirection;
 use App\Models\Channel;
 use App\Models\Contact;
 use App\Models\Message;
+use App\WhatsApp\E164PhoneNumber;
 use App\WhatsApp\Media\IncomingMediaResolver;
 use App\WhatsApp\Media\IncomingMediaStorage;
 use App\WhatsApp\Testes\EvolutionGoMediaDownloader;
@@ -288,9 +289,7 @@ abstract class EvolutionGoMessageStrategy implements EvolutionGoStrategy
             return null;
         }
 
-        $phone = preg_replace('/\\D+/', '', Str::before($jid, '@'));
-
-        return is_string($phone) && filled($phone) ? $phone : null;
+        return E164PhoneNumber::format(Str::before($jid, '@'));
     }
 
     /**
