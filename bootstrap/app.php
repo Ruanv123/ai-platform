@@ -23,6 +23,7 @@ return Application::configure(basePath: dirname(__DIR__))
             'webhooks/whatsapp-test',
             'webhooks/flows/*',
             'webhooks/shopify',
+            'webhooks/crm/rd-station',
             'shopify/embedded/authenticate',
         ]);
 

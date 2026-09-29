@@ -77,6 +77,10 @@ class AppServiceProvider extends ServiceProvider
             return Limit::perMinute(300)->by('shopify-webhook:'.(string) $request->ip().':'.$shopKey);
         });
 
+        RateLimiter::for('crm-webhook', function (Request $request): Limit {
+            return Limit::perMinute(300)->by('crm-webhook:'.(string) $request->ip());
+        });
+
         RateLimiter::for('flow-webhook', function (Request $request): array {
             $channel = (string) $request->route('channelId');
             $team = (string) ($request->header('X-Company-Id') ?? 'unknown');
