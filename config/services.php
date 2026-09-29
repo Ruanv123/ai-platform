@@ -62,6 +62,12 @@ return [
         'redirect' => env('GOOGLE_REDIRECT_URI', env('APP_URL').'/integrations/agenda/google/callback'),
     ],
 
+    'rd_station_crm' => [
+        'client_id' => env('RD_STATION_CRM_CLIENT_ID'),
+        'client_secret' => env('RD_STATION_CRM_CLIENT_SECRET'),
+        'redirect' => env('RD_STATION_CRM_REDIRECT_URI', env('APP_URL').'/integrations/crm/rd-station/callback'),
+    ],
+
     'shopify' => [
         'client_id' => env('SHOPIFY_CLIENT_ID'),
         'client_secret' => env('SHOPIFY_CLIENT_SECRET'),

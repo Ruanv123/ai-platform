@@ -1,0 +1,4 @@
+{
+  "data": [{"id": "pipeline-1", "name": "Vendas"}],
+  "links": {"next": "https://api.rd.services/crm/v2/pipelines?page[number]=2&page[size]=100"}
+}

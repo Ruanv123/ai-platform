@@ -1,0 +1,4 @@
+{
+  "data": [{"id": "user-1", "name": "Ana Silva", "email": "ana@example.test"}],
+  "pagination": {"total_pages": 1}
+}

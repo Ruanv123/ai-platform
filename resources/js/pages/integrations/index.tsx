@@ -133,7 +133,7 @@ export default function IntegrationsPage({
                                         >
                                             {item.available
                                                 ? 'Disponível'
-                                                : 'Planejado'}
+                                                : 'Em breve'}
                                         </Badge>
                                     </div>
                                     <CardTitle className="pt-2">

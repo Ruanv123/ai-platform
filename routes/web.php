@@ -21,6 +21,7 @@ use App\Http\Controllers\Flows\FlowWebhookController;
 use App\Http\Controllers\InboxController;
 use App\Http\Controllers\InboxMediaController;
 use App\Http\Controllers\Integrations\AgendaCalendarController;
+use App\Http\Controllers\Integrations\CrmConnectionController;
 use App\Http\Controllers\Integrations\IntegrationController;
 use App\Http\Controllers\Integrations\IntegrationWebhookFailureController;
 use App\Http\Controllers\Integrations\ShopifyConnectionController;
@@ -186,6 +187,10 @@ Route::middleware(['auth', EnsureUserHasTeam::class])->group(function () {
         ->name('integrations.agenda.connect');
     Route::get('integrations/agenda/google/callback', [IntegrationController::class, 'callback'])
         ->name('integrations.agenda.callback');
+    Route::get('integrations/crm/rd-station/connect', [CrmConnectionController::class, 'connect'])
+        ->name('integrations.crm.rd-station.connect');
+    Route::get('integrations/crm/rd-station/callback', [CrmConnectionController::class, 'callback'])
+        ->name('integrations.crm.rd-station.callback');
     Route::post('integrations', [IntegrationController::class, 'store'])
         ->name('integrations.store');
     Route::post('integrations/agenda/calendars', [AgendaCalendarController::class, 'store'])

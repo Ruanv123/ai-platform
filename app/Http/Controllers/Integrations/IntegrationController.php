@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Integrations;
 
+use App\Crm\Contracts\CrmProviderAdapter;
 use App\Ecommerce\EcommerceAdapter;
 use App\Ecommerce\ShopifyAccessRevokedException;
 use App\Ecommerce\ShopifyInstallationCleanup;
@@ -39,6 +40,8 @@ class IntegrationController extends Controller
     /** @var list<string> */
     private const SINGLETON_TYPES = ['crm', 'ecommerce'];
 
+    private const CRM_METADATA_REFRESH_SECONDS = 300;
+
     /** @var list<string> */
     private const GOOGLE_SCOPES = [
         'openid',
@@ -55,19 +58,19 @@ class IntegrationController extends Controller
         $configured = $team->integrations->keyBy('type');
 
         return Inertia::render('integrations/index', [
-            'crmCatalog' => $this->catalog(CrmProvider::catalog()),
+            'crmCatalog' => $this->crmCatalog(),
             'ecommerceCatalog' => $this->ecommerceCatalog(),
             'agendaCatalog' => [$this->agendaCatalogEntry()],
             'singletonIntegrations' => [
-                'crm' => optional($configured->get('crm'), fn (Integration $integration): array => $this->serialize($integration)),
-                'ecommerce' => optional($configured->get('ecommerce'), fn (Integration $integration): array => $this->serialize($integration)),
-                'agenda' => optional($configured->get('agenda'), fn (Integration $integration): array => $this->serialize($integration)),
+                'crm' => optional($configured->get('crm'), fn (?Integration $integration): ?array => $integration === null ? null : $this->serialize($integration)),
+                'ecommerce' => optional($configured->get('ecommerce'), fn (?Integration $integration): ?array => $integration === null ? null : $this->serialize($integration)),
+                'agenda' => optional($configured->get('agenda'), fn (?Integration $integration): ?array => $integration === null ? null : $this->serialize($integration)),
             ],
             'permissions' => $request->user()->toTeamPermissions($team),
         ]);
     }
 
-    public function show(Request $request, string $type): Response
+    public function show(Request $request, string $type, CrmProviderAdapter $crmAdapter): Response
     {
         $team = $request->user()->company();
         $integration = $team->integrations()->where('type', $type)->first();
@@ -75,6 +78,23 @@ class IntegrationController extends Controller
         $googleCalendars = [];
         $agendaError = session('agenda_error');
         $shop = null;
+        $crmError = session('crm_error');
+
+        if ($type === 'crm'
+            && $integration?->status === 'connected'
+            && ($integration->crm_metadata_loaded_at === null
+                || $integration->crm_metadata_loaded_at->lte(now()->subSeconds(self::CRM_METADATA_REFRESH_SECONDS)))) {
+            try {
+                $integration->forceFill([
+                    'crm_metadata' => $crmAdapter->loadMetadata($integration),
+                    'crm_metadata_loaded_at' => now(),
+                ])->save();
+            } catch (Throwable $exception) {
+                report($exception);
+                $integration->refresh();
+                $crmError ??= $exception->getMessage();
+            }
+        }
 
         if ($type === 'agenda' && $integration !== null) {
             if ($integration->status === 'connected') {
@@ -103,7 +123,7 @@ class IntegrationController extends Controller
         return Inertia::render('integrations/show', [
             'type' => $type,
             'catalog' => match ($type) {
-                'crm' => $this->catalog(CrmProvider::catalog()),
+                'crm' => $this->crmCatalog(),
                 'ecommerce' => $this->ecommerceCatalog(),
                 default => [$this->agendaCatalogEntry()],
             },
@@ -115,6 +135,8 @@ class IntegrationController extends Controller
             'shop' => $shop === null ? null : $this->serializeShop($shop),
             'shopifyError' => session('shopify_error'),
             'shopifySuccess' => session('shopify_success'),
+            'crmError' => $crmError,
+            'crmSuccess' => session('crm_success'),
             'permissions' => $request->user()->toTeamPermissions($team),
         ]);
     }
@@ -182,6 +204,7 @@ class IntegrationController extends Controller
         $this->authorizeManagement($request);
         $team = $request->user()->company();
         $data = $request->validated();
+        $this->rejectCrmCredentialWorkflow($data);
         $this->rejectShopifyCredentialWorkflow($data);
         $existing = in_array($data['type'], self::SINGLETON_TYPES, true)
             ? $team->integrations()->where('type', $data['type'])->first()
@@ -220,6 +243,7 @@ class IntegrationController extends Controller
     {
         $this->authorizeManagement($request, $integration);
         $data = $request->validated();
+        $this->rejectCrmCredentialWorkflow($data, $integration);
         $this->rejectShopifyCredentialWorkflow($data, $integration);
         $integration->update([
             'name' => $data['name'],
@@ -243,6 +267,7 @@ class IntegrationController extends Controller
     public function test(Request $request, Integration $integration, IntegrationConnectionTester $tester): RedirectResponse|JsonResponse
     {
         $this->authorizeManagement($request, $integration);
+        $this->rejectCrmCredentialWorkflow([], $integration);
         $this->rejectShopifyCredentialWorkflow([], $integration);
         abort_if($integration->type === 'agenda', 404);
         $result = $tester->test($integration);
@@ -331,10 +356,27 @@ class IntegrationController extends Controller
         return to_route('integrations.index');
     }
 
-    /** @param list<array<string, mixed>> $catalog */
-    private function catalog(array $catalog): array
+    /** @return array<int, array{value: string, name: string, description: string, logo: string, capabilities: array<int, string>, planned: bool, available: bool}> */
+    private function crmCatalog(): array
     {
-        return array_map(fn (array $item): array => [...$item, 'planned' => true, 'available' => false], $catalog);
+        return array_map(fn (array $item): array => [
+            ...$item,
+            'planned' => $item['value'] !== CrmProvider::RdStation->value,
+            'available' => $item['value'] === CrmProvider::RdStation->value,
+        ], CrmProvider::catalog());
+    }
+
+    /** @param array{type?: string, ...} $data */
+    private function rejectCrmCredentialWorkflow(array $data, ?Integration $integration = null): void
+    {
+        $isCrmIntegration = $integration?->type === 'crm';
+        $isCrmRequest = ($data['type'] ?? null) === 'crm';
+
+        if ($isCrmIntegration || $isCrmRequest) {
+            throw ValidationException::withMessages([
+                'provider' => 'O RD Station CRM deve ser conectado pela autorização oficial.',
+            ]);
+        }
     }
 
     private function ecommerceCatalog(): array
@@ -412,16 +454,36 @@ class IntegrationController extends Controller
         ];
     }
 
-    /** @return array<string, mixed> */
+    /** @return array{id: string, name: string, type: string, provider: string|null, baseUrl: string|null, accountEmail: string|null, crmAccount: array{teams: list<array{id: string, name: string}>}|null, crmMetadataLoadedAt: string|null, status: string, statusLabel: string, statusMessage: string|null, lastTestedAt: string|null} */
     private function serialize(Integration $integration): array
     {
+        $accountEmail = $integration->credential('email');
+        $account = data_get($integration->crm_metadata, 'account');
+        $crmAccount = null;
+
+        if (is_array($account) && is_array($account['teams'] ?? null)) {
+            $teams = [];
+
+            foreach ($account['teams'] as $team) {
+                if (! is_array($team) || ! is_string($team['id'] ?? null) || ! is_string($team['name'] ?? null)) {
+                    continue;
+                }
+
+                $teams[] = ['id' => $team['id'], 'name' => $team['name']];
+            }
+
+            $crmAccount = ['teams' => $teams];
+        }
+
         return [
-            'id' => $integration->getKey(),
+            'id' => $integration->id,
             'name' => $integration->name,
             'type' => $integration->type,
             'provider' => $integration->provider,
             'baseUrl' => $integration->baseUrl(),
-            'accountEmail' => $integration->credential('email'),
+            'accountEmail' => is_string($accountEmail) ? $accountEmail : null,
+            'crmAccount' => $crmAccount,
+            'crmMetadataLoadedAt' => $integration->crm_metadata_loaded_at?->toIso8601String(),
             'status' => $integration->status,
             'statusLabel' => match ($integration->status) {
                 'connected' => 'Conectada',

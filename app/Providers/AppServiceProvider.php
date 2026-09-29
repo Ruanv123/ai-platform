@@ -2,6 +2,8 @@
 
 namespace App\Providers;
 
+use App\Crm\Adapters\RdStationCrmAdapter;
+use App\Crm\Contracts\CrmProviderAdapter;
 use App\Ecommerce\EcommerceAdapter;
 use App\Ecommerce\ShopifyAdapter;
 use App\Http\Controllers\Channels\WhatsAppController;
@@ -27,6 +29,7 @@ class AppServiceProvider extends ServiceProvider
     public function register(): void
     {
         $this->app->bind(EcommerceAdapter::class, ShopifyAdapter::class);
+        $this->app->bind(CrmProviderAdapter::class, RdStationCrmAdapter::class);
 
         $this->app->when(WhatsAppController::class)
             ->needs(WhatsAppProfileProvider::class)
