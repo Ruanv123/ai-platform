@@ -1,0 +1,6 @@
+{
+  "id": 3001,
+  "admin_graphql_api_id": "gid://shopify/Collection/3001",
+  "title": "Título antigo que não deve ser espelhado",
+  "private_payload_value": "WEBHOOK_RAW_VALUE"
+}

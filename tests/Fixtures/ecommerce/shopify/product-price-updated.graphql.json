@@ -1,0 +1,37 @@
+{
+  "data": {
+    "product": {
+      "id": "gid://shopify/Product/1001",
+      "title": "Tênis de corrida leve",
+      "descriptionHtml": "<p>Amortecimento em espuma &amp; tecido respirável.</p>",
+      "handle": "tenis-corrida-leve",
+      "status": "ACTIVE",
+      "onlineStoreUrl": "https://alpha.myshopify.com/products/tenis-corrida-leve",
+      "variants": {
+        "nodes": [
+          {
+            "id": "gid://shopify/ProductVariant/2001",
+            "sku": "RUN-42",
+            "title": "Azul / 42",
+            "price": "359.90",
+            "compareAtPrice": "399.90",
+            "inventoryQuantity": 2,
+            "inventoryPolicy": "DENY",
+            "availableForSale": true,
+            "selectedOptions": [
+              { "name": "Cor", "value": "Azul" },
+              { "name": "Tamanho", "value": "42" }
+            ]
+          }
+        ],
+        "pageInfo": { "hasNextPage": false, "endCursor": null }
+      },
+      "collections": {
+        "nodes": [
+          { "id": "gid://shopify/Collection/3001", "title": "Corrida" }
+        ],
+        "pageInfo": { "hasNextPage": false, "endCursor": null }
+      }
+    }
+  }
+}

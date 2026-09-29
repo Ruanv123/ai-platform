@@ -2,6 +2,7 @@
 
 namespace App\Jobs;
 
+use App\Ecommerce\ProductEmbeddingSynchronizer;
 use App\Models\Category;
 use App\Models\Product;
 use App\Models\ProductVariant;
@@ -12,7 +13,6 @@ use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
-use Laravel\Ai\Embeddings;
 use RuntimeException;
 use Throwable;
 
@@ -35,7 +35,7 @@ class ImportShopifyBulkOperation implements ShouldBeUnique, ShouldQueue
         return $this->shopId.':'.$this->operationId;
     }
 
-    public function handle(): void
+    public function handle(ProductEmbeddingSynchronizer $embeddingSynchronizer): void
     {
         $shop = Shop::withoutGlobalScopes()->whereKey($this->shopId)->first();
 
@@ -48,7 +48,7 @@ class ImportShopifyBulkOperation implements ShouldBeUnique, ShouldQueue
             $processedCount = $this->streamCatalogJsonl($shop);
         }
 
-        $this->refreshProductEmbeddings($shop);
+        $this->refreshProductEmbeddings($shop, $embeddingSynchronizer);
         $this->removeStaleCatalogRecords($shop);
 
         DB::transaction(function () use ($processedCount): void {
@@ -258,59 +258,16 @@ class ImportShopifyBulkOperation implements ShouldBeUnique, ShouldQueue
         );
     }
 
-    private function refreshProductEmbeddings(Shop $shop): void
+    private function refreshProductEmbeddings(Shop $shop, ProductEmbeddingSynchronizer $embeddingSynchronizer): void
     {
         Product::withoutGlobalScopes()
             ->where('shop_id', $shop->getKey())
             ->where('last_import_operation_id', $this->operationId)
-            ->with(['variants', 'categories'])
-            ->chunkById(100, function (Collection $products): void {
+            ->chunkById(100, function (Collection $products) use ($embeddingSynchronizer): void {
                 foreach ($products as $product) {
-                    $sourceText = $this->embeddingSource($product);
-                    $sourceHash = hash('sha256', $sourceText);
-
-                    if (is_string($product->source_hash) && hash_equals($product->source_hash, $sourceHash)) {
-                        continue;
-                    }
-
-                    $embedding = Embeddings::for([$sourceText])
-                        ->dimensions((int) config('knowledge.embedding_dimensions', 1536))
-                        ->generate(
-                            config('knowledge.embedding_provider', 'openai'),
-                            config('knowledge.embedding_model', 'text-embedding-3-small'),
-                        )
-                        ->first();
-
-                    Product::withoutGlobalScopes()->whereKey($product->getKey())->update([
-                        'embedding' => $embedding,
-                        'source_hash' => $sourceHash,
-                    ]);
+                    $embeddingSynchronizer->refresh($product->getKey());
                 }
             });
-    }
-
-    private function embeddingSource(Product $product): string
-    {
-        $categoryTitles = $product->categories
-            ->pluck('title')
-            ->filter()
-            ->unique()
-            ->sort()
-            ->implode(', ');
-        $options = $product->variants
-            ->flatMap(fn (ProductVariant $variant): array => collect($variant->options)
-                ->map(fn (array $option): string => $option['name'].': '.$option['value'])
-                ->all())
-            ->unique()
-            ->sort()
-            ->implode('; ');
-
-        return implode("\n", array_filter([
-            'Produto: '.$product->title,
-            $product->description,
-            $categoryTitles === '' ? null : 'Categorias: '.$categoryTitles,
-            $options === '' ? null : 'Opções: '.$options,
-        ], fn (?string $value): bool => $value !== null && $value !== ''));
     }
 
     private function removeStaleCatalogRecords(Shop $shop): void

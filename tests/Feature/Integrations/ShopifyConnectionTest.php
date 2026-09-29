@@ -2,6 +2,7 @@
 
 use App\Ecommerce\EcommerceAdapter;
 use App\Enums\TeamRole;
+use App\Jobs\RegisterShopifyCatalogWebhooks;
 use App\Jobs\StartShopifyCatalogImport;
 use App\Models\Integration;
 use App\Models\Shop;
@@ -67,7 +68,7 @@ it('allows an Admin to start a Shopify connection', function () {
 it('completes Shopify OAuth, persists encrypted credentials and reuses the same shop on reconnect', function () {
     $user = User::factory()->withTeam()->create();
     $this->withoutVite();
-    Queue::fake([StartShopifyCatalogImport::class]);
+    Queue::fake([RegisterShopifyCatalogWebhooks::class, StartShopifyCatalogImport::class]);
     Http::preventStrayRequests();
     Http::fake([
         'https://alpha.myshopify.com/admin/oauth/access_token' => Http::response([
@@ -132,6 +133,7 @@ it('completes Shopify OAuth, persists encrypted credentials and reuses the same 
         ->and(Shop::query()->where('team_id', $user->company()->getKey())->value('id'))->toBe($shop->getKey());
 
     Queue::assertPushed(StartShopifyCatalogImport::class, 1);
+    Queue::assertPushed(RegisterShopifyCatalogWebhooks::class, fn (RegisterShopifyCatalogWebhooks $job): bool => $job->shopId === $shop->getKey());
 
     Http::assertSent(fn (ClientRequest $request): bool => $request->url() === 'https://alpha.myshopify.com/admin/oauth/access_token'
         && $request->data()['expiring'] === '1');

@@ -1,0 +1,6 @@
+{
+  "inventory_item_id": 5001,
+  "location_id": 8001,
+  "available": 1,
+  "private_payload_value": "WEBHOOK_RAW_VALUE"
+}
