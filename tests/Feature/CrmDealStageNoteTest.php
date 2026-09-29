@@ -1,15 +1,20 @@
 <?php
 
+use App\Ai\AgentToolFactory;
+use App\Ai\AgentToolMode;
 use App\Ai\Tools\MoveCrmDealStage;
 use App\Ai\Tools\RegisterCrmNote;
 use App\Crm\Adapters\RdStationCrmAdapter;
 use App\Crm\Contracts\CrmProviderAdapter;
+use App\Crm\CrmCardLookup;
 use App\Crm\CrmOperationDispatcher;
 use App\Crm\CrmOperationProcessor;
+use App\Ecommerce\ProductCatalogSearch;
 use App\Enums\AgentObjective;
 use App\Enums\CrmOperationStatus;
 use App\Jobs\Integrations\ProcessCrmOperation;
 use App\Knowledge\AgentInstructionTemplate;
+use App\Knowledge\KnowledgeBaseSearch;
 use App\Models\Agent;
 use App\Models\AgentVersion;
 use App\Models\Contact;
@@ -335,6 +340,42 @@ it('saves allowed stage criteria, rejects won and lost stages, and includes crit
     unset($detailsWithoutAllowedStages['crm_allowed_stages']);
     $this->patch(route('agents.update', $agent), $detailsWithoutAllowedStages)->assertRedirect(route('agents.edit', $agent));
     expect($agent->fresh()->crm_allowed_stages)->toBe([]);
+});
+
+it('uses only published CRM settings for real tools when a legacy version lacks new action settings', function (): void {
+    $scenario = crmStageNoteScenario();
+    $scenario['agent']->versions()->create([
+        'team_id' => $scenario['team']->getKey(),
+        'number' => 1,
+        'objective' => AgentObjective::Sales,
+        'ecommerce_tools' => [],
+        'crm_tools' => ['ensure_deal_enabled' => true],
+        'published_at' => now(),
+    ]);
+    $scenario['agent']->forceFill([
+        'crm_move_deal_enabled' => true,
+        'crm_register_note_enabled' => false,
+        'crm_pipeline_id' => 'draft-pipeline',
+        'crm_initial_stage_id' => 'draft-stage',
+        'crm_allowed_stages' => [['stage_id' => 'stage-qualified', 'description' => 'Somente no rascunho.']],
+    ])->save();
+    $adapter = new FakeCrmProviderAdapter;
+    app()->instance(CrmOperationDispatcher::class, new CrmOperationDispatcher($adapter));
+    $factory = new AgentToolFactory(
+        app(KnowledgeBaseSearch::class),
+        app(ProductCatalogSearch::class),
+        crmCardLookup: new CrmCardLookup($adapter),
+    );
+
+    $tools = $factory->make($scenario['agent']->fresh(), $scenario['contact'], AgentToolMode::Real, []);
+    $moveTool = collect($tools)->first(fn (mixed $tool): bool => $tool instanceof MoveCrmDealStage);
+    $noteTool = collect($tools)->first(fn (mixed $tool): bool => $tool instanceof RegisterCrmNote);
+    expect($moveTool)->toBeNull()
+        ->and($noteTool)->toBeInstanceOf(RegisterCrmNote::class);
+
+    $result = json_decode($noteTool->handle(new ToolRequest(['body' => 'Resumo publicado.'])), true, flags: JSON_THROW_ON_ERROR);
+    $operation = CrmOperation::query()->findOrFail($result['operation_id']);
+    expect($operation->payload['pipeline_id'])->toBe('pipeline-1');
 });
 
 it('uses the RD v2 fixtures for moving a deal and creating a deal note', function (): void {
