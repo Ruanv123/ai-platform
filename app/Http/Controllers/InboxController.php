@@ -14,6 +14,7 @@ use App\Inbox\HumanInboxService;
 use App\Models\AgentConversationState;
 use App\Models\Channel;
 use App\Models\Contact;
+use App\Models\ConversationRead;
 use App\Models\FlowExecution;
 use App\Models\Message;
 use App\Models\StoreOrder;
@@ -23,10 +24,12 @@ use App\WhatsApp\WhatsAppCustomerCareWindow;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Query\Builder as QueryBuilder;
+use Illuminate\Database\Query\JoinClause;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Collection as SupportCollection;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -43,6 +46,8 @@ final class InboxController extends Controller
             ->where('contact_id', $contact->getKey())
             ->where('channel_id', $channel->getKey())
             ->exists(), 404);
+
+        $this->markConversationAsRead($contact, $channel);
 
         return $this->render($request, $contact, $channel);
     }
@@ -130,6 +135,7 @@ final class InboxController extends Controller
 
         $executionsByConversation = $this->waitingExecutionsFor($conversations);
         $agentStatesByConversation = $this->agentStatesFor($conversations);
+        $unreadCountsByConversation = $this->unreadCountsFor($conversations);
 
         $selectedExecution = $selectedContact === null || $selectedChannel === null
             ? null
@@ -157,6 +163,7 @@ final class InboxController extends Controller
                     $message,
                     $executionsByConversation->get($this->conversationKey($message->contact_id, $message->channel_id)),
                     $agentStatesByConversation->get($this->conversationKey($message->contact_id, $message->channel_id)),
+                    $unreadCountsByConversation->get($this->conversationKey($message->contact_id, $message->channel_id), 0),
                 ))->values(),
                 'currentPage' => $conversations->currentPage(),
                 'lastPage' => $conversations->lastPage(),
@@ -317,6 +324,63 @@ final class InboxController extends Controller
             ));
     }
 
+    private function markConversationAsRead(Contact $contact, Channel $channel): void
+    {
+        $latestMessageId = Message::query()
+            ->where('contact_id', $contact->getKey())
+            ->where('channel_id', $channel->getKey())
+            ->max('id');
+
+        if ($latestMessageId === null) {
+            return;
+        }
+
+        $read = ConversationRead::query()->firstOrNew([
+            'team_id' => $contact->team_id,
+            'contact_id' => $contact->getKey(),
+            'channel_id' => $channel->getKey(),
+        ]);
+
+        if ($read->exists && $read->last_read_message_id >= $latestMessageId) {
+            return;
+        }
+
+        $read->last_read_message_id = $latestMessageId;
+        $read->save();
+    }
+
+    /** @return SupportCollection<string, int> */
+    private function unreadCountsFor(LengthAwarePaginator $conversations): SupportCollection
+    {
+        $messages = $conversations->getCollection();
+        if ($messages->isEmpty()) {
+            return collect();
+        }
+
+        return Message::query()
+            ->leftJoin('conversation_reads', function (JoinClause $join): void {
+                $join->on('conversation_reads.team_id', '=', 'messages.team_id')
+                    ->on('conversation_reads.contact_id', '=', 'messages.contact_id')
+                    ->on('conversation_reads.channel_id', '=', 'messages.channel_id');
+            })
+            ->where('messages.direction', MessageDirection::Incoming)
+            ->whereRaw('messages.id > coalesce(conversation_reads.last_read_message_id, 0)')
+            ->where(function (Builder $query) use ($messages): void {
+                foreach ($messages as $message) {
+                    $query->orWhere(function (Builder $pairQuery) use ($message): void {
+                        $pairQuery->where('messages.contact_id', $message->contact_id)
+                            ->where('messages.channel_id', $message->channel_id);
+                    });
+                }
+            })
+            ->groupBy('messages.contact_id', 'messages.channel_id')
+            ->selectRaw('messages.contact_id, messages.channel_id, count(*) as unread_count')
+            ->get()
+            ->mapWithKeys(fn (Message $row): array => [
+                $this->conversationKey((int) $row->contact_id, (string) $row->channel_id) => (int) $row->getAttribute('unread_count'),
+            ]);
+    }
+
     private function conversationKey(int $contactId, string $channelId): string
     {
         return $contactId.':'.$channelId;
@@ -438,7 +502,7 @@ final class InboxController extends Controller
     }
 
     /** @return array<string, mixed> */
-    private function conversation(Message $latestMessage, ?FlowExecution $execution, ?AgentConversationState $agentState): array
+    private function conversation(Message $latestMessage, ?FlowExecution $execution, ?AgentConversationState $agentState, int $unreadCount): array
     {
         $contact = $latestMessage->contact;
         $channel = $latestMessage->channel;
@@ -454,6 +518,7 @@ final class InboxController extends Controller
             'phone' => $contact->phone,
             'excerpt' => $excerpt,
             'lastMessageAt' => $latestMessage->created_at?->toIso8601String(),
+            'unreadCount' => $unreadCount,
             'waitingSince' => $execution?->created_at?->toIso8601String(),
             'waitingSeconds' => $latestMessage->created_at === null ? 0 : max(0, (int) $latestMessage->created_at->diffInSeconds(now())),
             'state' => $execution === null ? 'agent' : 'flow',

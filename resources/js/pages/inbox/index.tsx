@@ -52,6 +52,7 @@ type Conversation = {
     phone: string;
     excerpt: string;
     lastMessageAt: string | null;
+    unreadCount: number;
     waitingSince: string | null;
     waitingSeconds: number;
     state: 'agent' | 'flow';
@@ -551,6 +552,7 @@ function ConversationsPanel({
                         const isActive =
                             conversation.contactId === selectedContactId &&
                             conversation.channel.id === selectedChannelId;
+                        const hasUnread = conversation.unreadCount > 0;
 
                         return (
                             <Link
@@ -571,15 +573,41 @@ function ConversationsPanel({
                                         {conversation.name ??
                                             conversation.phone}
                                     </span>
-                                    <span className="text-muted-foreground shrink-0 text-[10.5px]">
+                                    <span
+                                        className={cn(
+                                            'shrink-0 text-[10.5px]',
+                                            hasUnread
+                                                ? 'text-signal-live font-semibold'
+                                                : 'text-muted-foreground',
+                                        )}
+                                    >
                                         {formatWaiting(
                                             conversation.waitingSeconds,
                                         )}
                                     </span>
                                 </div>
-                                <p className="text-muted-foreground mt-1 truncate text-[11.5px]">
-                                    {conversation.excerpt}
-                                </p>
+                                <div className="mt-1 flex items-center justify-between gap-2">
+                                    <p
+                                        className={cn(
+                                            'truncate text-[11.5px]',
+                                            hasUnread
+                                                ? 'text-foreground font-semibold'
+                                                : 'text-muted-foreground',
+                                        )}
+                                    >
+                                        {conversation.excerpt}
+                                    </p>
+                                    {hasUnread && (
+                                        <span
+                                            className="bg-signal-live text-background flex h-[18px] min-w-[18px] shrink-0 items-center justify-center rounded-full px-1.5 text-[10px] font-semibold"
+                                            aria-label={`${conversation.unreadCount} ${conversation.unreadCount === 1 ? 'mensagem não lida' : 'mensagens não lidas'}`}
+                                        >
+                                            {conversation.unreadCount > 99
+                                                ? '99+'
+                                                : conversation.unreadCount}
+                                        </span>
+                                    )}
+                                </div>
                                 <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
                                     {conversation.state === 'agent' ? (
                                         <span className="bg-signal-live/10 text-signal-live rounded-md px-1.5 py-0.5 text-[10px] font-semibold">

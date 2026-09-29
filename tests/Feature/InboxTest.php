@@ -14,6 +14,7 @@ use App\Models\AgentConversationAudit;
 use App\Models\AgentConversationState;
 use App\Models\Channel;
 use App\Models\Contact;
+use App\Models\ConversationRead;
 use App\Models\Flow;
 use App\Models\FlowExecution;
 use App\Models\FlowVersion;
@@ -969,4 +970,56 @@ it('blocks a free-form message after the WhatsApp customer-care window', functio
         ->assertStatus(409);
 
     Http::assertNothingSent();
+});
+
+it('counts unread incoming messages per conversation and clears them when the conversation is opened', function () {
+    $user = User::factory()->withTeam()->create(['is_platform_admin' => true]);
+    $team = $user->company();
+    $execution = humanWaitingExecution($user);
+    $otherExecution = humanWaitingExecution($user, channelType: ChannelType::WhatsAppTest);
+    $readMessage = Message::factory()->for($execution->contact)->for($execution->channel)->create();
+    ConversationRead::factory()->create([
+        'team_id' => $team->id,
+        'contact_id' => $execution->contact_id,
+        'channel_id' => $execution->channel_id,
+        'last_read_message_id' => $readMessage->id,
+    ]);
+    Message::factory()->count(2)->for($execution->contact)->for($execution->channel)->create();
+    Message::factory()->outgoing()->for($execution->contact)->for($execution->channel)->create();
+    Message::factory()->for($otherExecution->contact)->for($otherExecution->channel)->create();
+
+    $this->actingAs($user)
+        ->get(route('inbox.index', ['queue' => 'all']))
+        ->assertOk()
+        ->assertInertia(fn ($page) => $page
+            ->where('conversations.data', fn ($conversations): bool => $conversations->pluck('unreadCount', 'contactId')->all() == [
+                $execution->contact_id => 2,
+                $otherExecution->contact_id => 1,
+            ]));
+
+    $this->actingAs($user)
+        ->get(route('inbox.show', inboxConversationParams($execution)))
+        ->assertOk()
+        ->assertInertia(fn ($page) => $page
+            ->where('conversations.data', fn ($conversations): bool => $conversations->pluck('unreadCount', 'contactId')->all() == [
+                $execution->contact_id => 0,
+                $otherExecution->contact_id => 1,
+            ]));
+});
+
+it('flags a message that arrives after the conversation was opened as unread until it is opened again', function () {
+    $user = User::factory()->withTeam()->create(['is_platform_admin' => true]);
+    $execution = humanWaitingExecution($user);
+    Message::factory()->for($execution->contact)->for($execution->channel)->create();
+
+    $this->actingAs($user)->get(route('inbox.show', inboxConversationParams($execution)))->assertOk();
+    Message::factory()->for($execution->contact)->for($execution->channel)->create();
+
+    $this->actingAs($user)
+        ->get(route('inbox.index', ['queue' => 'all']))
+        ->assertInertia(fn ($page) => $page->where('conversations.data.0.unreadCount', 1));
+
+    $this->actingAs($user)
+        ->get(route('inbox.show', inboxConversationParams($execution)))
+        ->assertInertia(fn ($page) => $page->where('conversations.data.0.unreadCount', 0));
 });

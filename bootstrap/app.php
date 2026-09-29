@@ -19,6 +19,7 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->encryptCookies(except: ['appearance', 'sidebar_state']);
         $middleware->preventRequestForgery(except: [
             'webhooks/whatsapp',
+            'webhooks/whatsapp/app-proprio',
             'webhooks/whatsapp-test',
             'webhooks/flows/*',
             'webhooks/shopify',
