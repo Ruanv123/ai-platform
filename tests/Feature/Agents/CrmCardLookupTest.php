@@ -254,12 +254,15 @@ it('loads contact, owner, and deal metadata from RD and rejects unexpected HTTP 
     $adapter = app(RdStationCrmAdapter::class);
 
     $people = $adapter->findPeopleByPhone($integration, '+5511999998888', 5);
+    $peopleById = array_column($people, null, 'id');
+    $personIds = array_keys($peopleById);
+    sort($personIds);
     $person = $adapter->findPerson($integration, '67c000000000000000000002', 5);
     $deals = $adapter->findOpenDeals($integration, '67c000000000000000000002', 5);
 
     expect($people)->toHaveCount(2)
-        ->and($people[0]['id'])->toBe('67c000000000000000000002')
-        ->and($people[0]['phone'])->toBe('+5511999998888')
+        ->and($personIds)->toBe(['67c000000000000000000001', '67c000000000000000000002'])
+        ->and($peopleById['67c000000000000000000002']['phone'])->toBe('+5511999998888')
         ->and($person['fields'])->toBe(['origin' => 'Indicação', 'internal_note' => 'confidencial'])
         ->and($deals)->toHaveCount(2)
         ->and(array_column($deals, 'status'))->toBe(['open', 'open'])

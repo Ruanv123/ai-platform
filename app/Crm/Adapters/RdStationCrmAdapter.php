@@ -245,11 +245,6 @@ class RdStationCrmAdapter extends AbstractCrmProviderAdapter
             }
         }
 
-        usort($people, fn (array $left, array $right): int => strcmp(
-            (string) ($right['updated_at'] ?? ''),
-            (string) ($left['updated_at'] ?? ''),
-        ));
-
         return $people;
     }
 
