@@ -1,4 +1,4 @@
-import { Form, Head, Link } from '@inertiajs/react';
+import { Form, Head, Link, router } from '@inertiajs/react';
 import { ArrowDown, ArrowLeft, ArrowUp, Bot, Plus, X } from 'lucide-react';
 import { useState } from 'react';
 import AgentPlayground, {
@@ -23,7 +23,7 @@ import {
     SelectTrigger,
     SelectValue,
 } from '@/components/ui/select';
-import { index, update } from '@/routes/agents';
+import { index, publish, update } from '@/routes/agents';
 import { show as showIntegration } from '@/routes/integrations';
 
 type Option = {
@@ -54,6 +54,9 @@ type Props = {
     agendaConnected: boolean;
     shopConnected: boolean;
     productSearchConfigured: boolean;
+    publishedVersion: {
+        number: number;
+    } | null;
     objectives: Option[];
     tones: Option[];
     responseLengths: Option[];
@@ -254,6 +257,7 @@ function AgentForm({
     agendaConnected,
     shopConnected,
     productSearchConfigured,
+    publishedVersion,
 }: Props) {
     const [name, setName] = useState(agent.name);
     const [description, setDescription] = useState(agent.description ?? '');
@@ -280,6 +284,7 @@ function AgentForm({
     const [activePanel, setActivePanel] = useState<'config' | 'playground'>(
         'config',
     );
+    const [isPublishing, setIsPublishing] = useState(false);
     const draft: AgentDraft = {
         name,
         objective,
@@ -300,6 +305,33 @@ function AgentForm({
         if (!isProductSearchConfigured) {
             setSearchProducts(nextObjective === 'sales' && shopConnected);
         }
+    };
+
+    const publishDraft = () => {
+        router.post(
+            publish.url(agent.id),
+            {
+                name,
+                description: description || null,
+                objective,
+                ...(isProductSearchConfigured
+                    ? { search_products: searchProducts }
+                    : {}),
+                tone,
+                uses_emojis: usesEmojis,
+                response_length: responseLength,
+                welcome_message: welcomeMessage,
+                instructions,
+                rules,
+                collection_ids: selectedCollectionIds,
+                schedulable_calendar_ids: selectedSchedulableCalendarIds,
+            },
+            {
+                preserveScroll: true,
+                onStart: () => setIsPublishing(true),
+                onFinish: () => setIsPublishing(false),
+            },
+        );
     };
 
     const toggleCollection = (collectionId: string) => {
@@ -723,6 +755,13 @@ function AgentForm({
 
                                     {permissions.canManageAgents && (
                                         <div className="flex flex-col-reverse gap-3 border-t pt-6 sm:flex-row sm:justify-end">
+                                            <p className="text-muted-foreground mr-auto self-center text-sm">
+                                                {publishedVersion === null
+                                                    ? 'Ainda não há uma versão publicada nos Canais.'
+                                                    : `Última versão publicada nos Canais: ${publishedVersion.number}.`}{' '}
+                                                O rascunho atual só vai aos
+                                                Canais quando você publicar.
+                                            </p>
                                             <Button
                                                 type="button"
                                                 variant="outline"
@@ -737,8 +776,19 @@ function AgentForm({
                                                 disabled={processing}
                                             >
                                                 {processing
-                                                    ? 'Salvando...'
-                                                    : 'Salvar alterações'}
+                                                    ? 'Salvando rascunho...'
+                                                    : 'Salvar rascunho'}
+                                            </Button>
+                                            <Button
+                                                type="button"
+                                                onClick={publishDraft}
+                                                disabled={
+                                                    processing || isPublishing
+                                                }
+                                            >
+                                                {isPublishing
+                                                    ? 'Publicando...'
+                                                    : 'Publicar para os Canais'}
                                             </Button>
                                         </div>
                                     )}

@@ -86,7 +86,8 @@ class WhatsAppAgent implements Agent, Conversational, HasTools
             );
         }
         $team = $this->configuredAgent->team;
-        if ($this->configuredAgent->shouldSearchProducts($team->shops()->exists())) {
+        $publishedVersion = $this->configuredAgent->publishedVersion();
+        if ($publishedVersion?->shouldSearchProducts($team->shops()->exists())) {
             $tools[] = new SearchProducts($team, $this->productCatalogSearch);
         }
         $calendars = $this->configuredAgent->schedulableCalendars;

@@ -124,6 +124,8 @@ Route::middleware(['auth', EnsureUserHasTeam::class])->group(function () {
     Route::post('flows/{flow}/playground', [FlowPlaygroundController::class, 'run'])->name('flows.playground');
     Route::patch('agents/{agent}/toggle', [AgentController::class, 'toggle'])
         ->name('agents.toggle');
+    Route::post('agents/{agent}/publish', [AgentController::class, 'publish'])
+        ->name('agents.publish');
     Route::post('agents/playground', [PlaygroundController::class, 'stream'])
         ->middleware('throttle:playground')
         ->name('agents.playground.stream');
