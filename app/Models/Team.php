@@ -243,6 +243,11 @@ class Team extends Model
         return $this->hasMany(Integration::class);
     }
 
+    public function shops(): HasMany
+    {
+        return $this->hasMany(Shop::class);
+    }
+
     /** @return HasMany<SchedulableCalendar, $this> */
     public function schedulableCalendars(): HasMany
     {

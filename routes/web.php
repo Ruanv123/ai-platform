@@ -23,6 +23,7 @@ use App\Http\Controllers\InboxMediaController;
 use App\Http\Controllers\Integrations\AgendaCalendarController;
 use App\Http\Controllers\Integrations\IntegrationController;
 use App\Http\Controllers\Integrations\IntegrationWebhookFailureController;
+use App\Http\Controllers\Integrations\ShopifyConnectionController;
 use App\Http\Controllers\Knowledge\CollectionController;
 use App\Http\Controllers\Knowledge\DocumentController;
 use App\Http\Controllers\Onboarding\CompanyController;
@@ -143,6 +144,10 @@ Route::middleware(['auth', EnsureUserHasTeam::class])->group(function () {
 
     Route::get('integrations', [IntegrationController::class, 'index'])
         ->name('integrations.index');
+    Route::get('integrations/ecommerce/shopify/connect', [ShopifyConnectionController::class, 'connect'])
+        ->name('integrations.shopify.connect');
+    Route::get('integrations/ecommerce/shopify/callback', [ShopifyConnectionController::class, 'callback'])
+        ->name('integrations.shopify.callback');
     Route::get('integrations/agenda/google/connect', [IntegrationController::class, 'connect'])
         ->name('integrations.agenda.connect');
     Route::get('integrations/agenda/google/callback', [IntegrationController::class, 'callback'])

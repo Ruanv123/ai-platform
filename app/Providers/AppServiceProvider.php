@@ -2,6 +2,8 @@
 
 namespace App\Providers;
 
+use App\Ecommerce\EcommerceAdapter;
+use App\Ecommerce\ShopifyAdapter;
 use App\Http\Controllers\Channels\WhatsAppController;
 use App\Http\Controllers\Channels\WhatsAppTestController;
 use App\WhatsApp\Oficial\MetaWhatsAppProfileProvider;
@@ -24,6 +26,8 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
+        $this->app->bind(EcommerceAdapter::class, ShopifyAdapter::class);
+
         $this->app->when(WhatsAppController::class)
             ->needs(WhatsAppProfileProvider::class)
             ->give(MetaWhatsAppProfileProvider::class);
