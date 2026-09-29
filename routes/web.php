@@ -22,6 +22,7 @@ use App\Http\Controllers\InboxController;
 use App\Http\Controllers\InboxMediaController;
 use App\Http\Controllers\Integrations\AgendaCalendarController;
 use App\Http\Controllers\Integrations\CrmConnectionController;
+use App\Http\Controllers\Integrations\CrmDefaultOwnerController;
 use App\Http\Controllers\Integrations\CrmFieldVisibilityController;
 use App\Http\Controllers\Integrations\IntegrationController;
 use App\Http\Controllers\Integrations\IntegrationWebhookFailureController;
@@ -194,6 +195,8 @@ Route::middleware(['auth', EnsureUserHasTeam::class])->group(function () {
         ->name('integrations.crm.rd-station.callback');
     Route::put('integrations/crm/fields/visible-to-agent', [CrmFieldVisibilityController::class, 'update'])
         ->name('integrations.crm.fields.visible-to-agent.update');
+    Route::put('integrations/crm/default-owner', [CrmDefaultOwnerController::class, 'update'])
+        ->name('integrations.crm.default-owner.update');
     Route::post('integrations', [IntegrationController::class, 'store'])
         ->name('integrations.store');
     Route::post('integrations/agenda/calendars', [AgendaCalendarController::class, 'store'])

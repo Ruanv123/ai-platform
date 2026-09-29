@@ -42,6 +42,11 @@ abstract class AbstractCrmProviderAdapter implements CrmProviderAdapter
         return $this->unsupported();
     }
 
+    public function renewIntegration(Integration $integration, float $timeoutSeconds = 15.0): Integration
+    {
+        return $this->unsupported();
+    }
+
     public function findPerson(Integration $integration, string $personId, float $timeoutSeconds = 15.0): array
     {
         return $this->unsupported();

@@ -36,6 +36,8 @@ interface CrmProviderAdapter
 
     public function freshIntegration(Integration $integration, float $timeoutSeconds = 15.0): Integration;
 
+    public function renewIntegration(Integration $integration, float $timeoutSeconds = 15.0): Integration;
+
     /** @return CrmMetadata */
     public function loadMetadata(Integration $integration): array;
 

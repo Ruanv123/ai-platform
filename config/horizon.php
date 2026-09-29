@@ -224,6 +224,18 @@ return [
             'timeout' => 60,
             'nice' => 0,
         ],
+        'integrations' => [
+            'connection' => 'redis',
+            'queue' => ['crm-webhooks', 'crm-operations', 'crm-maintenance'],
+            'balance' => false,
+            'maxProcesses' => 1,
+            'maxTime' => 0,
+            'maxJobs' => 0,
+            'memory' => 128,
+            'tries' => 5,
+            'timeout' => 120,
+            'nice' => 0,
+        ],
     ],
 
     'environments' => [
@@ -238,6 +250,9 @@ return [
                 'balanceMaxShift' => 1,
                 'balanceCooldown' => 3,
             ],
+            'integrations' => [
+                'maxProcesses' => 5,
+            ],
         ],
 
         'local' => [
@@ -245,6 +260,9 @@ return [
                 'maxProcesses' => 1,
             ],
             'default' => [
+                'maxProcesses' => 1,
+            ],
+            'integrations' => [
                 'maxProcesses' => 1,
             ],
         ],

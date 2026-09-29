@@ -5,6 +5,7 @@ namespace App\Http\Requests\Agents;
 use App\Enums\AgentObjective;
 use App\Enums\AgentResponseLength;
 use App\Enums\AgentTone;
+use App\Models\Agent;
 use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
@@ -26,6 +27,22 @@ class SaveAgentRequest extends FormRequest
      */
     public function rules(): array
     {
+        $crmIntegration = $this->user()?->company()?->integrations()
+            ->where('type', 'crm')
+            ->where('status', 'connected')
+            ->first();
+        $pipelines = $crmIntegration?->crm_metadata['pipelines'] ?? [];
+        $pipelineIds = collect($pipelines)->pluck('id')->filter()->map(fn (mixed $id): string => (string) $id)->all();
+        $agent = $this->route('agent');
+        $selectedPipelineId = $this->input('crm_pipeline_id', $agent instanceof Agent ? $agent->crm_pipeline_id : null);
+        $stageIds = collect($pipelines)
+            ->filter(fn (array $pipeline): bool => (string) ($pipeline['id'] ?? '') === (string) $selectedPipelineId)
+            ->flatMap(fn (array $pipeline): array => $pipeline['stages'] ?? [])
+            ->pluck('id')
+            ->filter()
+            ->map(fn (mixed $id): string => (string) $id)
+            ->all();
+
         return [
             'name' => ['required', 'string', 'max:255'],
             'description' => ['nullable', 'string', 'max:1000'],
@@ -33,6 +50,9 @@ class SaveAgentRequest extends FormRequest
             'search_products' => ['sometimes', 'nullable', 'boolean'],
             'send_purchase_link' => ['sometimes', 'nullable', 'boolean'],
             'crm_lookup_enabled' => ['sometimes', 'boolean'],
+            'crm_ensure_deal_enabled' => ['sometimes', 'boolean'],
+            'crm_pipeline_id' => ['sometimes', 'nullable', 'string', 'max:128', Rule::in($pipelineIds)],
+            'crm_initial_stage_id' => ['sometimes', 'nullable', 'string', 'max:128', Rule::in($stageIds)],
             'tone' => ['required', Rule::enum(AgentTone::class)],
             'uses_emojis' => ['required', 'boolean'],
             'response_length' => ['required', Rule::enum(AgentResponseLength::class)],
