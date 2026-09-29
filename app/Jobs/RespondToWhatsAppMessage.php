@@ -3,6 +3,7 @@
 namespace App\Jobs;
 
 use App\Ai\Agents\WhatsAppAgent;
+use App\Ecommerce\ProductCatalogSearch;
 use App\Enums\MessageDeliveryStatus;
 use App\Enums\MessageDirection;
 use App\Inbox\AgentConversationService;
@@ -100,6 +101,7 @@ class RespondToWhatsAppMessage implements ShouldQueue
     public function handle(
         AgentInstructionTemplate $instructionTemplate,
         KnowledgeBaseSearch $knowledgeBaseSearch,
+        ProductCatalogSearch $productCatalogSearch,
         WhatsAppOutputAdapterFactory $outputAdapterFactory,
         WhatsAppCustomerCareWindow $customerCareWindow,
         AgentConversationService $agentConversations,
@@ -158,6 +160,7 @@ class RespondToWhatsAppMessage implements ShouldQueue
             $history,
             $instructionTemplate,
             $knowledgeBaseSearch,
+            $productCatalogSearch,
             null,
             $contact,
         );

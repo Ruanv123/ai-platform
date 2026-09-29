@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Agents;
 
 use App\Ai\Agents\PlaygroundAgent;
+use App\Ecommerce\ProductCatalogSearch;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Knowledge\PlaygroundRequest;
 use App\Knowledge\AgentInstructionTemplate;
@@ -25,6 +26,7 @@ class PlaygroundController extends Controller
         PlaygroundRequest $request,
         AgentInstructionTemplate $instructionTemplate,
         KnowledgeBaseSearch $knowledgeBaseSearch,
+        ProductCatalogSearch $productCatalogSearch,
     ): StreamedResponse {
         $validated = $request->validated();
         $team = $request->user()->company();
@@ -51,6 +53,7 @@ class PlaygroundController extends Controller
             $validated,
             $instructionTemplate,
             $knowledgeBaseSearch,
+            $productCatalogSearch,
         ): void {
             $invocationId = (string) Str::uuid7();
 
@@ -60,6 +63,7 @@ class PlaygroundController extends Controller
                     $validated['history'] ?? [],
                     $instructionTemplate,
                     $knowledgeBaseSearch,
+                    $productCatalogSearch,
                 );
                 $stream = $playgroundAgent->stream(
                     $validated['message'],
