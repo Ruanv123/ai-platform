@@ -1,0 +1,100 @@
+{
+    "object": "whatsapp_business_account",
+    "entry": [
+        {
+            "id": "waba-fixture",
+            "changes": [
+                {
+                    "field": "messages",
+                    "value": {
+                        "messaging_product": "whatsapp",
+                        "metadata": {
+                            "display_phone_number": "5511888888888",
+                            "phone_number_id": "official-phone-number-id"
+                        },
+                        "contacts": [
+                            {"profile": {"name": "Ana Souza"}, "wa_id": "5511999999001"},
+                            {"profile": {"name": "Bruno Lima"}, "wa_id": "5511999999002"}
+                        ],
+                        "messages": [
+                            {
+                                "from": "5511999999001",
+                                "id": "official-message-multiple-1",
+                                "timestamp": "1760000000",
+                                "type": "text",
+                                "text": {"body": "Primeira mensagem do lote."}
+                            },
+                            {
+                                "from": "5511999999002",
+                                "id": "official-message-multiple-2",
+                                "timestamp": "1760000001",
+                                "type": "text",
+                                "text": {"body": "Segunda mensagem do lote."}
+                            }
+                        ]
+                    }
+                },
+                {
+                    "field": "unknown_field",
+                    "value": {
+                        "metadata": {"phone_number_id": "official-phone-number-id"},
+                        "messages": [
+                            {
+                                "from": "5511999999003",
+                                "id": "official-message-unknown-field",
+                                "timestamp": "1760000002",
+                                "type": "text",
+                                "text": {"body": "Este evento deve ser descartado."}
+                            }
+                        ]
+                    }
+                }
+            ]
+        },
+        {
+            "id": "waba-fixture-second",
+            "changes": [
+                {
+                    "field": "messages",
+                    "value": {
+                        "messaging_product": "whatsapp",
+                        "metadata": {
+                            "display_phone_number": "5511888888888",
+                            "phone_number_id": "official-phone-number-id-second"
+                        },
+                        "contacts": [
+                            {"profile": {"name": "Carla Alves"}, "wa_id": "5511999999004"}
+                        ],
+                        "messages": [
+                            {
+                                "from": "5511999999004",
+                                "id": "official-message-multiple-3",
+                                "timestamp": "1760000003",
+                                "type": "text",
+                                "text": {"body": "Mensagem de outro entry."}
+                            }
+                        ]
+                    }
+                },
+                {
+                    "field": "messages",
+                    "value": {
+                        "messaging_product": "whatsapp",
+                        "metadata": {
+                            "display_phone_number": "5511888888888",
+                            "phone_number_id": "official-phone-number-id-second"
+                        },
+                        "statuses": [
+                            {
+                                "id": "official-outgoing-message",
+                                "status": "read",
+                                "timestamp": "1760000004",
+                                "recipient_id": "5511999998000"
+                            }
+                        ]
+                    }
+                }
+            ]
+        }
+    ]
+}

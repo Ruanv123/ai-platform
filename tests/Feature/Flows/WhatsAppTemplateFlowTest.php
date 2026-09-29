@@ -10,14 +10,15 @@ use App\Enums\FlowTriggerType;
 use App\Flows\FlowEngine;
 use App\Models\Channel;
 use App\Models\Contact;
+use App\Models\ContactField;
 use App\Models\Flow;
 use App\Models\FlowExecution;
 use App\Models\FlowVersion;
 use App\Models\Message;
 use App\Models\User;
-use App\Models\WhatsAppAccount;
 use App\Models\WhatsAppPhoneNumber;
 use App\Models\WhatsAppTemplate;
+use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
 
 function whatsappTemplateFlowGraph(array $nodes, array $edges = []): array
@@ -25,17 +26,21 @@ function whatsappTemplateFlowGraph(array $nodes, array $edges = []): array
     return ['version' => 1, 'nodes' => $nodes, 'edges' => $edges];
 }
 
-function createWhatsAppTemplateFlow(User $user, string $purpose): array
+function createWhatsAppTemplateFlow(User $user, string $purpose, ChannelType $channelType = ChannelType::WhatsApp): array
 {
-    $channel = Channel::factory()->for($user->company())->create(['type' => ChannelType::WhatsApp]);
+    $channel = Channel::factory()->for($user->company())->create(['type' => $channelType]);
     $phone = WhatsAppPhoneNumber::factory()->for($channel)->create(['phone_number_id' => uniqid('flow-phone-', true)]);
-    $account = WhatsAppAccount::factory()->for($phone, 'phoneNumber')->create();
+    $account = $phone->whatsappAccount;
     $template = WhatsAppTemplate::factory()->for($account, 'account')->create([
         'requested_category' => $purpose,
         'assigned_category' => $purpose,
-        'variables' => [['position' => 1, 'component' => 'body']],
     ]);
     $contact = Contact::factory()->for($user->company())->create(['phone' => '55'.random_int(10000000000, 99999999999)]);
+    $contactField = ContactField::factory()->for($user->company())->create(['name' => 'name']);
+    $contact->fieldValues()->create([
+        'contact_field_id' => $contactField->getKey(),
+        'value' => $contact->name,
+    ]);
     Message::factory()->for($contact)->for($channel)->incoming()->create([
         'content' => 'Olá',
         'created_at' => now()->subHours(25),
@@ -96,8 +101,10 @@ it('allows a template after consent is granted and rejects it after that purpose
     expect(FlowExecution::withoutGlobalScopes()->latest('created_at')->latest('id')->firstOrFail()->status)
         ->toBe(FlowExecutionStatus::Completed);
     $this->assertDatabaseHas('messages', ['contact_id' => $contact->id, 'payload_type' => 'template']);
+    Http::assertSent(fn (Request $request): bool => data_get($request->data(), 'template.components.0.parameters.0.text') === $contact->name);
 
-    [$secondChannel, $secondContact, $secondFlow] = createWhatsAppTemplateFlow($user, $purpose);
+    $secondUser = User::factory()->withTeam()->create();
+    [$secondChannel, $secondContact, $secondFlow] = createWhatsAppTemplateFlow($secondUser, $purpose);
     $consents->grant($secondContact, ConsentPurpose::from($purpose), 'test');
     $consents->revoke($secondContact, ConsentPurpose::from($purpose), 'test');
     app(FlowEngine::class)->handleWebhook($secondFlow, $secondChannel, ['event' => 'template.send'], $secondContact);

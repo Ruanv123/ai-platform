@@ -20,7 +20,6 @@ use LogicException;
  * @property string|null $new_category
  * @property string|null $reason
  * @property string|null $explanation
- * @property array<string, mixed>|null $details
  * @property Carbon $created_at
  * @property-read WhatsAppTemplate $template
  */
@@ -31,9 +30,10 @@ use LogicException;
     'new_status',
     'old_category',
     'new_category',
+    'old_quality_rating',
+    'new_quality_rating',
     'reason',
     'explanation',
-    'details',
     'created_at',
 ])]
 class WhatsAppTemplateHistory extends Model
@@ -65,7 +65,6 @@ class WhatsAppTemplateHistory extends Model
     protected function casts(): array
     {
         return [
-            'details' => 'array',
             'created_at' => 'immutable_datetime',
         ];
     }

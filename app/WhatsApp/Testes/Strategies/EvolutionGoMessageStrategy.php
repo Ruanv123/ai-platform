@@ -85,6 +85,11 @@ abstract class EvolutionGoMessageStrategy implements EvolutionGoStrategy
         return $message;
     }
 
+    public function shouldDispatchResponse(): bool
+    {
+        return true;
+    }
+
     /**
      * Get the event type stored for the message.
      *
@@ -142,9 +147,7 @@ abstract class EvolutionGoMessageStrategy implements EvolutionGoStrategy
             $this->originalMedia = null;
         }
 
-        return $this->mediaResolver->videoWarning(
-            $this->textContent($payload),
-        );
+        return $this->textContent($payload) ?? 'O Contato enviou um vídeo.';
     }
 
     private function persistOriginalMedia(Message $message): void

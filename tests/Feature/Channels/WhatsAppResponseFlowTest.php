@@ -15,6 +15,7 @@ use App\WhatsApp\IncomingMessageResponseDispatcher;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Storage;
 
 function responseFlowTestFixture(string $name, string $provider = 'testes'): array
 {
@@ -52,13 +53,14 @@ function createOfficialResponseFlowTestChannel(): Channel
         'type' => ChannelType::WhatsApp,
         'agent_id' => $agent->getKey(),
     ]);
-    $phoneNumber = WhatsAppPhoneNumber::factory()->for($channel)->create([
-        'phone_number_id' => 'official-phone-number-id',
-    ]);
-
-    WhatsAppAccount::factory()->for($phoneNumber, 'phoneNumber')->create([
+    $account = WhatsAppAccount::factory()->for($team, 'team')->create([
         'access_token' => 'official-access-token',
         'app_secret' => 'official-app-secret',
+        'waba_id' => 'waba-fixture',
+    ]);
+    $phoneNumber = WhatsAppPhoneNumber::factory()->for($channel)->create([
+        'phone_number_id' => 'official-phone-number-id',
+        'whatsapp_account_id' => $account->getKey(),
     ]);
 
     return $channel;
@@ -314,7 +316,7 @@ it('responds to an incoming official WhatsApp message through the public webhook
     $body = json_encode($payload, JSON_THROW_ON_ERROR);
     $signature = 'sha256='.hash_hmac('sha256', $body, 'official-app-secret');
 
-    $response = $this->call('POST', route('webhooks.whatsapp'), [], [], [], [
+    $response = $this->call('POST', route('webhooks.whatsapp.app-proprio'), [], [], [], [
         'CONTENT_TYPE' => 'application/json',
         'HTTP_X_HUB_SIGNATURE_256' => $signature,
     ], $body);
@@ -345,6 +347,60 @@ it('responds to an incoming official WhatsApp message through the public webhook
                 ],
             ];
     });
+});
+
+it('asks the Contact to describe an official video without sending its caption to the Agent', function () {
+    $channel = createOfficialResponseFlowTestChannel();
+    Storage::fake('whatsapp_media');
+    WhatsAppAgent::fake(['Não consigo entender vídeos. Descreva o conteúdo por texto para que eu possa ajudar.']);
+    Http::preventStrayRequests();
+    Http::fake([
+        'https://graph.facebook.com/*' => Http::response([
+            'url' => 'https://media.example/video',
+            'mime_type' => 'video/mp4',
+            'messages' => [['id' => 'official-outgoing-message-video-1']],
+        ]),
+        'https://media.example/*' => Http::response('video-content', 200, ['Content-Type' => 'video/mp4']),
+    ]);
+    $payload = responseFlowTestFixture('message-video', 'oficial');
+    $payload['entry'][0]['changes'][0]['value']['messages'][0]['timestamp'] = (string) now()->timestamp;
+    $body = json_encode($payload, JSON_THROW_ON_ERROR);
+    $signature = 'sha256='.hash_hmac('sha256', $body, 'official-app-secret');
+
+    $response = $this->call('POST', route('webhooks.whatsapp.app-proprio'), [], [], [], [
+        'CONTENT_TYPE' => 'application/json',
+        'HTTP_X_HUB_SIGNATURE_256' => $signature,
+    ], $body);
+
+    $response->assertOk()->assertContent('EVENT_RECEIVED');
+    $this->assertDatabaseHas('messages', [
+        'provider_message_id' => 'official-outgoing-message-video-1',
+        'direction' => MessageDirection::Outgoing->value,
+        'content' => 'Não consigo entender vídeos. Descreva o conteúdo por texto para que eu possa ajudar.',
+    ]);
+    WhatsAppAgent::assertPrompted('O Contato enviou um vídeo. Responda que você não entende vídeos e peça para ele descrever o conteúdo por texto.');
+});
+
+it('asks the Contact to describe a test channel video without sending its caption to the Agent', function () {
+    createResponseFlowTestChannel();
+    Storage::fake('whatsapp_media');
+    WhatsAppAgent::fake(['Não consigo entender vídeos. Descreva o conteúdo por texto para que eu possa ajudar.']);
+    Http::preventStrayRequests();
+    Http::fake([
+        'https://evolution.test/*' => Http::response(['data' => ['Info' => ['ID' => 'test-outgoing-message-video-1']]]),
+    ]);
+    $payload = responseFlowTestFixture('message-video');
+    $payload['data']['Info']['Timestamp'] = now()->toIso8601String();
+
+    $response = $this->postJson(route('webhooks.whatsapp-test'), $payload);
+
+    $response->assertOk()->assertContent('EVENT_RECEIVED');
+    $this->assertDatabaseHas('messages', [
+        'provider_message_id' => 'test-outgoing-message-video-1',
+        'direction' => MessageDirection::Outgoing->value,
+        'content' => 'Não consigo entender vídeos. Descreva o conteúdo por texto para que eu possa ajudar.',
+    ]);
+    WhatsAppAgent::assertPrompted('O Contato enviou um vídeo. Responda que você não entende vídeos e peça para ele descrever o conteúdo por texto.');
 });
 
 it('retries a temporary Agent failure with backoff before sending the response', function () {
@@ -481,7 +537,7 @@ it('does not send an official response after Meta customer-care window expires',
     $body = json_encode($payload, JSON_THROW_ON_ERROR);
     $signature = 'sha256='.hash_hmac('sha256', $body, 'official-app-secret');
 
-    $response = $this->call('POST', route('webhooks.whatsapp'), [], [], [], [
+    $response = $this->call('POST', route('webhooks.whatsapp.app-proprio'), [], [], [], [
         'CONTENT_TYPE' => 'application/json',
         'HTTP_X_HUB_SIGNATURE_256' => $signature,
     ], $body);

@@ -7,11 +7,13 @@ use App\Models\Channel;
 use App\WhatsApp\IncomingMessageResponseDispatcher;
 use App\WhatsApp\Media\IncomingMediaResolver;
 use App\WhatsApp\Media\IncomingMediaStorage;
+use App\WhatsApp\MessageReactionUpdater;
 use App\WhatsApp\Testes\Strategies\EvolutionGoAudioStrategy;
 use App\WhatsApp\Testes\Strategies\EvolutionGoConnectionStrategy;
 use App\WhatsApp\Testes\Strategies\EvolutionGoDocumentStrategy;
 use App\WhatsApp\Testes\Strategies\EvolutionGoImageStrategy;
 use App\WhatsApp\Testes\Strategies\EvolutionGoQrCodeStrategy;
+use App\WhatsApp\Testes\Strategies\EvolutionGoReactionStrategy;
 use App\WhatsApp\Testes\Strategies\EvolutionGoReadReceiptStrategy;
 use App\WhatsApp\Testes\Strategies\EvolutionGoSendMessageStrategy;
 use App\WhatsApp\Testes\Strategies\EvolutionGoStrategy;
@@ -27,6 +29,7 @@ final class EvolutionGoEventProcessor
         private readonly EvolutionGoMediaDownloader $mediaDownloader,
         private readonly IncomingMediaStorage $mediaStorage,
         private readonly IncomingMessageResponseDispatcher $responseDispatcher,
+        private readonly MessageReactionUpdater $reactionUpdater,
     ) {}
 
     /**
@@ -47,7 +50,7 @@ final class EvolutionGoEventProcessor
 
         $message = $strategy->handle($channel, $payload);
 
-        if ($message?->direction === MessageDirection::Incoming) {
+        if ($message?->direction === MessageDirection::Incoming && $strategy->shouldDispatchResponse()) {
             $this->responseDispatcher->dispatch($channel, $message);
         }
     }
@@ -57,6 +60,10 @@ final class EvolutionGoEventProcessor
      */
     private function messageStrategy(array $payload): EvolutionGoStrategy
     {
+        if (array_key_exists('reactionMessage', (array) data_get($payload, 'data.Message', []))) {
+            return new EvolutionGoReactionStrategy($this->reactionUpdater);
+        }
+
         if ($this->isSentToAnotherChat($payload)) {
             return new EvolutionGoSendMessageStrategy($this->mediaResolver, $this->mediaDownloader, $this->mediaStorage);
         }

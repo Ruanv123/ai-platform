@@ -3,6 +3,7 @@
 use App\Enums\ChannelStatus;
 use App\Models\Channel;
 use App\Models\User;
+use App\Models\WhatsAppAccount;
 use App\Models\WhatsAppPhoneNumber;
 use Illuminate\Http\Client\Request as ClientRequest;
 use Illuminate\Support\Facades\Http;
@@ -14,15 +15,15 @@ function createWhatsAppProfileChannel(User $user, ChannelStatus $status = Channe
         'status' => $status,
         'last_error' => $lastError,
     ]);
-    $phoneNumber = WhatsAppPhoneNumber::factory()->for($channel)->create([
-        'phone_number_id' => '15551234567890',
-    ]);
-    $account = $phoneNumber->whatsappAccount()->create([
-        'method' => 'manual',
+    $account = WhatsAppAccount::factory()->for($user->company(), 'team')->create([
+        'connection_method' => 'own_app',
         'waba_id' => '102030405060708',
         'access_token' => 'profile-access-token',
         'app_secret' => 'profile-app-secret',
         'verify_token' => 'profile-verify-token',
+    ]);
+    $phoneNumber = WhatsAppPhoneNumber::factory()->for($channel)->for($account, 'whatsappAccount')->create([
+        'phone_number_id' => '15551234567890',
     ]);
 
     return [$channel, $phoneNumber, $account];
@@ -120,7 +121,7 @@ it('does not call Meta for a channel that is not connected', function () {
         ->and($channel->fresh()->last_error)->toBe('Credenciais inválidas.');
 });
 
-it('shows a translated provider error without changing the channel connection state', function () {
+it('shows a translated provider error and marks the channel unavailable for an invalid token', function () {
     Http::preventStrayRequests();
     $this->withoutVite();
     $user = User::factory()->withTeam()->create();
@@ -145,8 +146,8 @@ it('shows a translated provider error without changing the channel connection st
                 'message' => 'O access token é inválido ou expirou.',
             ]),
     ));
-    expect($channel->fresh()->status)->toBe(ChannelStatus::Connected)
-        ->and($channel->fresh()->last_error)->toBe('Erro anterior preservado.');
+    expect($channel->fresh()->status)->toBe(ChannelStatus::Error)
+        ->and($channel->fresh()->last_error)->toBe('O access token é inválido ou expirou.');
 });
 
 it('does not request the live Profile when the Conexão tab is active', function () {

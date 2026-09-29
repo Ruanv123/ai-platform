@@ -8,10 +8,86 @@ use App\Models\Channel;
 use App\Models\Contact;
 use App\Models\Message;
 use App\Models\WhatsAppTemplate;
+use Closure;
+use Illuminate\Http\Client\PendingRequest;
+use Illuminate\Http\Client\Response;
+use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Storage;
 use InvalidArgumentException;
+use RuntimeException;
 
 abstract class AbstractWhatsAppOutputAdapter implements WhatsAppOutputAdapter
 {
+    protected function storeOutgoingMedia(UploadedFile $file): array
+    {
+        $path = $file->store('outgoing', 'whatsapp_media');
+
+        if (! is_string($path)) {
+            throw new RuntimeException('Não foi possível salvar o arquivo enviado.');
+        }
+
+        return [
+            'path' => $path,
+            'filename' => mb_substr($file->getClientOriginalName(), 0, 255),
+            'mime_type' => $file->getMimeType() ?: 'application/octet-stream',
+            'size' => (int) $file->getSize(),
+        ];
+    }
+
+    protected function postStoredMedia(
+        PendingRequest $request,
+        string $url,
+        array $data,
+        array $media,
+        ?Closure $beforeThrow = null,
+    ): Response {
+        $stream = Storage::disk('whatsapp_media')->readStream($media['path']);
+
+        if (! is_resource($stream)) {
+            throw new RuntimeException('Não foi possível ler o arquivo enviado.');
+        }
+
+        try {
+            $response = $request
+                ->attach('file', $stream, $media['filename'], ['Content-Type' => $media['mime_type']])
+                ->post($url, $data);
+
+            $beforeThrow?->__invoke($response);
+
+            return $response->throw();
+        } finally {
+            fclose($stream);
+        }
+    }
+
+    protected function recordOutgoingMedia(
+        Channel $channel,
+        Contact $contact,
+        string $type,
+        array $media,
+        string $providerMessageId,
+    ): Message {
+        return Message::create([
+            'team_id' => $channel->team_id,
+            'contact_id' => $contact->getKey(),
+            'channel_id' => $channel->getKey(),
+            'direction' => MessageDirection::Outgoing,
+            'payload_type' => $type,
+            'provider_message_id' => $providerMessageId,
+            'delivery_status' => MessageDeliveryStatus::Sent,
+            'media_path' => $media['path'],
+            'media_filename' => $media['filename'],
+            'media_mime_type' => $media['mime_type'],
+            'media_size' => $media['size'],
+            'media_available' => true,
+        ]);
+    }
+
+    protected function deleteStoredMedia(array $media): void
+    {
+        Storage::disk('whatsapp_media')->delete($media['path']);
+    }
+
     protected function recordOutgoingText(
         Channel $channel,
         Contact $contact,
@@ -38,6 +114,7 @@ abstract class AbstractWhatsAppOutputAdapter implements WhatsAppOutputAdapter
         string|WhatsAppTemplate $template,
         array $parameters,
         string $providerMessageId,
+        ?array $media = null,
     ): Message {
         return Message::create([
             'team_id' => $channel->team_id,
@@ -53,6 +130,13 @@ abstract class AbstractWhatsAppOutputAdapter implements WhatsAppOutputAdapter
                 'parameters' => $parameters,
             ], JSON_THROW_ON_ERROR),
             'delivery_status' => MessageDeliveryStatus::Sent,
+            ...($media === null ? [] : [
+                'media_path' => $media['path'],
+                'media_filename' => $media['filename'],
+                'media_mime_type' => $media['mime_type'],
+                'media_size' => $media['size'],
+                'media_available' => true,
+            ]),
         ]);
     }
 

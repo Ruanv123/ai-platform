@@ -7,6 +7,11 @@ use Illuminate\Support\Str;
 
 final class EvolutionGoUnsupportedStrategy extends EvolutionGoMessageStrategy
 {
+    public function shouldDispatchResponse(): bool
+    {
+        return false;
+    }
+
     /**
      * @param  array<string, mixed>  $payload
      */
@@ -24,10 +29,6 @@ final class EvolutionGoUnsupportedStrategy extends EvolutionGoMessageStrategy
      */
     protected function content(Channel $channel, array $payload): ?string
     {
-        if (str_contains(strtolower($this->rawMessageType($payload) ?? ''), 'sticker')) {
-            return 'Figurinha não exibida';
-        }
-
-        return $this->textContent($payload);
+        return null;
     }
 }

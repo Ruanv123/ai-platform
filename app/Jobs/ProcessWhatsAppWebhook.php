@@ -42,12 +42,15 @@ class ProcessWhatsAppWebhook implements ShouldBeUnique, ShouldQueue
 
     public function uniqueId(): string
     {
-        $providerMessageId = data_get($this->payload, 'entry.0.changes.0.value.messages.0.id')
-            ?? data_get($this->payload, 'entry.0.changes.0.value.statuses.0.id');
+        $field = data_get($this->payload, 'entry.0.changes.0.field');
+        $itemsKey = is_array(data_get($this->payload, 'entry.0.changes.0.value.statuses.0'))
+            ? 'statuses'
+            : 'messages';
+        $providerMessageId = data_get($this->payload, "entry.0.changes.0.value.{$itemsKey}.0.id");
         $identity = is_scalar($providerMessageId) && filled($providerMessageId)
             ? (string) $providerMessageId
             : hash('sha256', json_encode($this->payload, JSON_THROW_ON_ERROR));
 
-        return $this->channelId.':'.$identity;
+        return $this->channelId.':'.(is_scalar($field) ? (string) $field : 'unknown').':'.$itemsKey.':'.$identity;
     }
 }

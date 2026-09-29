@@ -25,10 +25,14 @@ use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
 
-function humanWaitingExecution(User $user, ?Contact $contact = null, ?Channel $channel = null): FlowExecution
-{
+function humanWaitingExecution(
+    User $user,
+    ?Contact $contact = null,
+    ?Channel $channel = null,
+    ChannelType $channelType = ChannelType::WhatsApp,
+): FlowExecution {
     $team = $user->company();
-    $channel ??= Channel::factory()->for($team)->connected()->create();
+    $channel ??= Channel::factory()->for($team)->connected()->create(['type' => $channelType]);
     $contact ??= Contact::factory()->for($team)->create([
         'human_waiting' => true,
         'human_waiting_at' => now(),
@@ -59,10 +63,10 @@ function inboxConversationParams(FlowExecution $execution): array
 }
 
 it('lists two channel conversations for one contact as separate latest-message rows', function () {
-    $user = User::factory()->withTeam()->create();
+    $user = User::factory()->withTeam()->create(['is_platform_admin' => true]);
     $contact = Contact::factory()->for($user->company())->create();
     $firstExecution = humanWaitingExecution($user, $contact);
-    $secondExecution = humanWaitingExecution($user, $contact);
+    $secondExecution = humanWaitingExecution($user, $contact, channelType: ChannelType::WhatsAppTest);
     $message = Message::factory()
         ->for($contact)
         ->for($firstExecution->channel)
@@ -98,7 +102,7 @@ it('lists message-backed WhatsApp conversations once and opens Agent conversatio
     $officialChannel = Channel::factory()->for($team)->create();
     $testChannel = Channel::factory()->for($team)->create(['type' => ChannelType::WhatsAppTest]);
     $websiteChannel = Channel::factory()->for($team)->create(['type' => ChannelType::WebsiteChat]);
-    $emptyChannel = Channel::factory()->for($team)->create();
+    $emptyChannel = Channel::factory()->for($team)->create(['type' => ChannelType::InstagramDirect]);
     $execution = humanWaitingExecution($user, $contact, $testChannel);
     $timestamp = now();
     $agentMessage = Message::factory()
@@ -229,12 +233,12 @@ it('keeps paused incoming messages pending and serializes a generated response a
 });
 
 it('filters conversations by state, responsible person, channel, and contact search', function () {
-    $user = User::factory()->withTeam()->create();
+    $user = User::factory()->withTeam()->create(['is_platform_admin' => true]);
     $team = $user->company();
     $flowContact = Contact::factory()->for($team)->create(['name' => 'Ana Flow']);
     $agentContact = Contact::factory()->for($team)->create(['name' => 'Bruno Agent']);
     $flowChannel = Channel::factory()->for($team)->connected()->create();
-    $agentChannel = Channel::factory()->for($team)->connected()->create();
+    $agentChannel = Channel::factory()->for($team)->connected()->create(['type' => ChannelType::WhatsAppTest]);
     $flowExecution = humanWaitingExecution($user, $flowContact, $flowChannel);
     $flowExecution->forceFill(['human_assigned_user_id' => $user->id])->save();
     Message::factory()->for($flowContact)->for($flowChannel)->create(['content' => 'Fluxo']);
@@ -292,10 +296,10 @@ it('keeps unavailable channel history visible and blocks sending without calling
 });
 
 it('renders only the selected channel messages, history, and Flow execution with pagination', function () {
-    $user = User::factory()->withTeam()->create();
+    $user = User::factory()->withTeam()->create(['is_platform_admin' => true]);
     $contact = Contact::factory()->for($user->company())->create();
     $firstExecution = humanWaitingExecution($user, $contact);
-    $selectedExecution = humanWaitingExecution($user, $contact);
+    $selectedExecution = humanWaitingExecution($user, $contact, channelType: ChannelType::WhatsAppTest);
 
     $otherChannelMessage = Message::factory()
         ->for($contact)
@@ -324,6 +328,27 @@ it('renders only the selected channel messages, history, and Flow execution with
             ->where('selected.history.data', fn ($messages): bool => $messages->every(
                 fn (array $message): bool => $message['id'] !== $otherChannelMessage->id,
             )));
+});
+
+it('renders the current reaction on the selected conversation message', function () {
+    $user = User::factory()->withTeam()->create(['is_platform_admin' => true]);
+    $contact = Contact::factory()->for($user->company())->create();
+    $execution = humanWaitingExecution($user, $contact, channelType: ChannelType::WhatsAppTest);
+    $message = Message::factory()
+        ->for($contact)
+        ->for($execution->channel)
+        ->create([
+            'reaction_emoji' => '❤️',
+            'reacted_at' => now(),
+        ]);
+
+    $this->actingAs($user)
+        ->get(route('inbox.show', inboxConversationParams($execution)))
+        ->assertOk()
+        ->assertInertia(fn ($page) => $page
+            ->where('selected.messages.data.0.id', $message->id)
+            ->where('selected.messages.data.0.reactionEmoji', '❤️')
+            ->where('selected.messages.data.0.reactedAt', $message->reacted_at->toIso8601String()));
 });
 
 it('authorizes the inbox broadcast channel only for members of the Empresa', function () {
@@ -400,7 +425,7 @@ it('allows one person to assume a conversation and rejects a competing assignee'
     $otherUser = User::factory()->create();
     $user->company()->members()->attach($otherUser, ['role' => 'member']);
     $contact = Contact::factory()->for($user->company())->create();
-    $otherChannelExecution = humanWaitingExecution($user, $contact);
+    $otherChannelExecution = humanWaitingExecution($user, $contact, channelType: ChannelType::WebsiteChat);
     $execution = humanWaitingExecution($user, $contact);
 
     $this->actingAs($user)
@@ -421,9 +446,9 @@ it('sends a human message through the conversation channel and records its sende
     ]);
     $user = User::factory()->withTeam()->create();
     $contact = Contact::factory()->for($user->company())->create();
-    humanWaitingExecution($user, $contact);
+    humanWaitingExecution($user, $contact, channelType: ChannelType::WebsiteChat);
     $execution = humanWaitingExecution($user, $contact);
-    WhatsAppPhoneNumber::factory()->for($execution->channel)->withAccount()->create();
+    WhatsAppPhoneNumber::factory()->for($execution->channel)->create();
     Message::factory()->for($execution->contact)->for($execution->channel)->create([
         'direction' => MessageDirection::Incoming,
         'created_at' => now(),
@@ -451,7 +476,7 @@ it('pauses and assigns a direct Agent before sending the first human message', f
     $contact = Contact::factory()->for($user->company())->create();
     $agent = Agent::factory()->for($user->company())->create();
     $channel = Channel::factory()->for($user->company())->connected()->create(['agent_id' => $agent->id]);
-    WhatsAppPhoneNumber::factory()->for($channel)->withAccount()->create();
+    WhatsAppPhoneNumber::factory()->for($channel)->create();
     $incoming = Message::factory()->for($contact)->for($channel)->incoming()->create([
         'content' => 'Quero falar com alguém.',
     ]);
@@ -483,7 +508,7 @@ it('renews the configured pause snapshot after a successful human reply', functi
     $contact = Contact::factory()->for($team)->create();
     $agent = Agent::factory()->for($team)->create();
     $channel = Channel::factory()->for($team)->connected()->create(['agent_id' => $agent->id]);
-    WhatsAppPhoneNumber::factory()->for($channel)->withAccount()->create();
+    WhatsAppPhoneNumber::factory()->for($channel)->create();
     Message::factory()->for($contact)->for($channel)->incoming()->create(['content' => 'Preciso de ajuda.']);
     $state = app(AgentConversationService::class)->pauseAndAssign($contact, $channel, $user);
     $team->update(['agent_pause_duration_minutes' => 15]);
@@ -508,7 +533,7 @@ it('keeps the direct Agent paused and shows a failed human message when the prov
     $contact = Contact::factory()->for($user->company())->create();
     $agent = Agent::factory()->for($user->company())->create();
     $channel = Channel::factory()->for($user->company())->connected()->create(['agent_id' => $agent->id]);
-    WhatsAppPhoneNumber::factory()->for($channel)->withAccount()->create();
+    WhatsAppPhoneNumber::factory()->for($channel)->create();
     Message::factory()->for($contact)->for($channel)->incoming()->create(['content' => 'Preciso de ajuda.']);
 
     $this->actingAs($user)
@@ -536,7 +561,7 @@ it('allows a direct human Template after the WhatsApp care window has expired', 
     $contact = Contact::factory()->for($user->company())->create();
     $agent = Agent::factory()->for($user->company())->create();
     $channel = Channel::factory()->for($user->company())->connected()->create(['agent_id' => $agent->id]);
-    WhatsAppPhoneNumber::factory()->for($channel)->withAccount()->create();
+    WhatsAppPhoneNumber::factory()->for($channel)->create();
     Message::factory()->for($contact)->for($channel)->incoming()->create([
         'created_at' => now()->subDay()->subMinute(),
     ]);
@@ -565,7 +590,7 @@ it('keeps a direct human text failure visible when the WhatsApp care window is c
     $contact = Contact::factory()->for($user->company())->create();
     $agent = Agent::factory()->for($user->company())->create();
     $channel = Channel::factory()->for($user->company())->connected()->create(['agent_id' => $agent->id]);
-    WhatsAppPhoneNumber::factory()->for($channel)->withAccount()->create();
+    WhatsAppPhoneNumber::factory()->for($channel)->create();
     Message::factory()->for($contact)->for($channel)->incoming()->create([
         'created_at' => now()->subDay()->subMinute(),
     ]);
@@ -595,7 +620,7 @@ it('devolves an assigned direct conversation after a successful return response'
     $contact = Contact::factory()->for($team)->create();
     $agent = Agent::factory()->for($team)->create();
     $channel = Channel::factory()->for($team)->connected()->create(['agent_id' => $agent->id]);
-    WhatsAppPhoneNumber::factory()->for($channel)->withAccount()->create();
+    WhatsAppPhoneNumber::factory()->for($channel)->create();
     $incoming = Message::factory()->for($contact)->for($channel)->incoming()->create([
         'content' => 'Qual é o horário de funcionamento?',
     ]);
@@ -635,7 +660,7 @@ it('keeps a failed return paused and does not repeat the same failed response', 
     $contact = Contact::factory()->for($team)->create();
     $agent = Agent::factory()->for($team)->create();
     $channel = Channel::factory()->for($team)->connected()->create(['agent_id' => $agent->id]);
-    WhatsAppPhoneNumber::factory()->for($channel)->withAccount()->create();
+    WhatsAppPhoneNumber::factory()->for($channel)->create();
     $incoming = Message::factory()->for($contact)->for($channel)->incoming()->create(['content' => 'Preciso de ajuda.']);
     $agentConversations = app(AgentConversationService::class);
     $agentConversations->pauseAndAssign($contact, $channel, $user);
@@ -677,7 +702,7 @@ it('expires paused direct conversations once and records a WhatsApp window failu
     $contact = Contact::factory()->for($team)->create();
     $agent = Agent::factory()->for($team)->create();
     $channel = Channel::factory()->for($team)->connected()->create(['agent_id' => $agent->id]);
-    WhatsAppPhoneNumber::factory()->for($channel)->withAccount()->create();
+    WhatsAppPhoneNumber::factory()->for($channel)->create();
     $incoming = Message::factory()->for($contact)->for($channel)->incoming()->create([
         'created_at' => now()->subDay()->subMinute(),
     ]);
@@ -733,7 +758,7 @@ it('returns only the selected channel execution to the flow', function () {
     $user = User::factory()->withTeam()->create();
     $contact = Contact::factory()->for($user->company())->create();
     $otherChannelExecution = humanWaitingExecution($user, $contact);
-    $execution = humanWaitingExecution($user, $contact);
+    $execution = humanWaitingExecution($user, $contact, channelType: ChannelType::WhatsAppTest);
 
     $this->actingAs($user)
         ->post(route('inbox.return', inboxConversationParams($execution)))
@@ -803,7 +828,7 @@ it('allows a Template after the WhatsApp customer-care window', function () {
     ]);
     $user = User::factory()->withTeam()->create();
     $execution = humanWaitingExecution($user);
-    WhatsAppPhoneNumber::factory()->for($execution->channel)->withAccount()->create();
+    WhatsAppPhoneNumber::factory()->for($execution->channel)->create();
     Message::factory()->for($execution->contact)->for($execution->channel)->create([
         'direction' => MessageDirection::Incoming,
         'created_at' => now()->subDay()->subMinute(),
@@ -826,7 +851,7 @@ it('blocks a free-form message after the WhatsApp customer-care window', functio
     Http::fake();
     $user = User::factory()->withTeam()->create();
     $execution = humanWaitingExecution($user);
-    WhatsAppPhoneNumber::factory()->for($execution->channel)->withAccount()->create();
+    WhatsAppPhoneNumber::factory()->for($execution->channel)->create();
     Message::factory()->for($execution->contact)->for($execution->channel)->create([
         'direction' => MessageDirection::Incoming,
         'created_at' => now()->subDay()->subMinute(),

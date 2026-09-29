@@ -5,14 +5,19 @@ import {
     ChevronLeft,
     ChevronRight,
     Clock3,
+    FileText,
+    ImagePlus,
+    Mic,
     PanelRight,
     PanelRightClose,
     Search,
     Send,
     UserRound,
     Users,
+    Video,
 } from 'lucide-react';
 import {
+    type ChangeEvent,
     type FormEvent,
     type ReactNode,
     useCallback,
@@ -32,6 +37,7 @@ import {
 } from '@/routes/inbox';
 import { pause as pauseAgent, takeOver as takeOverAgent } from '@/routes/inbox/agent';
 import { store as messagesStore } from '@/routes/inbox/messages';
+import { VoiceMessageRecorder } from '@/components/inbox-voice-recorder';
 
 type Conversation = {
     contactId: number;
@@ -63,11 +69,26 @@ type Message = {
     createdAt: string | null;
     deliveryStatus: string | null;
     failureReason: string | null;
+    reactionEmoji: string | null;
+    reactedAt: string | null;
     mediaAvailable: boolean;
     mediaUrl: string | null;
     mediaFilename: string | null;
     mediaMimeType: string | null;
 };
+
+const supportedMessageTypes = new Set([
+    'text',
+    'template',
+    'image',
+    'audio',
+    'video',
+    'document',
+]);
+
+function isUnsupportedMessage(message: Message): boolean {
+    return !supportedMessageTypes.has(message.payloadType);
+}
 
 type MessagePage = {
     data: Message[];
@@ -130,7 +151,23 @@ type SelectedConversation = {
     canPause: boolean;
     canTakeOver: boolean;
     canReturn: boolean;
+    templates: {
+        name: string;
+        language: string;
+        headerType: string | null;
+        headerText: string | null;
+    }[];
 };
+
+function failureReasonLabel(failureReason: string | null): string {
+    const translatedReasons: Record<string, string> = {
+        customer_care_window_closed: 'Janela de 24 h encerrada · use um Template',
+        agent_response_failed: 'Falha na resposta do Agente · pausa mantida',
+        provider_error: 'Falha no envio · tente novamente',
+    };
+
+    return translatedReasons[failureReason ?? ''] ?? failureReason ?? 'Falha no envio · tente novamente';
+}
 
 type Props = {
     conversations: {
@@ -157,6 +194,98 @@ type Props = {
     selected: SelectedConversation | null;
     currentUserId: number;
 };
+
+type MessageType = 'text' | 'template' | 'image' | 'document' | 'video' | 'audio';
+
+type OutgoingMediaOption = {
+    label: string;
+    accept: string;
+    extensions: string[];
+    mimeTypes: string[];
+    maxBytes: number;
+    maxLabel: string;
+    invalidTypeMessage: string;
+    invalidSizeMessage: string;
+};
+
+const outgoingMediaOptions: Record<'image' | 'document' | 'video' | 'audio', OutgoingMediaOption> = {
+    image: {
+        label: 'Imagem',
+        accept: '.jpg,.jpeg,.png,image/jpeg,image/png',
+        extensions: ['jpg', 'jpeg', 'png'],
+        mimeTypes: ['image/jpeg', 'image/png'],
+        maxBytes: 5 * 1024 * 1024,
+        maxLabel: '5 MB',
+        invalidTypeMessage: 'Escolha uma imagem JPEG ou PNG.',
+        invalidSizeMessage: 'A imagem deve ter no máximo 5 MB.',
+    },
+    document: {
+        label: 'Documento',
+        accept: '.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt',
+        extensions: ['pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'txt'],
+        mimeTypes: [
+            'application/pdf',
+            'application/msword',
+            'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+            'application/vnd.ms-excel',
+            'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            'application/vnd.ms-powerpoint',
+            'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+            'text/plain',
+        ],
+        maxBytes: 100 * 1024 * 1024,
+        maxLabel: '100 MB',
+        invalidTypeMessage: 'Escolha um documento PDF, DOC, DOCX, XLS, XLSX, PPT, PPTX ou TXT.',
+        invalidSizeMessage: 'O documento deve ter no máximo 100 MB.',
+    },
+    video: {
+        label: 'Vídeo',
+        accept: '.mp4,.3gp,video/mp4,video/3gpp',
+        extensions: ['mp4', '3gp'],
+        mimeTypes: ['video/mp4', 'video/3gpp'],
+        maxBytes: 16 * 1024 * 1024,
+        maxLabel: '16 MB',
+        invalidTypeMessage: 'Escolha um vídeo MP4 ou 3GP.',
+        invalidSizeMessage: 'O vídeo deve ter no máximo 16 MB.',
+    },
+    audio: {
+        label: 'Áudio',
+        accept: '.ogg,.opus,.mp3,.aac,.mp4,.m4a,audio/ogg,audio/mpeg,audio/aac,audio/mp4,video/mp4',
+        extensions: ['ogg', 'opus', 'mp3', 'aac', 'mp4', 'm4a'],
+        mimeTypes: ['audio/ogg', 'application/ogg', 'audio/opus', 'audio/mpeg', 'audio/mp3', 'audio/aac', 'audio/x-aac', 'audio/mp4', 'video/mp4'],
+        maxBytes: 16 * 1024 * 1024,
+        maxLabel: '16 MB',
+        invalidTypeMessage: 'Escolha um áudio OGG/Opus, MP3, AAC ou MP4.',
+        invalidSizeMessage: 'O áudio deve ter no máximo 16 MB.',
+    },
+};
+
+const deliveryStatusLabels: Record<string, string> = {
+    pending: 'Aguardando envio',
+    sent: 'Enviada',
+    delivered: 'Entregue',
+    read: 'Lida',
+    failed: 'Falhou',
+};
+
+function outgoingMediaValidationMessage(file: File, type: 'image' | 'document' | 'video' | 'audio'): string | null {
+    const option = outgoingMediaOptions[type];
+    const extension = file.name.split('.').pop()?.toLowerCase();
+    const mimeType = file.type.split(';')[0]?.trim().toLowerCase() ?? '';
+    if (!option.extensions.includes(extension ?? '') || (mimeType !== '' && !option.mimeTypes.includes(mimeType))) {
+        return option.invalidTypeMessage;
+    }
+
+    if (file.size > option.maxBytes) {
+        return option.invalidSizeMessage;
+    }
+
+    return null;
+}
+
+function isOutgoingMediaType(type: MessageType): type is keyof typeof outgoingMediaOptions {
+    return type === 'image' || type === 'document' || type === 'video' || type === 'audio';
+}
 
 const realtimeProps = ['conversations', 'counts', 'selected'];
 
@@ -520,7 +649,7 @@ function SelectedConversationView({
     currentUserId: number;
 }) {
     const [showDetails, setShowDetails] = useState(false);
-    const [messageType, setMessageType] = useState<'text' | 'template'>('text');
+    const [messageType, setMessageType] = useState<MessageType>('text');
 
     return (
         <>
@@ -549,15 +678,17 @@ function ConversationThread({
     currentUserId: number;
     showDetails: boolean;
     onToggleDetails: () => void;
-    messageType: 'text' | 'template';
-    onMessageTypeChange: (type: 'text' | 'template') => void;
+    messageType: MessageType;
+    onMessageTypeChange: (type: MessageType) => void;
 }) {
     const form = useForm({
         type: messageType,
         content: '',
         template: '',
         parameters: '',
+        media: null as File | null,
     });
+    const mediaInputRef = useRef<HTMLInputElement | null>(null);
     const messageScrollRef = useRef<HTMLDivElement | null>(null);
     const shouldFollowLatestRef = useRef(true);
     const hasPlacedInitialScrollRef = useRef(false);
@@ -606,24 +737,104 @@ function ConversationThread({
         [],
     );
     const assignedToMe = selected.assignee?.id === currentUserId;
+    const selectedTemplate = selected.templates.find(
+        (template) => template.name === form.data.template,
+    );
+    const templateMediaType = selectedTemplate?.headerType === 'IMAGE'
+        ? 'image'
+        : selectedTemplate?.headerType === 'DOCUMENT'
+          ? 'document'
+          : null;
+    const isVideoTemplate = selectedTemplate?.headerType === 'VIDEO';
 
     const sendMessage = (event: FormEvent<HTMLFormElement>) => {
         event.preventDefault();
         form.transform((data) => ({
             ...data,
             type: messageType,
-            parameters: data.parameters
-                .split('\n')
-                .map((parameter) => parameter.trim())
-                .filter(Boolean),
+            parameters:
+                messageType === 'template'
+                    ? data.parameters
+                          .split('\n')
+                          .map((parameter) => parameter.trim())
+                          .filter(Boolean)
+                    : [],
         }));
         form.post(messagesStore({
             contact: selected.contact.id,
             channel: selected.channel.id,
         }).url, {
             preserveScroll: true,
-            onSuccess: () => form.reset('content', 'template', 'parameters'),
+            onSuccess: () => {
+                form.reset('content', 'template', 'parameters', 'media');
+                if (mediaInputRef.current !== null) {
+                    mediaInputRef.current.value = '';
+                }
+            },
         });
+    };
+
+    const selectMessageType = (type: MessageType) => {
+        onMessageTypeChange(type);
+        form.clearErrors('media');
+
+        if (type !== messageType) {
+            form.setData('media', null);
+            if (mediaInputRef.current !== null) {
+                mediaInputRef.current.value = '';
+            }
+        }
+    };
+
+    const selectMediaFile = (event: ChangeEvent<HTMLInputElement>) => {
+        const file = event.currentTarget.files?.[0] ?? null;
+
+        if (file === null) {
+            form.setData('media', null);
+            return;
+        }
+
+        const selectedMediaType = messageType === 'template'
+            ? templateMediaType
+            : isOutgoingMediaType(messageType)
+              ? messageType
+              : null;
+        if (selectedMediaType === null) {
+            form.setData('media', null);
+            return;
+        }
+
+        const error = outgoingMediaValidationMessage(file, selectedMediaType);
+        if (error !== null) {
+            form.setData('media', null);
+            form.setError('media', error);
+            event.currentTarget.value = '';
+            return;
+        }
+
+        form.clearErrors('media');
+        form.setData('media', file);
+    };
+
+    const selectOutgoingAudio = (file: File | null) => {
+        if (file === null) {
+            form.setData('media', null);
+            form.clearErrors('media');
+
+            return;
+        }
+
+        const error = outgoingMediaValidationMessage(file, 'audio');
+        if (error !== null) {
+            form.setData('media', null);
+            form.setError('media', error);
+
+            return;
+        }
+
+        onMessageTypeChange('audio');
+        form.setData((data) => ({ ...data, type: 'audio', media: file }));
+        form.clearErrors('media');
     };
 
     const takeConversation = () => {
@@ -796,10 +1007,10 @@ function ConversationThread({
                     </div>
                 )}
                 <form onSubmit={sendMessage} className="grid gap-2">
-                    <div className="flex gap-1">
+                    <div className="flex flex-wrap gap-1">
                         <button
                             type="button"
-                            onClick={() => onMessageTypeChange('text')}
+                            onClick={() => selectMessageType('text')}
                             className={cn(
                                 'rounded px-2 py-1 text-xs font-medium',
                                 messageType === 'text'
@@ -811,7 +1022,7 @@ function ConversationThread({
                         </button>
                         <button
                             type="button"
-                            onClick={() => onMessageTypeChange('template')}
+                            onClick={() => selectMessageType('template')}
                             className={cn(
                                 'rounded px-2 py-1 text-xs font-medium',
                                 messageType === 'template'
@@ -821,17 +1032,85 @@ function ConversationThread({
                         >
                             Template
                         </button>
+                        {(['image', 'document', 'video', 'audio'] as const).map((type) => {
+                            const Icon = {
+                                image: ImagePlus,
+                                document: FileText,
+                                video: Video,
+                                audio: Mic,
+                            }[type];
+
+                            return (
+                                <button
+                                    key={type}
+                                    type="button"
+                                    onClick={() => selectMessageType(type)}
+                                    aria-pressed={messageType === type}
+                                    className={cn(
+                                        'inline-flex items-center gap-1 rounded px-2 py-1 text-xs font-medium',
+                                        messageType === type
+                                            ? 'bg-muted text-foreground'
+                                            : 'text-muted-foreground',
+                                    )}
+                                >
+                                    <Icon className="size-3.5" />
+                                    {outgoingMediaOptions[type].label}
+                                </button>
+                            );
+                        })}
                     </div>
                     {messageType === 'template' ? (
                         <>
                             <Input
                                 value={form.data.template}
-                                onChange={(event) =>
-                                    form.setData('template', event.target.value)
-                                }
+                                list="approved-whatsapp-templates"
+                                onChange={(event) => {
+                                    form.setData((data) => ({
+                                        ...data,
+                                        template: event.target.value,
+                                        media: null,
+                                    }));
+                                    form.clearErrors('media');
+                                    if (mediaInputRef.current !== null) {
+                                        mediaInputRef.current.value = '';
+                                    }
+                                }}
                                 placeholder="Nome do Template aprovado"
                                 disabled={!selected.canSend || form.processing}
                             />
+                            <datalist id="approved-whatsapp-templates">
+                                {selected.templates.map((template) => (
+                                    <option key={template.name} value={template.name}>
+                                        {template.language}
+                                    </option>
+                                ))}
+                            </datalist>
+                            {isVideoTemplate && (
+                                <p className="text-signal-attention text-xs" role="status">
+                                    Templates com cabeçalho de vídeo ainda não podem ser enviados por aqui.
+                                </p>
+                            )}
+                            {templateMediaType !== null && (
+                                <div className="grid gap-1.5">
+                                    <label htmlFor="inbox-template-media" className="text-muted-foreground text-xs">
+                                        {outgoingMediaOptions[templateMediaType].label} · até{' '}
+                                        {outgoingMediaOptions[templateMediaType].maxLabel}
+                                    </label>
+                                    <input
+                                        ref={mediaInputRef}
+                                        id="inbox-template-media"
+                                        type="file"
+                                        accept={outgoingMediaOptions[templateMediaType].accept}
+                                        onChange={selectMediaFile}
+                                        required
+                                        disabled={!selected.canSend || form.processing}
+                                        className="border-border/70 file:bg-muted file:text-foreground rounded-lg border px-3 py-2 text-xs file:mr-3 file:rounded file:border-0 file:px-2 file:py-1"
+                                    />
+                                    <span className="text-muted-foreground text-xs">
+                                        {form.data.media?.name ?? 'Selecione o arquivo para este Contato.'}
+                                    </span>
+                                </div>
+                            )}
                             <textarea
                                 value={form.data.parameters}
                                 onChange={(event) =>
@@ -845,7 +1124,7 @@ function ConversationThread({
                                 disabled={!selected.canSend || form.processing}
                             />
                         </>
-                    ) : (
+                    ) : messageType === 'text' ? (
                         <textarea
                             value={form.data.content}
                             onChange={(event) =>
@@ -863,10 +1142,53 @@ function ConversationThread({
                                 form.processing
                             }
                         />
+                    ) : messageType === 'audio' ? (
+                        <VoiceMessageRecorder
+                            key={`${selected.contact.id}:${selected.channel.id}`}
+                            disabled={
+                                !selected.canSend ||
+                                !selected.window.open ||
+                                form.processing
+                            }
+                            file={form.data.media}
+                            error={form.errors.media}
+                            onFileChange={selectOutgoingAudio}
+                        />
+                    ) : (
+                        <div className="grid gap-1.5">
+                            <label
+                                htmlFor="inbox-media"
+                                className="text-muted-foreground text-xs"
+                            >
+                                {outgoingMediaOptions[messageType].label} · até{' '}
+                                {outgoingMediaOptions[messageType].maxLabel}
+                            </label>
+                            <input
+                                ref={mediaInputRef}
+                                id="inbox-media"
+                                type="file"
+                                accept={outgoingMediaOptions[messageType].accept}
+                                onChange={selectMediaFile}
+                                disabled={
+                                    !selected.canSend ||
+                                    !selected.window.open ||
+                                    form.processing
+                                }
+                                className="border-border/70 file:bg-muted file:text-foreground rounded-lg border px-3 py-2 text-xs file:mr-3 file:rounded file:border-0 file:px-2 file:py-1"
+                            />
+                            <span className="text-muted-foreground text-xs">
+                                {form.data.media?.name ?? 'Selecione um arquivo para anexar.'}
+                            </span>
+                        </div>
                     )}
                     {form.errors.content && (
                         <p className="text-destructive text-xs">
                             {form.errors.content}
+                        </p>
+                    )}
+                    {form.errors.media && (
+                        <p className="text-destructive text-xs" role="alert">
+                            {form.errors.media}
                         </p>
                     )}
                     <div className="flex flex-wrap items-center gap-3">
@@ -911,7 +1233,9 @@ function ConversationThread({
                             disabled={
                                 !selected.canSend ||
                                 form.processing ||
-                                (messageType === 'text' &&
+                                isVideoTemplate ||
+                                (templateMediaType !== null && form.data.media === null) ||
+                                (messageType !== 'template' &&
                                     !selected.window.open)
                             }
                         >
@@ -935,6 +1259,7 @@ function ConversationThread({
 function MessageBubble({ message }: { message: Message }) {
     const outgoing = message.direction === 'outgoing';
     const [mediaUnavailable, setMediaUnavailable] = useState(false);
+    const unsupported = isUnsupportedMessage(message);
     let content = message.content;
     if (message.payloadType === 'template' && content !== null) {
         try {
@@ -944,35 +1269,43 @@ function MessageBubble({ message }: { message: Message }) {
             content = 'Template aprovado';
         }
     }
-    const isSticker = message.payloadType.toLowerCase().includes('sticker');
     const mediaType = ['image', 'audio', 'video', 'document'].includes(
         message.payloadType,
     )
         ? message.payloadType
-        : null;
+        : message.payloadType === 'template' && message.mediaAvailable
+          ? message.mediaMimeType?.startsWith('image/')
+              ? 'image'
+              : 'document'
+          : null;
     const hasMedia = mediaType !== null;
 
     return (
         <div className={cn('flex', outgoing ? 'justify-end' : 'justify-start')}>
             <div
                 className={cn(
-                    'max-w-[62%] px-3.5 py-2.5 text-[13px] leading-relaxed',
+                    'relative max-w-[62%] px-3.5 py-2.5 text-[13px] leading-relaxed',
                     outgoing
                         ? 'bg-primary text-primary-foreground rounded-2xl rounded-br-sm'
                         : 'bg-background border-border/70 rounded-2xl rounded-bl-sm border',
                 )}
             >
-                {isSticker ? (
-                    <p className="text-muted-foreground text-xs italic">
-                        Figurinha não exibida
-                    </p>
-                ) : mediaType !== null && message.mediaUrl !== null && !mediaUnavailable ? (
+                {message.reactionEmoji !== null && (
+                    <span
+                        role="img"
+                        aria-label={`Reação: ${message.reactionEmoji}`}
+                        className="border-border/70 bg-background absolute -top-3 right-2 z-10 grid size-7 place-items-center rounded-full border px-1 text-sm leading-none shadow-sm"
+                    >
+                        {message.reactionEmoji}
+                    </span>
+                )}
+                {mediaType !== null && message.mediaUrl !== null && !mediaUnavailable ? (
                     <div className="mb-2.5">
                         {mediaType === 'image' && (
                             <a href={message.mediaUrl} target="_blank" rel="noreferrer">
                                 <img
                                     src={message.mediaUrl}
-                                    alt={message.mediaFilename ?? 'Imagem enviada pelo Contato'}
+                                    alt={message.mediaFilename ?? 'Imagem da mensagem'}
                                     className="max-h-72 max-w-full rounded-lg object-contain"
                                     onError={() => setMediaUnavailable(true)}
                                 />
@@ -1023,15 +1356,13 @@ function MessageBubble({ message }: { message: Message }) {
                     </p>
                 )}
                 <p className="break-words whitespace-pre-wrap">
-                    {isSticker ? null : content ?? `[${message.payloadType}]`}
+                    {unsupported
+                        ? 'Tipo de mensagem não suportado'
+                        : content ?? `[${message.payloadType}]`}
                 </p>
                 {message.deliveryStatus === 'failed' && (
                     <span className="text-destructive mt-1 block text-[10px] font-semibold">
-                        {message.failureReason === 'customer_care_window_closed'
-                            ? 'Janela de 24 h encerrada · use um Template'
-                            : message.failureReason === 'agent_response_failed'
-                              ? 'Falha na resposta do Agente · pausa mantida'
-                              : 'Falha no envio · tente novamente'}
+                        {failureReasonLabel(message.failureReason)}
                     </span>
                 )}
                 <span
@@ -1043,6 +1374,9 @@ function MessageBubble({ message }: { message: Message }) {
                     )}
                 >
                     {message.sender} · {formatDate(message.createdAt)}
+                    {outgoing && message.deliveryStatus !== null && (
+                        <> · {deliveryStatusLabels[message.deliveryStatus] ?? 'Enviada'}</>
+                    )}
                 </span>
             </div>
         </div>
@@ -1063,7 +1397,9 @@ function HistoryPanel({ history }: { history: MessagePage }) {
                     >
                         <span className="truncate">
                             <strong>{message.sender}</strong> ·{' '}
-                            {message.content ?? `[${message.payloadType}]`}
+                            {isUnsupportedMessage(message)
+                                ? 'Tipo de mensagem não suportado'
+                                : message.content ?? `[${message.payloadType}]`}
                         </span>
                         <span className="text-muted-foreground shrink-0">
                             {message.channel}

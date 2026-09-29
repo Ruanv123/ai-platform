@@ -13,7 +13,9 @@ use App\Models\FlowExecution;
 use App\Models\Message;
 use App\Models\User;
 use App\WhatsApp\Output\WhatsAppOutputAdapterFactory;
+use App\WhatsApp\Output\WhatsAppTemplateMediaOutputAdapter;
 use App\WhatsApp\WhatsAppCustomerCareWindow;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
 use Symfony\Component\HttpKernel\Exception\ConflictHttpException;
 
@@ -69,7 +71,7 @@ final class HumanInboxService
     }
 
     /**
-     * @param  array{type?: string, content?: string, template?: string, parameters?: list<string>}  $data
+     * @param  array{type?: string, content?: string, template?: string, parameters?: list<string>, media?: UploadedFile}  $data
      */
     public function send(Contact $contact, Channel $channel, User $user, array $data): Message
     {
@@ -96,19 +98,23 @@ final class HumanInboxService
             $content = trim((string) ($data['content'] ?? ''));
             $lastIncoming = $this->lastIncomingMessage($channel, $contact);
 
-            if ($type === 'text' && $this->customerCareWindow->hasExpired($channel, $lastIncoming)) {
+            if ($type !== 'template' && $this->customerCareWindow->hasExpired($channel, $lastIncoming)) {
                 throw new ConflictHttpException('A janela de 24 horas terminou. Envie um Template aprovado para continuar.');
             }
 
             $adapter = $this->outputAdapterFactory->make($channel);
-            $message = $type === 'template'
-                ? $adapter->sendTemplate(
-                    $channel,
-                    $contact,
-                    (string) ($data['template'] ?? ''),
-                    $data['parameters'] ?? [],
-                )
-                : $adapter->sendText($channel, $contact, $content);
+            $media = $data['media'] ?? null;
+            $message = match ($type) {
+                'template' => $media instanceof UploadedFile
+                    ? ($adapter instanceof WhatsAppTemplateMediaOutputAdapter
+                        ? $adapter->sendTemplateWithMedia($channel, $contact, (string) ($data['template'] ?? ''), $data['parameters'] ?? [], $media)
+                        : throw new \InvalidArgumentException('Este Canal não oferece suporte a Templates com mídia.'))
+                    : $adapter->sendTemplate($channel, $contact, (string) ($data['template'] ?? ''), $data['parameters'] ?? []),
+                'image', 'document', 'video', 'audio' => $media instanceof UploadedFile
+                    ? $adapter->sendMedia($channel, $contact, $media, $type)
+                    : throw new \InvalidArgumentException('O arquivo enviado não foi encontrado.'),
+                default => $adapter->sendText($channel, $contact, $content),
+            };
 
             $message->forceFill([
                 'sent_by_user_id' => $user->getKey(),

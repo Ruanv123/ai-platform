@@ -4,12 +4,16 @@ namespace App\WhatsApp;
 
 use App\Models\WhatsAppAccount;
 use App\Models\WhatsAppTemplate;
+use App\WhatsApp\Oficial\MetaGraphApiResponseHandler;
 use Illuminate\Http\Client\PendingRequest;
 use Illuminate\Support\Facades\Http;
 
 final class WhatsAppTemplateSynchronizer
 {
-    public function __construct(private readonly WhatsAppTemplateService $service) {}
+    public function __construct(
+        private readonly WhatsAppTemplateService $service,
+        private readonly MetaGraphApiResponseHandler $responseHandler,
+    ) {}
 
     /**
      * Synchronize one WABA and keep removed Meta templates as tombstones.
@@ -24,6 +28,7 @@ final class WhatsAppTemplateSynchronizer
 
         do {
             $response = $this->request($account)->get($url, ['limit' => 100]);
+            $this->responseHandler->markChannelUnavailableForInvalidToken($response, $account);
             $response->throw();
             $body = $response->json();
             $data = is_array($body['data'] ?? null) ? $body['data'] : [];

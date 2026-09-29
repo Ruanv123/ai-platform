@@ -12,6 +12,21 @@ use Illuminate\Support\Str;
 /** @extends Factory<WhatsAppTemplate> */
 class WhatsAppTemplateFactory extends Factory
 {
+    public function configure(): static
+    {
+        return $this->afterCreating(function (WhatsAppTemplate $template): void {
+            $body = $template->components()->create([
+                'type' => 'body',
+                'text' => 'Olá {{1}}, seu atendimento está confirmado.',
+                'position' => 0,
+            ]);
+            $body->variables()->create([
+                'position' => 1,
+                'example' => 'Ana',
+            ]);
+        });
+    }
+
     public function definition(): array
     {
         return [
@@ -22,12 +37,6 @@ class WhatsAppTemplateFactory extends Factory
             'status' => WhatsAppTemplateStatus::Approved,
             'requested_category' => WhatsAppTemplateCategory::Utility,
             'assigned_category' => WhatsAppTemplateCategory::Utility,
-            'body' => 'Olá {{1}}, seu atendimento está confirmado.',
-            'header_type' => null,
-            'header_text' => null,
-            'footer' => null,
-            'buttons' => [],
-            'variables' => [['position' => 1, 'component' => 'body']],
             'rejection_reason' => null,
             'rejection_explanation' => null,
             'last_synced_at' => now(),

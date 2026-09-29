@@ -19,9 +19,22 @@ type Template = {
     body: string;
     headerType: string | null;
     headerText: string | null;
+    headerMediaHandleAvailable: boolean;
     footer: string | null;
-    buttons: { type: string; text?: string; url?: string }[];
-    variables: { position: number; component: string }[];
+    buttons: {
+        type: string;
+        text?: string;
+        url?: string;
+        phone_number?: string;
+        example?: string;
+    }[];
+    variables: {
+        position: number;
+        component: string;
+        example: string | null;
+        buttonIndex?: number;
+    }[];
+    qualityRating: string | null;
     rejectionReason: string | null;
     rejectionExplanation: string | null;
     accountId: number;
@@ -33,6 +46,8 @@ type Template = {
         newStatus: string | null;
         oldCategory: string | null;
         newCategory: string | null;
+        oldQualityRating: string | null;
+        newQualityRating: string | null;
         reason: string | null;
         explanation: string | null;
         createdAt: string | null;
@@ -106,6 +121,17 @@ export default function TemplateShow({ template, permissions }: Props) {
                                 </p>
                             </div>
                             <div className="bg-muted/50 max-w-md rounded-2xl p-4">
+                                {template.headerType === 'IMAGE' && (
+                                    <p className="mb-2 font-semibold">Imagem</p>
+                                )}
+                                {template.headerType === 'DOCUMENT' && (
+                                    <p className="mb-2 font-semibold">Documento</p>
+                                )}
+                                {template.headerType === 'VIDEO' && (
+                                    <p className="text-signal-attention mb-2 text-sm font-medium">
+                                        Cabeçalho de vídeo sincronizado da Meta. O envio pela conversa ainda não está disponível.
+                                    </p>
+                                )}
                                 {template.headerText && (
                                     <p className="mb-2 font-semibold">
                                         {template.headerText}
@@ -127,7 +153,11 @@ export default function TemplateShow({ template, permissions }: Props) {
                                                     key={`${button.text}-${index}`}
                                                     className="text-primary border-primary/20 bg-background rounded-md border px-3 py-2 text-center text-sm"
                                                 >
-                                                    {button.text ?? button.type}
+                                                    {button.text ??
+                                                        (button.type ===
+                                                        'COPY_CODE'
+                                                            ? 'Copiar código'
+                                                            : button.type)}
                                                 </div>
                                             ),
                                         )}
@@ -196,6 +226,11 @@ export default function TemplateShow({ template, permissions }: Props) {
                                                         template.requestedCategory
                                                     }
                                                 />
+                                                <input
+                                                    type="hidden"
+                                                    name="header_type"
+                                                    value={template.headerType ?? 'TEXT'}
+                                                />
                                                 <div className="grid gap-2">
                                                     <Label htmlFor="body">
                                                         Corpo
@@ -214,19 +249,42 @@ export default function TemplateShow({ template, permissions }: Props) {
                                                         </p>
                                                     )}
                                                 </div>
-                                                <div className="grid gap-2">
-                                                    <Label htmlFor="header">
-                                                        Cabeçalho
-                                                    </Label>
-                                                    <Input
-                                                        id="header"
-                                                        name="header_text"
-                                                        defaultValue={
-                                                            template.headerText ??
-                                                            ''
-                                                        }
-                                                    />
-                                                </div>
+                                                {template.headerType === 'IMAGE' ||
+                                                template.headerType === 'DOCUMENT' ? (
+                                                    <div className="grid gap-2">
+                                                        <Label htmlFor="header_media">
+                                                            {template.headerType === 'IMAGE'
+                                                                ? 'Novo exemplo de imagem · JPEG ou PNG · até 5 MB'
+                                                                : 'Novo exemplo de documento · PDF, DOC, DOCX, XLS, XLSX, PPT, PPTX ou TXT · até 100 MB'}
+                                                        </Label>
+                                                        <input
+                                                            id="header_media"
+                                                            name="header_media"
+                                                            type="file"
+                                                            required={!template.headerMediaHandleAvailable}
+                                                            accept={template.headerType === 'IMAGE'
+                                                                ? '.jpg,.jpeg,.png,image/jpeg,image/png'
+                                                                : '.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt'}
+                                                            className="border-input file:bg-muted file:text-foreground rounded-md border px-3 py-2 text-xs file:mr-3 file:rounded file:border-0 file:px-2 file:py-1"
+                                                        />
+                                                        {errors.header_media && (
+                                                            <p className="text-destructive text-xs">
+                                                                {errors.header_media}
+                                                            </p>
+                                                        )}
+                                                    </div>
+                                                ) : template.headerType === 'TEXT' ? (
+                                                    <div className="grid gap-2">
+                                                        <Label htmlFor="header">
+                                                            Cabeçalho
+                                                        </Label>
+                                                        <Input
+                                                            id="header"
+                                                            name="header_text"
+                                                            defaultValue={template.headerText ?? ''}
+                                                        />
+                                                    </div>
+                                                ) : null}
                                                 <div className="grid gap-2">
                                                     <Label htmlFor="footer">
                                                         Rodapé
@@ -273,6 +331,14 @@ export default function TemplateShow({ template, permissions }: Props) {
                                             'Ainda não definida'}
                                     </dd>
                                 </div>
+                                {template.qualityRating && (
+                                    <div className="flex justify-between gap-3">
+                                        <dt className="text-muted-foreground">
+                                            Qualidade
+                                        </dt>
+                                        <dd>{template.qualityRating}</dd>
+                                    </div>
+                                )}
                             </dl>
                         </section>
                         <section className="bg-card rounded-xl border p-6">
@@ -294,8 +360,16 @@ export default function TemplateShow({ template, permissions }: Props) {
                                             <span className="text-muted-foreground">
                                                 {variable.component === 'header'
                                                     ? 'Cabeçalho'
-                                                    : 'Corpo'}
+                                                    : variable.component ===
+                                                        'button'
+                                                      ? `URL do botão ${(variable.buttonIndex ?? 0) + 1}`
+                                                      : 'Corpo'}
                                             </span>
+                                            {variable.example && (
+                                                <span className="text-muted-foreground">
+                                                    {variable.example}
+                                                </span>
+                                            )}
                                         </div>
                                     ))}
                                 </div>
@@ -316,9 +390,11 @@ export default function TemplateShow({ template, permissions }: Props) {
                                                 {historyLabel(entry.event)}
                                             </p>
                                             <p className="text-muted-foreground mt-1 text-xs">
-                                                {entry.newStatus ??
-                                                    entry.newCategory ??
-                                                    'Registro'}
+                                                {entry.newQualityRating
+                                                    ? `${entry.oldQualityRating ?? 'Sem classificação'} → ${entry.newQualityRating}`
+                                                    : (entry.newStatus ??
+                                                      entry.newCategory ??
+                                                      'Registro')}
                                                 {entry.createdAt
                                                     ? ` · ${new Date(entry.createdAt).toLocaleString('pt-BR')}`
                                                     : ''}
@@ -347,6 +423,7 @@ function historyLabel(event: string): string {
             submitted: 'Enviado para análise',
             status_changed: 'Status atualizado',
             category_changed: 'Categoria recategorizada',
+            quality_changed: 'Qualidade atualizada',
             deleted: 'Removido na Meta',
         }[event] ?? 'Alteração registrada'
     );

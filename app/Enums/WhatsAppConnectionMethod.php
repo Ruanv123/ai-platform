@@ -4,6 +4,6 @@ namespace App\Enums;
 
 enum WhatsAppConnectionMethod: string
 {
-    case Manual = 'manual';
-    case EmbeddedSignup = 'embedded_signup';
+    case TechProvider = 'tech_provider';
+    case OwnApp = 'own_app';
 }

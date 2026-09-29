@@ -6,9 +6,12 @@ use App\Enums\ChannelStatus;
 use App\Enums\ChannelType;
 use App\Enums\WhatsAppBusinessCategory;
 use App\Enums\WhatsAppConnectionMethod;
+use App\Exceptions\WhatsAppConnectionException;
 use App\Exceptions\WhatsAppProfileException;
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Channels\ConnectWhatsAppWithMetaRequest;
 use App\Http\Requests\Channels\SaveWhatsAppChannelRequest;
+use App\Http\Requests\Channels\UpdateWhatsAppAgentRequest;
 use App\Http\Requests\Channels\UpdateWhatsAppDisplayNameRequest;
 use App\Http\Requests\Channels\UpdateWhatsAppProfilePictureRequest;
 use App\Http\Requests\Channels\UpdateWhatsAppProfileTextsRequest;
@@ -17,7 +20,9 @@ use App\Models\Agent;
 use App\Models\Channel;
 use App\Models\WhatsAppAccount;
 use App\WhatsApp\Oficial\MetaErrorTranslator;
+use App\WhatsApp\Oficial\MetaGraphApiResponseHandler;
 use App\WhatsApp\Profiles\WhatsAppProfileProvider;
+use App\WhatsApp\TechProviderWhatsAppConnector;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -69,8 +74,62 @@ class WhatsAppController extends Controller
                 ])
                 ->values(),
             'permissions' => $user->toTeamPermissions($team),
-            'webhookUrl' => url('/webhooks/whatsapp'),
+            'webhookUrl' => route('webhooks.whatsapp.app-proprio'),
+            'metaSignup' => [
+                'appId' => filled(config('services.whatsapp.platform.app_id'))
+                    ? (string) config('services.whatsapp.platform.app_id')
+                    : null,
+                'configId' => filled(config('services.whatsapp.platform.config_id'))
+                    ? (string) config('services.whatsapp.platform.config_id')
+                    : null,
+                'graphApiVersion' => (string) config('services.whatsapp.graph_api_version'),
+            ],
         ]);
+    }
+
+    public function connectWithMeta(
+        ConnectWhatsAppWithMetaRequest $request,
+        TechProviderWhatsAppConnector $connector,
+    ): RedirectResponse {
+        $team = $request->user()->company();
+        abort_if($team === null, 404);
+
+        try {
+            $code = $request->validated('code');
+            $pin = $request->validated('pin');
+
+            if (filled($code)) {
+                $connector->connect($team, $code);
+            } else {
+                $connector->retry($team, $pin);
+            }
+        } catch (WhatsAppConnectionException $exception) {
+            Inertia::flash('toast', [
+                'type' => 'error',
+                'message' => $exception->getMessage(),
+            ]);
+
+            return to_route('channels.whatsapp.edit');
+        }
+
+        Inertia::flash('toast', [
+            'type' => 'success',
+            'message' => 'WhatsApp conectado à Meta e Templates sincronizados.',
+        ]);
+
+        return to_route('channels.whatsapp.edit');
+    }
+
+    public function updateAgent(UpdateWhatsAppAgentRequest $request, Channel $channel): RedirectResponse
+    {
+        $channel->update(['agent_id' => $request->validated('agent_id')]);
+
+        Inertia::flash('toast', [
+            'type' => 'success',
+            'message' => 'Agente do WhatsApp atualizado com sucesso.',
+        ]);
+
+        return to_route('channels.whatsapp.edit');
     }
 
     /**
@@ -95,17 +154,18 @@ class WhatsAppController extends Controller
                 'last_error' => null,
             ]);
 
-            $phoneNumber = $channel->whatsappPhoneNumber()->create([
-                'phone_number_id' => $validated['phone_number_id'],
-            ]);
-
-            $phoneNumber->whatsappAccount()->create([
-                'method' => WhatsAppConnectionMethod::Manual,
+            $account = $team->whatsappAccounts()->create([
+                'connection_method' => WhatsAppConnectionMethod::OwnApp,
                 'waba_id' => $validated['waba_id'],
                 'app_id' => $validated['app_id'] ?? null,
                 'access_token' => $validated['access_token'],
                 'app_secret' => $validated['app_secret'],
                 'verify_token' => $this->generateVerifyToken(),
+            ]);
+
+            $channel->whatsappPhoneNumber()->create([
+                'whatsapp_account_id' => $account->getKey(),
+                'phone_number_id' => $validated['phone_number_id'],
             ]);
         });
 
@@ -160,8 +220,11 @@ class WhatsAppController extends Controller
     /**
      * Test the saved credentials against the WhatsApp Graph API.
      */
-    public function test(Channel $channel, MetaErrorTranslator $errorTranslator): RedirectResponse
-    {
+    public function test(
+        Channel $channel,
+        MetaErrorTranslator $errorTranslator,
+        MetaGraphApiResponseHandler $responseHandler,
+    ): RedirectResponse {
         Gate::authorize('update', $channel);
 
         $phoneNumber = $channel->whatsappPhoneNumber()->firstOrFail();
@@ -174,8 +237,9 @@ class WhatsAppController extends Controller
                 ->withToken($account->access_token)
                 ->get(
                     rtrim((string) config('services.whatsapp.graph_api_url'), '/').'/'.config('services.whatsapp.graph_api_version').'/'.$phoneNumber->phone_number_id,
-                    ['fields' => 'display_phone_number,verified_name,quality_rating'],
+                    ['fields' => 'display_phone_number,verified_name,quality_rating,name_status,messaging_limit_tier'],
                 );
+            $responseHandler->markChannelUnavailableForInvalidToken($response, $channel);
 
             if ($response->successful()) {
                 DB::transaction(function () use ($channel, $phoneNumber, $account, $response, $testedAt): void {
@@ -187,6 +251,8 @@ class WhatsAppController extends Controller
                         'display_phone_number' => $response->json('display_phone_number'),
                         'verified_name' => $response->json('verified_name'),
                         'quality_rating' => $response->json('quality_rating'),
+                        'name_status' => $response->json('name_status'),
+                        'messaging_limit_tier' => $response->json('messaging_limit_tier'),
                     ]);
                     $account->update(['last_tested_at' => $testedAt]);
                 });
@@ -213,6 +279,8 @@ class WhatsAppController extends Controller
                 'display_phone_number' => null,
                 'verified_name' => null,
                 'quality_rating' => null,
+                'name_status' => null,
+                'messaging_limit_tier' => null,
             ]);
             $account->update(['last_tested_at' => $testedAt]);
         });
@@ -276,17 +344,57 @@ class WhatsAppController extends Controller
     /**
      * Remove the WhatsApp channel and its specific configuration.
      */
-    public function destroy(Channel $channel): RedirectResponse
+    public function destroy(Channel $channel, MetaErrorTranslator $errorTranslator): RedirectResponse
     {
         Gate::authorize('delete', $channel);
-        $channel->delete();
+        $account = $channel->whatsappPhoneNumber?->whatsappAccount;
+        $disconnectError = $account?->connection_method === WhatsAppConnectionMethod::TechProvider
+            ? $this->unsubscribeFromMeta($account, $errorTranslator)
+            : null;
+
+        DB::transaction(function () use ($channel, $account): void {
+            $channel->messages()->update(['channel_id' => null]);
+            $channel->delete();
+
+            if ($account !== null) {
+                $account->delete();
+            }
+        });
 
         Inertia::flash('toast', [
-            'type' => 'success',
-            'message' => 'Número do WhatsApp removido com sucesso.',
+            'type' => $disconnectError === null ? 'success' : 'error',
+            'message' => $disconnectError
+                ?? 'WhatsApp desconectado. Seus Contatos e Mensagens foram mantidos.',
         ]);
 
         return to_route('channels.whatsapp.edit');
+    }
+
+    private function unsubscribeFromMeta(WhatsAppAccount $account, MetaErrorTranslator $errorTranslator): ?string
+    {
+        if (blank($account->access_token)) {
+            return 'O WhatsApp foi removido desta plataforma, mas a Meta não confirmou o cancelamento dos webhooks porque o token não está disponível.';
+        }
+
+        try {
+            $response = Http::acceptJson()
+                ->connectTimeout(3)
+                ->timeout(15)
+                ->withToken($account->access_token)
+                ->delete(
+                    rtrim((string) config('services.whatsapp.graph_api_url'), '/').'/'.trim((string) config('services.whatsapp.graph_api_version'), '/').'/'.rawurlencode($account->waba_id).'/subscribed_apps',
+                );
+        } catch (ConnectionException) {
+            return 'O WhatsApp foi removido desta plataforma, mas não foi possível confirmar o cancelamento dos webhooks na Meta. Verifique sua conexão e tente novamente.';
+        }
+
+        if ($response->successful() && $response->json('success', true) !== false) {
+            return null;
+        }
+
+        $reason = $errorTranslator->translate($response->json('error'));
+
+        return 'O WhatsApp foi removido desta plataforma, mas a Meta não confirmou o cancelamento dos webhooks: '.$reason;
     }
 
     /**
@@ -309,16 +417,25 @@ class WhatsAppController extends Controller
             'appSecretSet' => $canManage && filled($account?->app_secret),
             'appSecretMasked' => $canManage ? $this->maskSecret($account?->app_secret) : null,
             'verifyToken' => $canManage ? $account?->verify_token : null,
-            'method' => $account?->method?->value,
+            'method' => $account?->connection_method?->value,
             'status' => $channel->status->value,
             'statusLabel' => $channel->status->label(),
             'lastError' => $channel->last_error,
             'displayPhoneNumber' => $phoneNumber?->display_phone_number,
             'verifiedName' => $phoneNumber?->verified_name,
             'qualityRating' => $phoneNumber?->quality_rating,
+            'nameStatus' => $phoneNumber?->name_status,
+            'messagingLimitTier' => $phoneNumber?->messaging_limit_tier,
             'credentialsSavedAt' => $account?->created_at?->toIso8601String(),
             'lastTestedAt' => $account?->last_tested_at?->toIso8601String(),
             'webhookVerifiedAt' => $account?->webhook_verified_at?->toIso8601String(),
+            'subscribedAt' => $account?->subscribed_at?->toIso8601String(),
+            'templatesSyncedAt' => $account?->templates_synced_at?->toIso8601String(),
+            'registeredAt' => $phoneNumber?->registered_at?->toIso8601String(),
+            'detailsSyncedAt' => $phoneNumber?->details_synced_at?->toIso8601String(),
+            'registrationPinRequired' => $phoneNumber?->registration_pin_required ?? false,
+            'nameStatus' => $phoneNumber?->name_status,
+            'messagingLimitTier' => $phoneNumber?->messaging_limit_tier,
             'agent' => $channel->agent === null ? null : [
                 'id' => $channel->agent->id,
                 'name' => $channel->agent->name,

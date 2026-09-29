@@ -186,6 +186,11 @@ class Team extends Model
         return $this->hasMany(Channel::class);
     }
 
+    public function whatsappAccounts(): HasMany
+    {
+        return $this->hasMany(WhatsAppAccount::class);
+    }
+
     /** @return HasMany<Flow, $this> */
     public function flows(): HasMany
     {

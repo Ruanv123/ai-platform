@@ -92,13 +92,14 @@ export function WhatsAppConnectionForm({
 
                     <div className="grid gap-4 md:grid-cols-2">
                         <div className="grid gap-2">
-                            <Label htmlFor="app_id">App ID (opcional)</Label>
+                            <Label htmlFor="app_id">App ID</Label>
                             <Input
                                 id="app_id"
                                 name="app_id"
                                 defaultValue={whatsapp?.appId ?? ''}
                                 placeholder="ID do aplicativo da Meta"
                                 maxLength={255}
+                                required
                             />
                             <InputError message={errors.app_id} />
                         </div>

@@ -7,6 +7,7 @@ use App\Models\Channel;
 use App\Models\User;
 use App\Models\WhatsAppAccount;
 use App\Models\WhatsAppPhoneNumber;
+use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\Http;
 use Inertia\Testing\AssertableInertia as Assert;
 
@@ -14,6 +15,7 @@ function whatsappDetails(array $overrides = []): array
 {
     return array_merge([
         'waba_id' => '102030405060708',
+        'app_id' => '123456789012345',
         'phone_number_id' => '15551234567890',
         'access_token' => 'EAAGold-token',
         'app_secret' => 'old-app-secret',
@@ -24,10 +26,13 @@ function whatsappDetails(array $overrides = []): array
 function createWhatsAppChannel(User $user, array $channelAttributes = [], array $accountAttributes = [], array $phoneAttributes = []): array
 {
     $channel = Channel::factory()->for($user->company())->create($channelAttributes);
-    $phoneNumber = WhatsAppPhoneNumber::factory()->for($channel)->create($phoneAttributes);
     $account = WhatsAppAccount::factory()
-        ->for($phoneNumber, 'phoneNumber')
+        ->for($user->company(), 'team')
         ->create($accountAttributes);
+    $phoneNumber = WhatsAppPhoneNumber::factory()
+        ->for($channel)
+        ->for($account, 'whatsappAccount')
+        ->create($phoneAttributes);
 
     return [$channel, $phoneNumber, $account];
 }
@@ -50,6 +55,10 @@ it('renders the WhatsApp channel without returning its secrets', function () {
         'app_id' => '987654321012345',
     ], [
         'phone_number_id' => '15551234567890',
+        'verified_name' => 'Clínica Exemplo',
+        'quality_rating' => 'GREEN',
+        'name_status' => 'APPROVED',
+        'messaging_limit_tier' => 'TIER_1K',
     ]);
 
     $channel->whatsappPhoneNumber->whatsappAccount->update([
@@ -64,6 +73,11 @@ it('renders the WhatsApp channel without returning its secrets', function () {
         ->where('whatsapp.id', $channel->id)
         ->where('whatsapp.appId', '987654321012345')
         ->where('whatsapp.status', 'connected')
+        ->where('whatsapp.verifiedName', 'Clínica Exemplo')
+        ->where('whatsapp.qualityRating', 'GREEN')
+        ->where('whatsapp.nameStatus', 'APPROVED')
+        ->where('whatsapp.messagingLimitTier', 'TIER_1K')
+        ->where('webhookUrl', route('webhooks.whatsapp.app-proprio'))
         ->where('whatsapp.accessTokenSet', true)
         ->where('whatsapp.accessTokenMasked', '••••••••')
         ->where('whatsapp.appSecretSet', true)
@@ -99,7 +113,7 @@ it('allows an owner to configure one WhatsApp channel with its account and numbe
     $this->assertDatabaseHas('whatsapp_accounts', [
         'waba_id' => '102030405060708',
         'app_id' => '123456789012345',
-        'method' => 'manual',
+        'connection_method' => 'own_app',
     ]);
 
     $channel = Channel::query()->whereBelongsTo($team)->firstOrFail();
@@ -108,21 +122,28 @@ it('allows an owner to configure one WhatsApp channel with its account and numbe
         ->and($channel->whatsappPhoneNumber->whatsappAccount->app_secret)->toBe('old-app-secret');
 });
 
-it('allows multiple official WhatsApp channels for the same company', function () {
+it('requires the Meta App ID when an owner configures an own app channel', function () {
     $user = User::factory()->withTeam()->create();
-    createWhatsAppChannel($user);
+    $details = whatsappDetails();
+    unset($details['app_id']);
 
     $response = $this->actingAs($user)->post(
         route('channels.whatsapp.store'),
-        whatsappDetails(),
+        $details,
     );
 
-    $response->assertRedirect(route('channels.whatsapp.edit'));
-    $this->assertDatabaseCount('channels', 2);
-    $this->assertDatabaseHas('whatsapp_accounts', [
-        'waba_id' => '102030405060708',
-        'app_id' => null,
+    $response->assertSessionHasErrors([
+        'app_id' => 'Informe o App ID.',
     ]);
+    $this->assertDatabaseCount('whatsapp_accounts', 0);
+});
+
+it('prevents a company from creating multiple official WhatsApp channels', function () {
+    $user = User::factory()->withTeam()->create();
+    createWhatsAppChannel($user);
+
+    expect(fn () => Channel::factory()->for($user->company())->create())
+        ->toThrow(QueryException::class);
 });
 
 it('rejects an App ID longer than 255 characters', function () {
@@ -199,10 +220,12 @@ it('tests a WhatsApp connection and stores the Meta response on the number and a
     $phoneNumber->whatsappAccount->update(['access_token' => 'valid-token']);
     $endpoint = rtrim(config('services.whatsapp.graph_api_url'), '/').'/'.config('services.whatsapp.graph_api_version').'/15551234567890';
     Http::fake([
-        $endpoint.'?fields=display_phone_number%2Cverified_name%2Cquality_rating' => Http::response([
+        $endpoint.'?fields=display_phone_number%2Cverified_name%2Cquality_rating%2Cname_status%2Cmessaging_limit_tier' => Http::response([
             'display_phone_number' => '+55 11 99999-8888',
             'verified_name' => 'Empresa Teste',
             'quality_rating' => 'GREEN',
+            'name_status' => 'APPROVED',
+            'messaging_limit_tier' => 'TIER_1K',
         ]),
     ]);
 
@@ -221,6 +244,8 @@ it('tests a WhatsApp connection and stores the Meta response on the number and a
         ->and($phoneNumber->display_phone_number)->toBe('+55 11 99999-8888')
         ->and($phoneNumber->verified_name)->toBe('Empresa Teste')
         ->and($phoneNumber->quality_rating)->toBe('GREEN')
+        ->and($phoneNumber->name_status)->toBe('APPROVED')
+        ->and($phoneNumber->messaging_limit_tier)->toBe('TIER_1K')
         ->and($phoneNumber->whatsappAccount->last_tested_at)->not->toBeNull();
 });
 
@@ -230,7 +255,7 @@ it('translates a Meta connection error and stores the failed channel status', fu
     [$channel, $phoneNumber] = createWhatsAppChannel($user);
     $endpoint = rtrim(config('services.whatsapp.graph_api_url'), '/').'/'.config('services.whatsapp.graph_api_version').'/'.$phoneNumber->phone_number_id;
     Http::fake([
-        $endpoint.'?fields=display_phone_number%2Cverified_name%2Cquality_rating' => Http::response([
+        $endpoint.'?fields=display_phone_number%2Cverified_name%2Cquality_rating%2Cname_status%2Cmessaging_limit_tier' => Http::response([
             'error' => ['code' => 190, 'type' => 'OAuthException'],
         ], 401),
     ]);

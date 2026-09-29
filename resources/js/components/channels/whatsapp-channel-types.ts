@@ -13,4 +13,11 @@ export type WhatsAppChannelDetails = ChannelReadiness &
         displayPhoneNumber: string | null;
         verifiedName: string | null;
         qualityRating: string | null;
+        templatesSyncedAt: string | null;
+        subscribedAt: string | null;
+        registeredAt: string | null;
+        detailsSyncedAt: string | null;
+        registrationPinRequired: boolean;
+        nameStatus: string | null;
+        messagingLimitTier: string | null;
     };

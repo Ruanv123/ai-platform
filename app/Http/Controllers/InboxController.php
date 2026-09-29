@@ -7,6 +7,7 @@ use App\Enums\ChannelStatus;
 use App\Enums\ChannelType;
 use App\Enums\FlowExecutionStatus;
 use App\Enums\MessageDirection;
+use App\Enums\WhatsAppTemplateStatus;
 use App\Http\Requests\SendHumanMessageRequest;
 use App\Inbox\AgentConversationService;
 use App\Inbox\HumanInboxService;
@@ -16,6 +17,7 @@ use App\Models\Contact;
 use App\Models\FlowExecution;
 use App\Models\Message;
 use App\Models\User;
+use App\Models\WhatsAppTemplate;
 use App\WhatsApp\WhatsAppCustomerCareWindow;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
@@ -23,6 +25,7 @@ use Illuminate\Database\Query\Builder as QueryBuilder;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Pagination\LengthAwarePaginator;
+use Illuminate\Support\Carbon;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -472,6 +475,33 @@ final class InboxController extends Controller
         ];
     }
 
+    private function templatesForChannel(Channel $channel): array
+    {
+        if ($channel->type !== ChannelType::WhatsApp) {
+            return [];
+        }
+
+        $channel->loadMissing('whatsappPhoneNumber.whatsappAccount');
+        $account = $channel->whatsappPhoneNumber?->whatsappAccount;
+        if ($account === null) {
+            return [];
+        }
+
+        return $account->templates()
+            ->where('status', WhatsAppTemplateStatus::Approved)
+            ->with('components')
+            ->orderBy('name')
+            ->get()
+            ->map(fn (WhatsAppTemplate $template): array => [
+                'name' => $template->name,
+                'language' => $template->language,
+                'headerType' => $template->headerType(),
+                'headerText' => $template->headerText(),
+            ])
+            ->values()
+            ->all();
+    }
+
     /** @return array<string, mixed> */
     private function selectedConversation(
         Contact $contact,
@@ -537,6 +567,7 @@ final class InboxController extends Controller
                 'statusLabel' => $channel->status->label(),
                 'available' => $channel->status === ChannelStatus::Connected,
             ],
+            'templates' => $this->templatesForChannel($channel),
             'state' => $execution === null ? 'agent' : 'flow',
             'agentPaused' => $execution === null && $agentState?->is_paused === true,
             'agentPauseExpiresAt' => $agentState?->expires_at?->toIso8601String(),
@@ -611,6 +642,10 @@ final class InboxController extends Controller
                     'createdAt' => $message->created_at?->toIso8601String(),
                     'deliveryStatus' => $message->delivery_status?->value,
                     'failureReason' => $message->failure_reason,
+                    'reactionEmoji' => $message->reaction_emoji,
+                    'reactedAt' => $message->reacted_at === null
+                        ? null
+                        : Carbon::parse($message->reacted_at)->toIso8601String(),
                     'mediaAvailable' => $message->media_available ?? false,
                     'mediaUrl' => $message->media_available === true && filled($message->media_path)
                         ? route('inbox.messages.media', [$message->contact_id, $message->channel_id, $message->getKey()])

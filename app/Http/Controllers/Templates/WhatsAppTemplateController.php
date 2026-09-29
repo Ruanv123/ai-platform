@@ -15,6 +15,8 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Pagination\LengthAwarePaginator;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
@@ -38,7 +40,7 @@ final class WhatsAppTemplateController extends Controller
         ]);
         $templates = WhatsAppTemplate::query()
             ->whereIn('whatsapp_account_id', $accounts->modelKeys())
-            ->with('account.phoneNumber')
+            ->with(['account.phoneNumbers', 'components.variables', 'components.buttons'])
             ->when(isset($filters['status']), fn ($query) => $query->where('status', $filters['status']))
             ->when(isset($filters['category']), fn ($query) => $query->where(function ($query) use ($filters): void {
                 $query->where('requested_category', $filters['category'])
@@ -70,7 +72,7 @@ final class WhatsAppTemplateController extends Controller
     public function show(Request $request, WhatsAppTemplate $template): Response
     {
         $this->authorizeTemplate($request, $template);
-        $template->load(['account.phoneNumber', 'history']);
+        $template->load(['account.phoneNumbers', 'components.variables', 'components.buttons', 'history']);
 
         return Inertia::render('templates/show', [
             'template' => $this->serialize($template, true),
@@ -78,44 +80,67 @@ final class WhatsAppTemplateController extends Controller
         ]);
     }
 
-    public function store(SaveWhatsAppTemplateRequest $request): RedirectResponse|JsonResponse
+    public function store(SaveWhatsAppTemplateRequest $request, WhatsAppTemplateService $service): RedirectResponse|JsonResponse
     {
         $data = $request->validated();
         $account = $this->accountForTeam($request, (int) $data['whatsapp_account_id']);
-        $template = $account->templates()->create([
-            ...$this->templateAttributes($data),
-            'status' => 'draft',
-            'assigned_category' => null,
-            'meta_template_id' => null,
-        ]);
+        [$mediaPath, $mediaHandle] = $this->uploadHeaderMedia($request, $account, $service);
+
+        try {
+            $template = DB::transaction(function () use ($account, $data, $service, $mediaPath, $mediaHandle): WhatsAppTemplate {
+                $template = $account->templates()->create([
+                    ...$this->templateAttributes($data),
+                    'status' => 'draft',
+                    'assigned_category' => null,
+                    'meta_template_id' => null,
+                ]);
+                $service->replaceComponents($template, $this->componentsFromInput($data, null, $mediaPath, $mediaHandle));
+
+                return $template;
+            });
+        } catch (Throwable $exception) {
+            if ($mediaPath !== null) {
+                Storage::disk('whatsapp_media')->delete($mediaPath);
+            }
+
+            throw $exception;
+        }
 
         if ($request->expectsJson()) {
-            return response()->json($this->serialize($template->load('account.phoneNumber')), 201);
+            return response()->json($this->serialize($template->load(['account.phoneNumbers', 'components.variables', 'components.buttons'])), 201);
         }
 
         return to_route('templates.show', $template);
     }
 
-    public function update(SaveWhatsAppTemplateRequest $request, WhatsAppTemplate $template): RedirectResponse|JsonResponse
+    public function update(SaveWhatsAppTemplateRequest $request, WhatsAppTemplate $template, WhatsAppTemplateService $service): RedirectResponse|JsonResponse
     {
         $this->authorizeTemplate($request, $template);
         $data = $request->validated();
         $account = $this->accountForTeam($request, (int) $data['whatsapp_account_id']);
         abort_unless($account->getKey() === $template->whatsapp_account_id, 422, 'A Conta do Template não pode ser alterada.');
-        $attributes = $this->templateAttributes($data);
-        if (! array_key_exists('buttons', $data)) {
-            unset($attributes['buttons']);
+        $previousMediaPath = $template->components()->where('type', 'header')->value('media_path');
+        [$mediaPath, $mediaHandle] = $this->uploadHeaderMedia($request, $account, $service);
+
+        try {
+            DB::transaction(function () use ($template, $data, $service, $mediaPath, $mediaHandle): void {
+                $template->update($this->templateAttributes($data));
+                $service->replaceComponents($template, $this->componentsFromInput($data, $template, $mediaPath, $mediaHandle));
+            });
+        } catch (Throwable $exception) {
+            if ($mediaPath !== null) {
+                Storage::disk('whatsapp_media')->delete($mediaPath);
+            }
+
+            throw $exception;
         }
-        if (! array_key_exists('variables', $data)) {
-            unset($attributes['variables']);
+
+        if ($previousMediaPath !== null && $previousMediaPath !== $mediaPath) {
+            Storage::disk('whatsapp_media')->delete($previousMediaPath);
         }
-        if (! array_key_exists('header_type', $data)) {
-            unset($attributes['header_type']);
-        }
-        $template->update($attributes);
 
         if ($request->expectsJson()) {
-            return response()->json($this->serialize($template->fresh(['account.phoneNumber'])));
+            return response()->json($this->serialize($template->fresh(['account.phoneNumbers', 'components.variables', 'components.buttons'])));
         }
 
         return to_route('templates.show', $template);
@@ -136,7 +161,7 @@ final class WhatsAppTemplateController extends Controller
         }
 
         if ($request->expectsJson()) {
-            return response()->json($this->serialize($template->load('account.phoneNumber')));
+            return response()->json($this->serialize($template->load(['account.phoneNumbers', 'components.variables', 'components.buttons'])));
         }
 
         Inertia::flash('toast', [
@@ -187,10 +212,10 @@ final class WhatsAppTemplateController extends Controller
     private function accounts(int $teamId): Collection
     {
         return WhatsAppAccount::query()
-            ->whereHas('phoneNumber.channel', fn ($query) => $query
-                ->where('team_id', $teamId)
+            ->where('team_id', $teamId)
+            ->whereHas('phoneNumbers.channel', fn ($query) => $query
                 ->where('type', ChannelType::WhatsApp))
-            ->with('phoneNumber')
+            ->with('phoneNumbers')
             ->get();
     }
 
@@ -207,7 +232,8 @@ final class WhatsAppTemplateController extends Controller
     {
         $teamId = $request->user()->company()?->getKey();
         abort_unless($teamId !== null && $template->account()
-            ->whereHas('phoneNumber.channel', fn ($query) => $query->where('team_id', $teamId)->where('type', ChannelType::WhatsApp))
+            ->where('team_id', $teamId)
+            ->whereHas('phoneNumbers.channel', fn ($query) => $query->where('type', ChannelType::WhatsApp))
             ->exists(), 404);
     }
 
@@ -235,27 +261,127 @@ final class WhatsAppTemplateController extends Controller
             'name' => $data['name'],
             'language' => $data['language'],
             'requested_category' => $data['requested_category'],
-            'body' => $data['body'],
-            'header_type' => $data['header_type'] ?? null,
-            'header_text' => $data['header_text'] ?? null,
-            'footer' => $data['footer'] ?? null,
-            'buttons' => $data['buttons'] ?? [],
-            'variables' => $data['variables'] ?? $this->variables($data['body']),
         ];
     }
 
-    /** @return list<array{position: int, component: string}> */
-    private function variables(string $body): array
-    {
-        preg_match_all('/{{\s*(\d+)\s*}}/', $body, $matches);
+    private function componentsFromInput(
+        array $data,
+        ?WhatsAppTemplate $template = null,
+        ?string $mediaPath = null,
+        ?string $mediaHandle = null,
+    ): array {
+        $providedExamples = [];
+        foreach ($data['variables'] ?? [] as $variable) {
+            if (! is_array($variable)) {
+                continue;
+            }
 
-        return array_values(array_map(
-            fn (string $position): array => ['position' => (int) $position, 'component' => 'body'],
-            array_unique($matches[1]),
-        ));
+            $component = Str::lower((string) ($variable['component'] ?? 'body'));
+            $position = (int) ($variable['position'] ?? 0);
+            if ($position > 0) {
+                $providedExamples[$component][$position] = $variable['example'] ?? null;
+            }
+        }
+
+        $components = [];
+        $existingHeader = $template?->componentByType('header');
+        $headerText = array_key_exists('header_text', $data) ? $data['header_text'] : $template?->headerText();
+        $headerType = strtoupper((string) ($data['header_type'] ?? $template?->headerType() ?? 'TEXT'));
+        if (in_array($headerType, ['IMAGE', 'VIDEO', 'DOCUMENT'], true)) {
+            $handle = $mediaHandle ?? $existingHeader?->media_handle;
+            $components[] = [
+                'type' => 'HEADER',
+                'format' => $headerType,
+                'media_path' => $mediaPath ?? $existingHeader?->media_path,
+                'media_handle' => $handle,
+                'example' => $handle === null ? [] : ['header_handle' => [$handle]],
+            ];
+        } elseif (filled($headerText)) {
+            $components[] = [
+                'type' => 'HEADER',
+                'format' => $headerType,
+                'text' => $headerText,
+                'example' => ['header_text' => $this->examplesForText('header', (string) $headerText, $providedExamples, $template)],
+            ];
+        }
+
+        $body = (string) $data['body'];
+        $bodyExamples = $this->examplesForText('body', $body, $providedExamples, $template);
+        $components[] = array_filter([
+            'type' => 'BODY',
+            'text' => $body,
+            'example' => $bodyExamples === [] ? null : ['body_text' => [$bodyExamples]],
+        ], fn (mixed $value): bool => $value !== null);
+
+        $footer = array_key_exists('footer', $data) ? $data['footer'] : $template?->footerText();
+        if (filled($footer)) {
+            $components[] = ['type' => 'FOOTER', 'text' => $footer];
+        }
+
+        $buttons = array_key_exists('buttons', $data) ? $data['buttons'] : ($template?->buttonDefinitions() ?? []);
+        if (is_array($buttons) && $buttons !== []) {
+            $components[] = [
+                'type' => 'BUTTONS',
+                'buttons' => array_values($buttons),
+            ];
+        }
+
+        return $components;
     }
 
-    /** @return array<string, mixed> */
+    private function uploadHeaderMedia(
+        SaveWhatsAppTemplateRequest $request,
+        WhatsAppAccount $account,
+        WhatsAppTemplateService $service,
+    ): array {
+        $file = $request->file('header_media');
+        if ($file === null) {
+            return [null, null];
+        }
+
+        $path = $file->store('template-headers', 'whatsapp_media');
+        if (! is_string($path)) {
+            throw ValidationException::withMessages([
+                'header_media' => 'Não foi possível salvar a cópia local do exemplo de mídia.',
+            ]);
+        }
+
+        try {
+            $handle = $service->uploadHeaderMedia($account, $file);
+        } catch (Throwable $exception) {
+            Storage::disk('whatsapp_media')->delete($path);
+
+            throw ValidationException::withMessages([
+                'header_media' => $exception->getMessage(),
+            ]);
+        }
+
+        return [$path, $handle];
+    }
+
+    private function examplesForText(string $component, string $text, array $providedExamples, ?WhatsAppTemplate $template): array
+    {
+        preg_match_all('/{{\s*(\d+)\s*}}/', $text, $matches);
+        $positions = array_values(array_unique(array_map('intval', $matches[1])));
+        if ($positions === []) {
+            return [];
+        }
+
+        $existingExamples = [];
+        foreach ($template?->variableDefinitions() ?? [] as $variable) {
+            if (($variable['component'] ?? null) === $component) {
+                $existingExamples[(int) $variable['position']] = $variable['example'] ?? null;
+            }
+        }
+
+        return array_map(
+            fn (int $position): ?string => $providedExamples[$component][$position]
+                ?? $existingExamples[$position]
+                ?? null,
+            $positions,
+        );
+    }
+
     private function serialize(WhatsAppTemplate $template, bool $withHistory = false): array
     {
         $data = [
@@ -268,11 +394,13 @@ final class WhatsAppTemplateController extends Controller
             'requestedCategoryLabel' => $template->requested_category->label(),
             'assignedCategory' => $template->assigned_category?->value,
             'assignedCategoryLabel' => $template->assigned_category?->label(),
-            'body' => $template->body,
-            'headerType' => $template->header_type,
-            'headerText' => $template->header_text,
-            'footer' => $template->footer,
-            'buttons' => $template->buttons ?? [],
+            'qualityRating' => $template->quality_rating,
+            'body' => $template->bodyText(),
+            'headerType' => $template->headerType(),
+            'headerText' => $template->headerText(),
+            'headerMediaHandleAvailable' => filled($template->componentByType('header')?->media_handle),
+            'footer' => $template->footerText(),
+            'buttons' => $template->buttonDefinitions(),
             'variables' => $template->variableDefinitions(),
             'rejectionReason' => $template->rejection_reason,
             'rejectionExplanation' => $template->rejection_explanation,
@@ -290,6 +418,8 @@ final class WhatsAppTemplateController extends Controller
                 'newStatus' => $history->new_status,
                 'oldCategory' => $history->old_category,
                 'newCategory' => $history->new_category,
+                'oldQualityRating' => $history->old_quality_rating,
+                'newQualityRating' => $history->new_quality_rating,
                 'reason' => $history->reason,
                 'explanation' => $history->explanation,
                 'createdAt' => $history->created_at->toIso8601String(),
@@ -318,9 +448,9 @@ final class WhatsAppTemplateController extends Controller
 
     private function accountLabel(WhatsAppAccount $account): string
     {
-        $phone = $account->phoneNumber;
+        $phone = $account->phoneNumbers->first();
 
-        return collect([$phone->verified_name, $phone->display_phone_number])
+        return collect([$phone?->verified_name, $phone?->display_phone_number])
             ->filter(fn (?string $value): bool => filled($value))
             ->join(' · ') ?: 'Conta do WhatsApp';
     }

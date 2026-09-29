@@ -26,6 +26,7 @@ use Illuminate\Support\Carbon;
  * @property string|null $content
  * @property MessageDeliveryStatus|null $delivery_status
  * @property string|null $failure_reason
+ * @property int|null $failure_code
  * @property string|null $media_path
  * @property string|null $media_filename
  * @property string|null $media_mime_type
@@ -48,8 +49,12 @@ use Illuminate\Support\Carbon;
     'provider_message_id',
     'sent_by_user_id',
     'content',
+    'button_payload',
     'delivery_status',
     'failure_reason',
+    'failure_code',
+    'reaction_emoji',
+    'reacted_at',
     'media_path',
     'media_filename',
     'media_mime_type',
@@ -136,6 +141,7 @@ class Message extends Model
             'direction' => MessageDirection::class,
             'delivery_status' => MessageDeliveryStatus::class,
             'is_responded' => 'boolean',
+            'reacted_at' => 'datetime',
             'media_available' => 'boolean',
         ];
     }

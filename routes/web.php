@@ -35,9 +35,13 @@ use Illuminate\Support\Facades\Route;
 
 Route::inertia('/', 'welcome')->name('home');
 
-Route::match(['get', 'post'], 'webhooks/whatsapp', [WhatsAppWebhookController::class, 'handle'])
+Route::match(['get', 'post'], 'webhooks/whatsapp', [WhatsAppWebhookController::class, 'handleTechProvider'])
     ->middleware('throttle:whatsapp-webhook')
-    ->name('webhooks.whatsapp');
+    ->name('webhooks.whatsapp.tech-provider');
+
+Route::match(['get', 'post'], 'webhooks/whatsapp/app-proprio', [WhatsAppWebhookController::class, 'handle'])
+    ->middleware('throttle:whatsapp-webhook')
+    ->name('webhooks.whatsapp.app-proprio');
 
 Route::post('webhooks/whatsapp-test', [WhatsAppTestWebhookController::class, 'handle'])
     ->name('webhooks.whatsapp-test');
@@ -178,10 +182,14 @@ Route::middleware(['auth', EnsureUserHasTeam::class])->group(function () {
         ->name('events.webhooks.destroy');
     Route::post('channels/whatsapp', [WhatsAppController::class, 'store'])
         ->name('channels.whatsapp.store');
+    Route::post('channels/whatsapp/connect-with-meta', [WhatsAppController::class, 'connectWithMeta'])
+        ->name('channels.whatsapp.connect-with-meta');
     Route::post('channels/whatsapp-test', [WhatsAppTestController::class, 'store'])
         ->name('channels.whatsapp-test.store');
     Route::patch('channels/whatsapp/{channel}', [WhatsAppController::class, 'update'])
         ->name('channels.whatsapp.update');
+    Route::patch('channels/whatsapp/{channel}/agent', [WhatsAppController::class, 'updateAgent'])
+        ->name('channels.whatsapp.update-agent');
     Route::post('channels/whatsapp/{channel}/test', [WhatsAppController::class, 'test'])
         ->name('channels.whatsapp.test');
     Route::post('channels/whatsapp/{channel}/profile/texts', [WhatsAppController::class, 'updateProfileTexts'])

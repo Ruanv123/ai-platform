@@ -73,7 +73,7 @@ it('registers every supported test message type at the webhook seam', function (
 })->with([
     'image' => ['message-image', 'image', 'Esta é a foto do problema.'],
     'audio' => ['message-audio', 'audio', null],
-    'video' => ['message-video', 'video', "Um vídeo do defeito.\n\nVídeos ainda não são suportados. Envie um áudio, uma imagem, um documento ou explique o problema por texto."],
+    'video' => ['message-video', 'video', 'Um vídeo do defeito.'],
     'document' => ['message-document', 'document', 'Segue o comprovante.'],
 ]);
 

@@ -6,36 +6,26 @@ use App\Enums\WhatsAppConnectionMethod;
 use Database\Factories\WhatsAppAccountFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
-use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
-use Illuminate\Support\Carbon;
 
-/**
- * @property int $id
- * @property int $whatsapp_phone_number_id
- * @property WhatsAppConnectionMethod $method
- * @property string $waba_id
- * @property string|null $app_id
- * @property string $access_token
- * @property string $app_secret
- * @property string $verify_token
- * @property Carbon|null $webhook_verified_at
- * @property Carbon|null $last_tested_at
- * @property-read WhatsAppPhoneNumber $phoneNumber
- * @property-read Collection<int, WhatsAppTemplate> $templates
- */
 #[Fillable([
-    'whatsapp_phone_number_id',
-    'method',
+    'team_id',
+    'connection_method',
     'waba_id',
+    'business_id',
+    'name',
     'app_id',
     'access_token',
     'app_secret',
     'verify_token',
     'webhook_verified_at',
+    'subscribed_at',
+    'templates_synced_at',
+    'ban_state',
+    'review_status',
     'last_tested_at',
 ])]
 #[Hidden(['access_token', 'app_secret', 'verify_token'])]
@@ -47,20 +37,20 @@ class WhatsAppAccount extends Model
     /** @use HasFactory<WhatsAppAccountFactory> */
     use HasFactory;
 
-    /**
-     * Get the WhatsApp number owned by this Meta account.
-     *
-     * @return BelongsTo<WhatsAppPhoneNumber, $this>
-     */
-    public function phoneNumber(): BelongsTo
+    public function team(): BelongsTo
     {
-        return $this->belongsTo(WhatsAppPhoneNumber::class, 'whatsapp_phone_number_id');
+        return $this->belongsTo(Team::class);
+    }
+
+    public function phoneNumbers(): HasMany
+    {
+        return $this->hasMany(WhatsAppPhoneNumber::class, 'whatsapp_account_id');
     }
 
     /** @return HasMany<WhatsAppTemplate, $this> */
     public function templates(): HasMany
     {
-        return $this->hasMany(WhatsAppTemplate::class);
+        return $this->hasMany(WhatsAppTemplate::class, 'whatsapp_account_id');
     }
 
     /**
@@ -71,10 +61,12 @@ class WhatsAppAccount extends Model
     protected function casts(): array
     {
         return [
-            'method' => WhatsAppConnectionMethod::class,
+            'connection_method' => WhatsAppConnectionMethod::class,
             'access_token' => 'encrypted',
             'app_secret' => 'encrypted',
             'webhook_verified_at' => 'datetime',
+            'subscribed_at' => 'datetime',
+            'templates_synced_at' => 'datetime',
             'last_tested_at' => 'datetime',
         ];
     }

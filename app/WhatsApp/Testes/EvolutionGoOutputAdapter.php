@@ -10,7 +10,9 @@ use App\Models\WhatsAppTestConnection;
 use App\WhatsApp\E164PhoneNumber;
 use App\WhatsApp\Output\AbstractWhatsAppOutputAdapter;
 use Illuminate\Http\Client\PendingRequest;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Http;
+use InvalidArgumentException;
 use RuntimeException;
 
 final class EvolutionGoOutputAdapter extends AbstractWhatsAppOutputAdapter
@@ -33,6 +35,42 @@ final class EvolutionGoOutputAdapter extends AbstractWhatsAppOutputAdapter
         }
 
         return $this->recordOutgoingText($channel, $contact, $content, $providerMessageId);
+    }
+
+    public function sendMedia(Channel $channel, Contact $contact, UploadedFile $file, string $type): Message
+    {
+        $this->assertContactBelongsToChannel($channel, $contact);
+
+        if (! in_array($type, ['image', 'document', 'video', 'audio'], true)) {
+            throw new InvalidArgumentException('Tipo de mídia não suportado.');
+        }
+
+        $media = $this->storeOutgoingMedia($file);
+
+        try {
+            $connection = $this->connection($channel);
+            $response = $this->postStoredMedia(
+                $this->request($connection),
+                $this->endpoint($connection, 'send/media'),
+                [
+                    'number' => $contact->phone,
+                    'type' => $type,
+                    'filename' => $media['filename'],
+                ],
+                $media,
+            );
+            $providerMessageId = $this->providerMessageId($response->json());
+
+            if ($providerMessageId === null) {
+                throw new RuntimeException('O WhatsApp de testes não retornou o id da Mensagem com mídia enviada.');
+            }
+
+            return $this->recordOutgoingMedia($channel, $contact, $type, $media, $providerMessageId);
+        } catch (\Throwable $exception) {
+            $this->deleteStoredMedia($media);
+
+            throw $exception;
+        }
     }
 
     public function sendTemplate(Channel $channel, Contact $contact, string|WhatsAppTemplate $template, array $parameters = []): Message
