@@ -17,13 +17,22 @@ use App\Models\Contact;
 use App\Models\Flow;
 use App\Models\FlowExecution;
 use App\Models\FlowVersion;
+use App\Models\Integration;
 use App\Models\Message;
+use App\Models\Shop;
+use App\Models\StoreCustomer;
+use App\Models\StoreOrder;
 use App\Models\User;
 use App\Models\WhatsAppPhoneNumber;
 use App\WhatsApp\IncomingMessageResponseDispatcher;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
+
+beforeEach(function (): void {
+    config(['app.key' => 'base64:'.base64_encode(str_repeat('x', 32))]);
+    $this->withoutVite();
+});
 
 function humanWaitingExecution(
     User $user,
@@ -142,6 +151,54 @@ it('lists message-backed WhatsApp conversations once and opens Agent conversatio
     $this->actingAs($user)
         ->get(route('inbox.show', ['contact' => $contact, 'channel' => $emptyChannel]))
         ->assertNotFound();
+});
+
+it('shows a linked store customer and recent orders in the Contact detail', function () {
+    $user = User::factory()->withTeam()->create();
+    $team = $user->company();
+    $contact = Contact::factory()->for($team)->create([
+        'name' => 'Nome do atendimento',
+    ]);
+    $channel = Channel::factory()->for($team)->connected()->create();
+    Message::factory()->for($contact)->for($channel)->create(['content' => 'Quero saber sobre meu pedido.']);
+    $integration = Integration::factory()->for($team)->create([
+        'type' => 'ecommerce',
+        'provider' => 'shopify',
+        'status' => 'connected',
+    ]);
+    $shop = Shop::factory()->for($team)->for($integration)->create();
+    $customer = StoreCustomer::factory()->for($team)->for($shop)->for($contact)->create([
+        'first_name' => 'Mariana',
+        'last_name' => 'Costa',
+        'email' => 'mariana.costa@example.test',
+        'total_spent' => '823.50',
+        'currency_code' => 'BRL',
+    ]);
+    StoreOrder::factory()->for($team)->for($shop)->for($customer, 'storeCustomer')->create([
+        'team_id' => $team->id,
+        'shop_id' => $shop->getKey(),
+        'store_customer_id' => $customer->getKey(),
+        'order_number' => '#1042',
+        'ordered_at' => now()->subDay(),
+    ]);
+    StoreOrder::factory()->for($team)->for($shop)->for($customer, 'storeCustomer')->create([
+        'team_id' => $team->id,
+        'shop_id' => $shop->getKey(),
+        'store_customer_id' => $customer->getKey(),
+        'order_number' => '#1043',
+        'ordered_at' => now(),
+    ]);
+
+    $this->actingAs($user)
+        ->get(route('inbox.show', ['contact' => $contact, 'channel' => $channel]))
+        ->assertOk()
+        ->assertInertia(fn ($page) => $page
+            ->where('selected.contact.name', 'Nome do atendimento')
+            ->where('selected.contact.storeCustomer.name', 'Mariana Costa')
+            ->where('selected.contact.storeCustomer.email', 'mariana.costa@example.test')
+            ->where('selected.contact.storeCustomer.totalSpent', '823.50')
+            ->where('selected.contact.storeCustomer.orders.0.orderNumber', '#1043')
+            ->where('selected.contact.storeCustomer.orders.1.orderNumber', '#1042'));
 });
 
 it('pauses a direct Agent conversation and records an explicit takeover', function () {

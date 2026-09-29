@@ -16,6 +16,7 @@ use App\Models\Channel;
 use App\Models\Contact;
 use App\Models\FlowExecution;
 use App\Models\Message;
+use App\Models\StoreOrder;
 use App\Models\User;
 use App\Models\WhatsAppTemplate;
 use App\WhatsApp\WhatsAppCustomerCareWindow;
@@ -540,6 +541,11 @@ final class InboxController extends Controller
         $consents = app(ContactConsentService::class)->snapshot($contact);
 
         $flow = $execution?->flowVersion?->flow;
+        $storeCustomer = $contact->storeCustomer()->first();
+        $storeOrders = $storeCustomer?->orders()
+            ->orderByDesc('ordered_at')
+            ->limit(5)
+            ->get() ?? collect();
 
         return [
             'contact' => [
@@ -559,6 +565,22 @@ final class InboxController extends Controller
                     'name' => $tag->name,
                 ])->values(),
                 'consents' => $consents,
+                'storeCustomer' => $storeCustomer === null ? null : [
+                    'id' => $storeCustomer->getKey(),
+                    'name' => $storeCustomer->displayName() !== '' ? $storeCustomer->displayName() : null,
+                    'email' => $storeCustomer->email,
+                    'totalSpent' => $storeCustomer->total_spent,
+                    'currencyCode' => $storeCustomer->currency_code,
+                    'orders' => $storeOrders->map(fn (StoreOrder $order): array => [
+                        'id' => $order->getKey(),
+                        'orderNumber' => $order->order_number,
+                        'totalAmount' => $order->total_amount,
+                        'currencyCode' => $order->currency_code,
+                        'financialStatus' => $order->financial_status,
+                        'fulfillmentStatus' => $order->fulfillment_status,
+                        'orderedAt' => $order->ordered_at?->toIso8601String(),
+                    ])->values(),
+                ],
             ],
             'channel' => [
                 'id' => $channel->id,

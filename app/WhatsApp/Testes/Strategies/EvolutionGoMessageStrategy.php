@@ -7,7 +7,7 @@ use App\Enums\MessageDirection;
 use App\Models\Channel;
 use App\Models\Contact;
 use App\Models\Message;
-use App\WhatsApp\E164PhoneNumber;
+use App\Support\E164PhoneNumber;
 use App\WhatsApp\Media\IncomingMediaResolver;
 use App\WhatsApp\Media\IncomingMediaStorage;
 use App\WhatsApp\Testes\EvolutionGoMediaDownloader;

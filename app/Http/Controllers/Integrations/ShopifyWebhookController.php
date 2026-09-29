@@ -21,6 +21,12 @@ class ShopifyWebhookController extends Controller
         'collections/create' => ['collection', 'Collection', false, 'id'],
         'collections/update' => ['collection', 'Collection', false, 'id'],
         'collections/delete' => ['collection', 'Collection', true, 'id'],
+        'customers/create' => ['customer', 'Customer', false, 'id'],
+        'customers/update' => ['customer', 'Customer', false, 'id'],
+        'customers/delete' => ['customer', 'Customer', true, 'id'],
+        'orders/create' => ['order', 'Order', false, 'id'],
+        'orders/updated' => ['order', 'Order', false, 'id'],
+        'orders/delete' => ['order', 'Order', true, 'id'],
     ];
 
     public function handle(

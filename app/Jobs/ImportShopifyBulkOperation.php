@@ -3,6 +3,8 @@
 namespace App\Jobs;
 
 use App\Ecommerce\ProductEmbeddingSynchronizer;
+use App\Ecommerce\ShopifyCustomerOrderSynchronizer;
+use App\Enums\ShopifyBulkOperationKind;
 use App\Models\Category;
 use App\Models\Product;
 use App\Models\ProductVariant;
@@ -35,23 +37,32 @@ class ImportShopifyBulkOperation implements ShouldBeUnique, ShouldQueue
         return $this->shopId.':'.$this->operationId;
     }
 
-    public function handle(ProductEmbeddingSynchronizer $embeddingSynchronizer): void
-    {
+    public function handle(
+        ProductEmbeddingSynchronizer $embeddingSynchronizer,
+        ShopifyCustomerOrderSynchronizer $customerOrderSynchronizer,
+    ): void {
         $shop = Shop::withoutGlobalScopes()->whereKey($this->shopId)->first();
 
         if ($shop === null || $shop->sync_status !== 'importing' || $shop->bulk_operation_id !== $this->operationId) {
             return;
         }
 
+        $kind = ShopifyBulkOperationKind::tryFrom($shop->bulk_operation_kind ?? '')
+            ?? ShopifyBulkOperationKind::Catalog;
         $processedCount = 0;
         if (is_string($this->url)) {
-            $processedCount = $this->streamCatalogJsonl($shop);
+            $processedCount = $this->streamJsonl($shop, $kind, $customerOrderSynchronizer);
         }
 
-        $this->refreshProductEmbeddings($shop, $embeddingSynchronizer);
-        $this->removeStaleCatalogRecords($shop);
+        if ($kind === ShopifyBulkOperationKind::Catalog) {
+            $this->refreshProductEmbeddings($shop, $embeddingSynchronizer);
+            $this->removeStaleCatalogRecords($shop);
+        } else {
+            $customerOrderSynchronizer->finishBulkImport($shop, $kind, $this->operationId);
+        }
 
-        DB::transaction(function () use ($processedCount): void {
+        $nextKind = $kind->next();
+        $nextImportKind = DB::transaction(function () use ($processedCount, $kind, $nextKind): ?ShopifyBulkOperationKind {
             $shop = Shop::withoutGlobalScopes()
                 ->lockForUpdate()
                 ->whereKey($this->shopId)
@@ -59,7 +70,25 @@ class ImportShopifyBulkOperation implements ShouldBeUnique, ShouldQueue
                 ->first();
 
             if ($shop === null || $shop->sync_status !== 'importing') {
-                return;
+                return null;
+            }
+
+            $storedKind = $shop->bulk_operation_kind ?? ShopifyBulkOperationKind::Catalog->value;
+
+            if ($storedKind !== $kind->value) {
+                return null;
+            }
+
+            if ($nextKind !== null) {
+                $shop->forceFill([
+                    'bulk_operation_id' => null,
+                    'bulk_operation_kind' => $nextKind->value,
+                    'sync_processed_count' => 0,
+                    'sync_total_count' => null,
+                    'sync_progress' => max($shop->sync_progress, $nextKind->initialProgress()),
+                ])->save();
+
+                return $nextKind;
             }
 
             $shop->forceFill([
@@ -68,10 +97,17 @@ class ImportShopifyBulkOperation implements ShouldBeUnique, ShouldQueue
                 'sync_processed_count' => $processedCount,
                 'last_synced_at' => now(),
                 'bulk_operation_id' => null,
+                'bulk_operation_kind' => null,
                 'sync_error' => null,
                 'suggested_action' => null,
             ])->save();
+
+            return null;
         });
+
+        if ($nextImportKind !== null) {
+            StartShopifyCustomerOrderImport::dispatch($this->shopId, $nextImportKind);
+        }
     }
 
     public function failed(?Throwable $exception): void
@@ -82,20 +118,23 @@ class ImportShopifyBulkOperation implements ShouldBeUnique, ShouldQueue
             ->where('sync_status', 'importing')
             ->update([
                 'sync_status' => 'error',
-                'sync_error' => 'Não foi possível importar o catálogo da Shopify.',
+                'sync_error' => 'Não foi possível importar os dados da Loja Shopify.',
                 'suggested_action' => 'Tente reconectar a Loja pela tela de Integrações.',
             ]);
     }
 
-    private function streamCatalogJsonl(Shop $shop): int
-    {
+    private function streamJsonl(
+        Shop $shop,
+        ShopifyBulkOperationKind $kind,
+        ShopifyCustomerOrderSynchronizer $customerOrderSynchronizer,
+    ): int {
         $response = Http::withOptions(['stream' => true])
             ->connectTimeout(10)
             ->timeout(1800)
             ->get($this->url);
 
         if (! $response->successful()) {
-            throw new RuntimeException('Não foi possível baixar o arquivo do catálogo Shopify.');
+            throw new RuntimeException('Não foi possível baixar o arquivo da importação Shopify.');
         }
 
         $stream = $response->toPsrResponse()->getBody();
@@ -113,7 +152,12 @@ class ImportShopifyBulkOperation implements ShouldBeUnique, ShouldQueue
                     continue;
                 }
 
-                $this->processCatalogLine($shop, json_decode($line, true, flags: JSON_THROW_ON_ERROR));
+                $record = json_decode($line, true, flags: JSON_THROW_ON_ERROR);
+                if ($kind === ShopifyBulkOperationKind::Catalog) {
+                    $this->processCatalogLine($shop, $record);
+                } else {
+                    $customerOrderSynchronizer->importBulkRecord($shop, $kind, $record, $this->operationId);
+                }
                 $processedCount++;
 
                 if ($processedCount % 100 === 0) {
@@ -124,7 +168,12 @@ class ImportShopifyBulkOperation implements ShouldBeUnique, ShouldQueue
 
         $line = trim($buffer);
         if ($line !== '') {
-            $this->processCatalogLine($shop, json_decode($line, true, flags: JSON_THROW_ON_ERROR));
+            $record = json_decode($line, true, flags: JSON_THROW_ON_ERROR);
+            if ($kind === ShopifyBulkOperationKind::Catalog) {
+                $this->processCatalogLine($shop, $record);
+            } else {
+                $customerOrderSynchronizer->importBulkRecord($shop, $kind, $record, $this->operationId);
+            }
             $processedCount++;
         }
 
@@ -306,10 +355,9 @@ class ImportShopifyBulkOperation implements ShouldBeUnique, ShouldQueue
 
     private function updateImportProgress(Shop $shop, int $processedCount): void
     {
-        $totalCount = $shop->sync_total_count;
-        $progress = $totalCount === null || $totalCount < 1
-            ? 0
-            : min(95, (int) floor(($processedCount / $totalCount) * 95));
+        $kind = ShopifyBulkOperationKind::tryFrom($shop->bulk_operation_kind ?? '')
+            ?? ShopifyBulkOperationKind::Catalog;
+        $progress = $kind->progress($processedCount, $shop->sync_total_count);
 
         Shop::withoutGlobalScopes()
             ->whereKey($shop->getKey())

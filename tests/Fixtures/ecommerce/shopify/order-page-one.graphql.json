@@ -1,0 +1,25 @@
+{
+  "data": {
+    "order": {
+      "id": "gid://shopify/Order/9001",
+      "name": "#1042",
+      "createdAt": "2026-09-20T14:30:00Z",
+      "displayFinancialStatus": "PAID",
+      "displayFulfillmentStatus": "UNFULFILLED",
+      "totalPriceSet": { "shopMoney": { "amount": "823.50", "currencyCode": "BRL" } },
+      "customer": { "id": "gid://shopify/Customer/7001" },
+      "lineItems": {
+        "nodes": [
+          {
+            "id": "gid://shopify/LineItem/9101",
+            "title": "Tênis de corrida leve",
+            "quantity": 1,
+            "originalUnitPriceSet": { "shopMoney": { "amount": "823.50" } },
+            "variant": { "id": "gid://shopify/ProductVariant/2001" }
+          }
+        ],
+        "pageInfo": { "hasNextPage": true, "endCursor": "line-item-cursor-1" }
+      }
+    }
+  }
+}

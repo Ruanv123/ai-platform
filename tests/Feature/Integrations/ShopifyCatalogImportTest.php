@@ -2,10 +2,12 @@
 
 use App\Ecommerce\EcommerceAdapter;
 use App\Ecommerce\ProductEmbeddingSynchronizer;
+use App\Ecommerce\ShopifyCustomerOrderSynchronizer;
 use App\Jobs\CompleteShopifyBulkOperation;
 use App\Jobs\ImportShopifyBulkOperation;
 use App\Jobs\PollShopifyBulkOperation;
 use App\Jobs\StartShopifyCatalogImport;
+use App\Jobs\StartShopifyCustomerOrderImport;
 use App\Models\Category;
 use App\Models\Integration;
 use App\Models\Product;
@@ -42,6 +44,7 @@ it('starts the initial GraphQL bulk import and queues progress polling', functio
 
     expect($shop->fresh()->sync_status)->toBe('importing')
         ->and($shop->fresh()->bulk_operation_id)->toBe('gid://shopify/BulkOperation/987654321')
+        ->and($shop->fresh()->bulk_operation_kind)->toBe('catalog')
         ->and($shop->fresh()->sync_total_count)->toBe(3);
 
     Queue::assertPushed(PollShopifyBulkOperation::class, fn (PollShopifyBulkOperation $job): bool => $job->shopId === $shop->getKey()
@@ -99,7 +102,7 @@ it('discards a signed Shopify webhook for an unknown shop', function () {
 it('dispatches a signed bulk finish through GraphQL result lookup to JSONL import', function () {
     $shop = createImportShop();
     $shop->forceFill(['bulk_operation_id' => 'gid://shopify/BulkOperation/987654321'])->save();
-    Queue::fake([CompleteShopifyBulkOperation::class, ImportShopifyBulkOperation::class]);
+    Queue::fake([CompleteShopifyBulkOperation::class, ImportShopifyBulkOperation::class, StartShopifyCustomerOrderImport::class]);
     $body = shopifyFixture('bulk-operation-finish.webhook.json');
     $headers = shopifyWebhookHeaders(shopifyWebhookSignature($body));
 
@@ -129,10 +132,15 @@ it('dispatches a signed bulk finish through GraphQL result lookup to JSONL impor
         $shop->getKey(),
         'gid://shopify/BulkOperation/987654321',
         'https://storage.googleapis.com/shopify/catalog-987654321.jsonl',
-    ))->handle(app(ProductEmbeddingSynchronizer::class));
+    ))->handle(app(ProductEmbeddingSynchronizer::class), app(ShopifyCustomerOrderSynchronizer::class));
 
-    expect(DB::table('shops')->where('id', $shop->getKey())->value('sync_status'))->toBe('synced')
+    expect(DB::table('shops')->where('id', $shop->getKey())->value('sync_status'))->toBe('importing')
+        ->and(DB::table('shops')->where('id', $shop->getKey())->value('bulk_operation_kind'))->toBe('customers')
+        ->and(DB::table('shops')->where('id', $shop->getKey())->value('bulk_operation_id'))->toBeNull()
         ->and(Product::withoutGlobalScopes()->where('shop_id', $shop->getKey())->count())->toBe(1);
+
+    Queue::assertPushed(StartShopifyCustomerOrderImport::class, fn (StartShopifyCustomerOrderImport $job): bool => $job->shopId === $shop->getKey()
+        && $job->kind->value === 'customers');
 });
 
 it('streams the Shopify JSONL fixture into the canonical catalog and repeats without duplicate rows or embeddings', function (string $provider) {
@@ -146,13 +154,16 @@ it('streams the Shopify JSONL fixture into the canonical catalog and repeats wit
     $jsonlUrl = 'https://storage.googleapis.com/shopify/catalog-987654321.jsonl';
     $vector = array_merge([1.0], array_fill(0, 1535, 0.0));
     Embeddings::fake([[$vector]]);
+    Queue::fake([StartShopifyCustomerOrderImport::class]);
     Http::preventStrayRequests();
     Http::fake([
-        $jsonlUrl => Http::response(shopifyFixture('catalog.jsonl', $provider), 200, ['Content-Type' => 'application/x-ndjson']),
+        $jsonlUrl => Http::sequence()
+            ->push(shopifyFixture('catalog.jsonl', $provider), 200, ['Content-Type' => 'application/x-ndjson'])
+            ->push(shopifyFixture('catalog.jsonl', $provider), 200, ['Content-Type' => 'application/x-ndjson']),
     ]);
 
     (new ImportShopifyBulkOperation($shop->getKey(), $operationId, $jsonlUrl))
-        ->handle(app(ProductEmbeddingSynchronizer::class));
+        ->handle(app(ProductEmbeddingSynchronizer::class), app(ShopifyCustomerOrderSynchronizer::class));
 
     $product = Product::withoutGlobalScopes()->where('shop_id', $shop->getKey())->sole();
     $variant = ProductVariant::withoutGlobalScopes()->where('shop_id', $shop->getKey())->sole();
@@ -175,10 +186,11 @@ it('streams the Shopify JSONL fixture into the canonical catalog and repeats wit
         ->and($variant->available)->toBeTrue()
         ->and($category->title)->toBe('Corrida')
         ->and($product->categories->modelKeys())->toBe([$category->getKey()])
-        ->and($shop->fresh()->sync_status)->toBe('synced')
-        ->and($shop->fresh()->sync_progress)->toBe(100)
-        ->and($shop->fresh()->sync_processed_count)->toBe(3)
-        ->and($shop->fresh()->last_synced_at)->not->toBeNull();
+        ->and($shop->fresh()->sync_status)->toBe('importing')
+        ->and($shop->fresh()->bulk_operation_kind)->toBe('customers')
+        ->and($shop->fresh()->sync_progress)->toBe(33)
+        ->and($shop->fresh()->sync_processed_count)->toBe(0)
+        ->and($shop->fresh()->last_synced_at)->toBeNull();
 
     $firstSourceHash = $product->source_hash;
     Embeddings::assertGenerated(fn ($prompt): bool => $prompt->contains('Tênis de corrida leve')
@@ -190,18 +202,20 @@ it('streams the Shopify JSONL fixture into the canonical catalog and repeats wit
     $shop->forceFill([
         'sync_status' => 'importing',
         'bulk_operation_id' => $nextOperationId,
+        'bulk_operation_kind' => 'catalog',
         'sync_progress' => 0,
     ])->save();
     Embeddings::fake()->preventStrayEmbeddings();
 
     (new ImportShopifyBulkOperation($shop->getKey(), $nextOperationId, $jsonlUrl))
-        ->handle(app(ProductEmbeddingSynchronizer::class));
+        ->handle(app(ProductEmbeddingSynchronizer::class), app(ShopifyCustomerOrderSynchronizer::class));
 
     expect(Product::withoutGlobalScopes()->where('shop_id', $shop->getKey())->count())->toBe(1)
         ->and(ProductVariant::withoutGlobalScopes()->where('shop_id', $shop->getKey())->count())->toBe(1)
         ->and(Category::withoutGlobalScopes()->where('shop_id', $shop->getKey())->count())->toBe(1)
         ->and($product->fresh()->source_hash)->toBe($firstSourceHash)
-        ->and($shop->fresh()->sync_status)->toBe('synced');
+        ->and($shop->fresh()->sync_status)->toBe('importing')
+        ->and($shop->fresh()->bulk_operation_kind)->toBe('customers');
 
 })->with(['shopify']);
 
@@ -229,7 +243,7 @@ it('updates visible progress and schedules another status check while Shopify is
     (new PollShopifyBulkOperation($shop->getKey(), $operationId))->handle(app(EcommerceAdapter::class));
 
     expect($shop->fresh()->sync_processed_count)->toBe(2)
-        ->and($shop->fresh()->sync_progress)->toBe(19);
+        ->and($shop->fresh()->sync_progress)->toBe(6);
     Queue::assertPushed(PollShopifyBulkOperation::class, fn (PollShopifyBulkOperation $job): bool => $job->shopId === $shop->getKey()
         && $job->operationId === $operationId);
 });

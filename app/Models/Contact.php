@@ -3,7 +3,8 @@
 namespace App\Models;
 
 use App\Concerns\BelongsToTeam;
-use App\WhatsApp\E164PhoneNumber;
+use App\Ecommerce\StoreCustomerContactLinker;
+use App\Support\E164PhoneNumber;
 use Database\Factories\ContactFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Casts\Attribute;
@@ -41,6 +42,19 @@ class Contact extends Model
 
     /** @use HasFactory<ContactFactory> */
     use BelongsToTeam, HasFactory;
+
+    protected static function booted(): void
+    {
+        static::created(function (Contact $contact): void {
+            app(StoreCustomerContactLinker::class)->syncContact($contact);
+        });
+
+        static::updated(function (Contact $contact): void {
+            if ($contact->wasChanged('phone')) {
+                app(StoreCustomerContactLinker::class)->syncContact($contact);
+            }
+        });
+    }
 
     /**
      * Get the messages exchanged with this contact.
@@ -86,6 +100,11 @@ class Contact extends Model
     public function appointments(): HasMany
     {
         return $this->hasMany(Appointment::class);
+    }
+
+    public function storeCustomer(): HasOne
+    {
+        return $this->hasOne(StoreCustomer::class);
     }
 
     /**
