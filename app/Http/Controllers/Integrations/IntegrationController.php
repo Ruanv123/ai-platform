@@ -2,6 +2,9 @@
 
 namespace App\Http\Controllers\Integrations;
 
+use App\Ecommerce\EcommerceAdapter;
+use App\Ecommerce\ShopifyAccessRevokedException;
+use App\Ecommerce\ShopifyInstallationCleanup;
 use App\Enums\CrmProvider;
 use App\Enums\EcommerceProvider;
 use App\Enums\TeamPermission;
@@ -11,18 +14,24 @@ use App\Integrations\GoogleCalendarClient;
 use App\Integrations\IntegrationConnectionTester;
 use App\Models\Flow;
 use App\Models\Integration;
+use App\Models\Product;
 use App\Models\SchedulableCalendar;
+use App\Models\Shop;
+use App\Models\StoreCustomer;
+use App\Models\StoreOrder;
 use App\Models\Team;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use Inertia\Response;
 use Laravel\Socialite\Facades\Socialite;
+use RuntimeException;
 use Throwable;
 
 class IntegrationController extends Controller
@@ -47,7 +56,7 @@ class IntegrationController extends Controller
 
         return Inertia::render('integrations/index', [
             'crmCatalog' => $this->catalog(CrmProvider::catalog()),
-            'ecommerceCatalog' => $this->catalog(EcommerceProvider::catalog()),
+            'ecommerceCatalog' => $this->ecommerceCatalog(),
             'agendaCatalog' => [$this->agendaCatalogEntry()],
             'singletonIntegrations' => [
                 'crm' => optional($configured->get('crm'), fn (Integration $integration): array => $this->serialize($integration)),
@@ -65,6 +74,7 @@ class IntegrationController extends Controller
         $agendaCalendars = [];
         $googleCalendars = [];
         $agendaError = session('agenda_error');
+        $shop = null;
 
         if ($type === 'agenda' && $integration !== null) {
             if ($integration->status === 'connected') {
@@ -86,11 +96,15 @@ class IntegrationController extends Controller
                 ->all();
         }
 
+        if ($type === 'ecommerce' && ($request->query('provider') === 'shopify' || $integration?->provider === 'shopify')) {
+            $shop = $team->shops()->where('integration_id', $integration?->getKey())->first();
+        }
+
         return Inertia::render('integrations/show', [
             'type' => $type,
             'catalog' => match ($type) {
                 'crm' => $this->catalog(CrmProvider::catalog()),
-                'ecommerce' => $this->catalog(EcommerceProvider::catalog()),
+                'ecommerce' => $this->ecommerceCatalog(),
                 default => [$this->agendaCatalogEntry()],
             },
             'provider' => $request->query('provider'),
@@ -98,6 +112,9 @@ class IntegrationController extends Controller
             'googleCalendars' => $googleCalendars,
             'schedulableCalendars' => $agendaCalendars,
             'agendaError' => $agendaError,
+            'shop' => $shop === null ? null : $this->serializeShop($shop),
+            'shopifyError' => session('shopify_error'),
+            'shopifySuccess' => session('shopify_success'),
             'permissions' => $request->user()->toTeamPermissions($team),
         ]);
     }
@@ -130,7 +147,7 @@ class IntegrationController extends Controller
                 ->user();
             $email = $googleUser->getEmail();
             if (! is_string($email) || $email === '' || ! is_string($googleUser->token ?? null)) {
-                throw new \RuntimeException('O Google não retornou uma conta válida.');
+                throw new RuntimeException('O Google não retornou uma conta válida.');
             }
 
             $team = $request->user()->company();
@@ -165,6 +182,7 @@ class IntegrationController extends Controller
         $this->authorizeManagement($request);
         $team = $request->user()->company();
         $data = $request->validated();
+        $this->rejectShopifyCredentialWorkflow($data);
         $existing = in_array($data['type'], self::SINGLETON_TYPES, true)
             ? $team->integrations()->where('type', $data['type'])->first()
             : null;
@@ -202,6 +220,7 @@ class IntegrationController extends Controller
     {
         $this->authorizeManagement($request, $integration);
         $data = $request->validated();
+        $this->rejectShopifyCredentialWorkflow($data, $integration);
         $integration->update([
             'name' => $data['name'],
             'type' => $data['type'],
@@ -224,6 +243,7 @@ class IntegrationController extends Controller
     public function test(Request $request, Integration $integration, IntegrationConnectionTester $tester): RedirectResponse|JsonResponse
     {
         $this->authorizeManagement($request, $integration);
+        $this->rejectShopifyCredentialWorkflow([], $integration);
         abort_if($integration->type === 'agenda', 404);
         $result = $tester->test($integration);
         $integration->forceFill([
@@ -244,10 +264,15 @@ class IntegrationController extends Controller
         return $this->redirectToIntegration($integration);
     }
 
-    public function destroy(Request $request, Integration $integration): RedirectResponse|JsonResponse
-    {
+    public function destroy(
+        Request $request,
+        Integration $integration,
+        EcommerceAdapter $ecommerceAdapter,
+        ShopifyInstallationCleanup $shopifyInstallationCleanup,
+    ): RedirectResponse|JsonResponse {
         $this->authorizeManagement($request, $integration);
-        if ($integration->type !== 'agenda') {
+        $isShopify = $integration->type === 'ecommerce' && $integration->provider === 'shopify';
+        if ($integration->type !== 'agenda' && ! $isShopify) {
             $usingFlows = $this->flowsUsing($request->user()->company(), $integration->getKey());
             if ($usingFlows->isNotEmpty()) {
                 $message = 'Não é possível apagar esta Integração porque ela é usada por: '.$usingFlows->join(', ').'. Remova-a dos Fluxos antes de continuar.';
@@ -265,7 +290,37 @@ class IntegrationController extends Controller
                 Log::warning('Google Agenda token revocation failed', ['integration_id' => $integration->getKey(), 'exception' => $exception]);
             }
         }
-        $integration->delete();
+
+        if ($isShopify) {
+            $shop = $integration->shop()->first();
+
+            if ($shop !== null) {
+                try {
+                    $ecommerceAdapter->uninstallApp($shop);
+                } catch (ShopifyAccessRevokedException) {
+                } catch (Throwable $exception) {
+                    report($exception);
+                    throw ValidationException::withMessages([
+                        'integration' => $exception instanceof RuntimeException
+                            ? $exception->getMessage()
+                            : 'Não foi possível desinstalar o app na Shopify. Tente novamente.',
+                    ]);
+                }
+
+                $shopifyInstallationCleanup->removeAfterUninstall($shop);
+            } else {
+                DB::transaction(function () use ($integration): void {
+                    $integration->forceFill([
+                        'credentials' => [],
+                        'status' => 'disconnected',
+                        'status_message' => null,
+                    ])->save();
+                    $integration->delete();
+                });
+            }
+        } else {
+            $integration->forceDelete();
+        }
 
         if ($request->expectsJson()) {
             return response()->json(['deleted' => true]);
@@ -280,6 +335,27 @@ class IntegrationController extends Controller
     private function catalog(array $catalog): array
     {
         return array_map(fn (array $item): array => [...$item, 'planned' => true, 'available' => false], $catalog);
+    }
+
+    private function ecommerceCatalog(): array
+    {
+        return array_map(fn (array $item): array => [
+            ...$item,
+            'planned' => $item['value'] !== EcommerceProvider::Shopify->value,
+            'available' => $item['value'] === EcommerceProvider::Shopify->value,
+        ], EcommerceProvider::catalog());
+    }
+
+    private function rejectShopifyCredentialWorkflow(array $data, ?Integration $integration = null): void
+    {
+        $isShopifyIntegration = $integration?->type === 'ecommerce' && $integration->provider === EcommerceProvider::Shopify->value;
+        $isShopifyRequest = ($data['type'] ?? null) === 'ecommerce' && ($data['provider'] ?? null) === EcommerceProvider::Shopify->value;
+
+        if ($isShopifyIntegration || $isShopifyRequest) {
+            throw ValidationException::withMessages([
+                'provider' => 'A Shopify deve ser conectada e gerenciada pelo fluxo de autorização próprio.',
+            ]);
+        }
     }
 
     /** @param array<string, mixed> $data */
@@ -368,6 +444,43 @@ class IntegrationController extends Controller
             'durationMinutes' => $calendar->duration_minutes,
             'minimumNoticeMinutes' => $calendar->minimum_notice_minutes,
             'businessHours' => $calendar->business_hours,
+        ];
+    }
+
+    private function serializeShop(Shop $shop): array
+    {
+        return [
+            'id' => $shop->getKey(),
+            'domain' => $shop->domain,
+            'name' => $shop->name,
+            'currencyCode' => $shop->currency_code,
+            'countryCode' => $shop->country_code,
+            'timezone' => $shop->timezone,
+            'syncStatus' => $shop->sync_status,
+            'syncStatusLabel' => match ($shop->sync_status) {
+                'importing' => 'Importando catálogo',
+                'synced' => 'Sincronizada',
+                'error' => 'Com erro',
+                default => 'Aguardando sincronização',
+            },
+            'syncProgress' => $shop->sync_progress,
+            'syncProcessedCount' => $shop->sync_processed_count,
+            'syncTotalCount' => $shop->sync_total_count,
+            'productCount' => Product::withoutGlobalScopes()
+                ->where('team_id', $shop->team_id)
+                ->where('shop_id', $shop->getKey())
+                ->count(),
+            'customerCount' => StoreCustomer::withoutGlobalScopes()
+                ->where('team_id', $shop->team_id)
+                ->where('shop_id', $shop->getKey())
+                ->count(),
+            'orderCount' => StoreOrder::withoutGlobalScopes()
+                ->where('team_id', $shop->team_id)
+                ->where('shop_id', $shop->getKey())
+                ->count(),
+            'lastSyncedAt' => $shop->last_synced_at?->toIso8601String(),
+            'syncError' => $shop->sync_error,
+            'suggestedAction' => $shop->suggested_action,
         ];
     }
 

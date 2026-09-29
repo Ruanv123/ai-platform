@@ -1,18 +1,33 @@
 <?php
 
+use App\Ai\Agents\ProductTriageAgent;
+use App\Ai\Agents\WhatsAppAgent;
+use App\Enums\AgentObjective;
 use App\Enums\ChannelType;
 use App\Enums\FlowCategory;
 use App\Enums\FlowStatus;
 use App\Enums\FlowTriggerType;
+use App\Models\Agent;
 use App\Models\Channel;
 use App\Models\Contact;
 use App\Models\Flow;
 use App\Models\FlowExecution;
+use App\Models\FlowExecutionStep;
 use App\Models\FlowVersion;
+use App\Models\Integration;
+use App\Models\Product;
+use App\Models\ProductVariant;
+use App\Models\Shop;
 use App\Models\Team;
 use App\Models\User;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 use Inertia\Testing\AssertableInertia as Assert;
+use Laravel\Ai\Embeddings;
+use Laravel\Ai\Responses\Data\Meta;
+use Laravel\Ai\Responses\Data\ToolCall;
+use Laravel\Ai\Responses\Data\Usage;
+use Laravel\Ai\Responses\StructuredTextResponse;
 
 function traceFlowGraph(array $nodes, array $edges = []): array
 {
@@ -216,4 +231,99 @@ it('returns 404 when another company requests an execution trace', function () {
     $this->actingAs($otherUser)
         ->get(route('flows.executions.show', [$flow, $execution]))
         ->assertNotFound();
+});
+
+it('includes product triage tokens and cost in the flow execution trace', function () {
+    $team = Team::factory()->create();
+    $agent = Agent::factory()->for($team)->create([
+        'objective' => AgentObjective::Sales,
+        'search_products' => true,
+    ]);
+    $agent->versions()->create([
+        'team_id' => $team->getKey(),
+        'number' => 1,
+        'objective' => AgentObjective::Sales,
+        'ecommerce_tools' => ['search_products' => true],
+        'published_at' => now(),
+    ]);
+    $channel = Channel::factory()->for($team)->for($agent)->create(['type' => ChannelType::WhatsAppTest]);
+    $contact = Contact::factory()->for($team)->create(['phone' => '+5511999999999']);
+    $integration = Integration::factory()->for($team)->create([
+        'type' => 'ecommerce',
+        'provider' => 'shopify',
+        'status' => 'connected',
+    ]);
+    $shop = Shop::factory()->for($team)->for($integration)->create();
+    $embedding = array_merge([1.0], array_fill(0, 1535, 0.0));
+
+    for ($candidateNumber = 1; $candidateNumber <= 6; $candidateNumber++) {
+        $product = Product::factory()->for($team)->for($shop)->create([
+            'title' => "Tênis de corrida {$candidateNumber}",
+            'embedding' => $embedding,
+        ]);
+        ProductVariant::factory()->for($team)->for($shop)->for($product)->create();
+    }
+
+    $dsl = traceFlowGraph([
+        ['id' => 'incoming', 'type' => 'trigger', 'config' => []],
+        ['id' => 'recommend', 'type' => 'deliver_agent', 'config' => ['prompt' => 'Quero tênis de corrida.']],
+        ['id' => 'done', 'type' => 'end', 'config' => []],
+    ], [
+        ['id' => 'incoming-to-agent', 'source' => 'incoming', 'target' => 'recommend'],
+        ['id' => 'agent-to-end', 'source' => 'recommend', 'target' => 'done'],
+    ]);
+    $flow = Flow::factory()->for($team)->published()->create([
+        'channel_id' => $channel->getKey(),
+        'trigger_type' => FlowTriggerType::Webhook,
+        'trigger_event' => 'contact.created',
+        'draft_dsl' => $dsl,
+    ]);
+    FlowVersion::factory()->for($flow)->create([
+        'team_id' => $team->getKey(),
+        'dsl' => $dsl,
+        'category' => FlowCategory::Reaction,
+    ]);
+    config([
+        'flows.ai_trace_pricing.default_input_per_million_brl' => 2.5,
+        'flows.ai_trace_pricing.default_output_per_million_brl' => 10,
+        'ai.product_triage.model' => 'gpt-5.6-luna',
+        'knowledge.product_search.candidate_limit' => 30,
+        'knowledge.product_search.offer_limit' => 3,
+    ]);
+    Embeddings::fake([[$embedding]]);
+    ProductTriageAgent::fake(function (string $prompt): StructuredTextResponse {
+        $payload = json_decode($prompt, true, flags: JSON_THROW_ON_ERROR);
+        $recommendations = array_map(fn (array $candidate): array => [
+            'variant_id' => $candidate['variant_id'],
+            'reason' => 'Boa opção para você.',
+        ], array_slice($payload['candidates'], 0, 3));
+
+        return new StructuredTextResponse(
+            ['recommendations' => $recommendations],
+            json_encode(['recommendations' => $recommendations], JSON_THROW_ON_ERROR),
+            new Usage(1000, 500),
+            new Meta('openai', 'gpt-5.6-luna'),
+        );
+    });
+    WhatsAppAgent::fake([
+        new ToolCall((string) Str::uuid7(), 'search_products', ['query' => 'tênis de corrida']),
+        '',
+    ]);
+
+    $this->postJson(route('webhooks.flows', [$channel->getKey(), 'contact.created']), [
+        'phone' => $contact->phone,
+    ])->assertOk()->assertJson(['accepted' => true]);
+    ProductTriageAgent::assertPromptedTimes(1);
+
+    $execution = FlowExecution::withoutGlobalScopes()->sole();
+    $recommendationSteps = $execution->steps()->where('node_id', 'recommend')->get();
+    $recommendationCost = $recommendationSteps->sum(fn (FlowExecutionStep $step): float => (float) $step->ai_cost_brl);
+    $recommendationInputTokens = $recommendationSteps->sum(fn (FlowExecutionStep $step): int => (int) $step->ai_input_tokens);
+    $recommendationOutputTokens = $recommendationSteps->sum(fn (FlowExecutionStep $step): int => (int) $step->ai_output_tokens);
+
+    expect($recommendationSteps)->not->toBeEmpty()
+        ->and($recommendationInputTokens)->toBe(1000)
+        ->and($recommendationOutputTokens)->toBe(500)
+        ->and($recommendationCost)->toBe(0.0075)
+        ->and((float) $execution->ai_cost_brl)->toBe($recommendationCost);
 });

@@ -1,0 +1,57 @@
+<?php
+
+namespace App\Models;
+
+use App\Concerns\BelongsToTeam;
+use Illuminate\Database\Eloquent\Attributes\Fillable;
+use Illuminate\Database\Eloquent\Concerns\HasUuids;
+use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\SoftDeletes;
+
+#[Fillable([
+    'team_id',
+    'integration_id',
+    'domain',
+    'name',
+    'currency_code',
+    'country_code',
+    'timezone',
+    'sync_status',
+    'sync_progress',
+    'bulk_operation_id',
+    'bulk_operation_kind',
+    'sync_processed_count',
+    'sync_total_count',
+    'last_synced_at',
+    'sync_error',
+    'suggested_action',
+    'reconciliation_cursor',
+])]
+class Shop extends Model
+{
+    use BelongsToTeam, HasFactory, HasUuids, SoftDeletes;
+
+    public function integration(): BelongsTo
+    {
+        return $this->belongsTo(Integration::class);
+    }
+
+    public function purchaseAttributions(): HasMany
+    {
+        return $this->hasMany(PurchaseAttribution::class);
+    }
+
+    protected function casts(): array
+    {
+        return [
+            'sync_progress' => 'integer',
+            'sync_processed_count' => 'integer',
+            'sync_total_count' => 'integer',
+            'last_synced_at' => 'immutable_datetime',
+            'reconciliation_cursor' => 'immutable_datetime',
+        ];
+    }
+}

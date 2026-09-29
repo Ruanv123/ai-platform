@@ -9,6 +9,7 @@ Schedule::command('flows:prune-traces')->dailyAt('02:00')->withoutOverlapping();
 Schedule::command('flows:prune-event-deliveries')->dailyAt('02:30')->withoutOverlapping();
 Schedule::command('inbox:release-stale')->everyMinute()->withoutOverlapping();
 Schedule::command('agents:resume-expired')->everyMinute()->withoutOverlapping();
+Schedule::command('shopify:reconcile')->daily()->withoutOverlapping();
 
 Schedule::call(function () {
     TeamInvitation::query()

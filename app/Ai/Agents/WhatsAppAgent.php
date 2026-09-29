@@ -8,10 +8,15 @@ use App\Ai\Tools\ConsultAvailableTimes;
 use App\Ai\Tools\ListAppointments;
 use App\Ai\Tools\ReturnToFlow;
 use App\Ai\Tools\SearchKnowledgeBase;
+use App\Ai\Tools\SearchProducts;
+use App\Ai\Tools\SendPurchaseLink;
+use App\Ecommerce\ProductCatalogSearch;
+use App\Ecommerce\ProductCatalogTriage;
 use App\Enums\MessageDirection;
 use App\Knowledge\AgentInstructionTemplate;
 use App\Knowledge\KnowledgeBaseSearch;
 use App\Models\Agent as ConfiguredAgent;
+use App\Models\Channel;
 use App\Models\Contact;
 use App\Models\Message as ConversationMessage;
 use App\Scheduling\SchedulingService;
@@ -39,9 +44,11 @@ class WhatsAppAgent implements Agent, Conversational, HasTools
         private Collection $conversationMessages,
         private AgentInstructionTemplate $instructionTemplate,
         private KnowledgeBaseSearch $knowledgeBaseSearch,
+        private ProductCatalogSearch $productCatalogSearch,
         private ?ReturnToFlow $returnToFlow = null,
         private ?Contact $contact = null,
         private ?SchedulingService $scheduling = null,
+        private ?Channel $channel = null,
     ) {}
 
     /**
@@ -81,6 +88,23 @@ class WhatsAppAgent implements Agent, Conversational, HasTools
                 $collections->modelKeys(),
                 $this->knowledgeBaseSearch,
             );
+        }
+        $team = $this->configuredAgent->team;
+        $publishedVersion = $this->configuredAgent->publishedVersion();
+        $shopConnected = $team->shops()->exists();
+        $shopToolsEnabled = $this->configuredAgent->shop_tools_enabled;
+        if ($publishedVersion?->shouldSearchProducts($shopConnected, $shopToolsEnabled)) {
+            $tools[] = new SearchProducts(
+                $team,
+                $this->productCatalogSearch,
+                new ProductCatalogTriage,
+                $this->configuredAgent,
+                $this->contact,
+                $this->conversationMessages,
+            );
+        }
+        if ($publishedVersion?->shouldSendPurchaseLink($shopConnected, $shopToolsEnabled)) {
+            $tools[] = new SendPurchaseLink($team, $this->configuredAgent, $this->contact, $this->channel);
         }
         $calendars = $this->configuredAgent->schedulableCalendars;
         if ($calendars->isNotEmpty()) {

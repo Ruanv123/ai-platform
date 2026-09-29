@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import ShopifyConnectionPanel from '@/components/integrations/shopify-connection-panel';
 import agenda from '@/routes/integrations/agenda';
 import calendars from '@/routes/integrations/agenda/calendars';
 import { destroy, index, show, store, test, update } from '@/routes/integrations';
@@ -51,6 +52,23 @@ type SchedulableCalendar = {
     businessHours: Record<string, { enabled?: boolean; open?: string | null; close?: string | null }> | null;
 };
 
+type ShopifyStore = {
+    id: string;
+    domain: string;
+    name: string;
+    currencyCode: string;
+    countryCode: string | null;
+    timezone: string | null;
+    syncStatus: string;
+    syncStatusLabel: string;
+    syncProgress: number;
+    syncProcessedCount: number;
+    syncTotalCount: number | null;
+    lastSyncedAt: string | null;
+    syncError: string | null;
+    suggestedAction: string | null;
+};
+
 type IntegrationType = 'crm' | 'ecommerce' | 'agenda';
 
 type Props = {
@@ -61,6 +79,9 @@ type Props = {
     googleCalendars: GoogleCalendar[];
     schedulableCalendars: SchedulableCalendar[];
     agendaError: string | null;
+    shop: ShopifyStore | null;
+    shopifyError: string | null;
+    shopifySuccess: string | null;
     permissions: TeamPermissions;
 };
 
@@ -76,6 +97,21 @@ export default function IntegrationShowPage(props: Props) {
     const [activeTab, setActiveTab] = useState<SettingsTab>('settings');
     const selectedProviderValue = integration?.provider ?? provider;
     const selectedCatalogItem = catalog.find((item) => item.value === selectedProviderValue);
+
+    if (type === 'ecommerce' && (provider === 'shopify' || integration?.provider === 'shopify')) {
+        return (
+            <>
+                <Head title="Shopify" />
+                <ShopifyConnectionPanel
+                    integration={integration}
+                    shop={props.shop}
+                    shopifyError={props.shopifyError}
+                    shopifySuccess={props.shopifySuccess}
+                    permissions={permissions}
+                />
+            </>
+        );
+    }
 
     if (type === 'agenda') {
         return <AgendaPage {...props} />;

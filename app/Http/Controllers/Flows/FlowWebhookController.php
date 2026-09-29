@@ -7,7 +7,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Channel;
 use App\Models\Contact;
 use App\Models\Flow;
-use App\WhatsApp\E164PhoneNumber;
+use App\Support\E164PhoneNumber;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 

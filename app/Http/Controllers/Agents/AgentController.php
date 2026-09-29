@@ -15,6 +15,7 @@ use App\Models\SchedulableCalendar;
 use App\Models\Team;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -141,18 +142,46 @@ class AgentController extends Controller
      */
     public function update(SaveAgentRequest $request, Agent $agent): RedirectResponse
     {
-        $validated = $request->validated();
-        $collectionIds = $validated['collection_ids'] ?? [];
-        $calendarIds = $validated['schedulable_calendar_ids'] ?? [];
-        unset($validated['collection_ids'], $validated['schedulable_calendar_ids']);
-
-        $agent->update($validated);
-        $agent->collections()->sync($collectionIds);
-        $agent->schedulableCalendars()->sync($calendarIds);
+        $this->saveDraft($agent, $request->validated());
 
         Inertia::flash('toast', [
             'type' => 'success',
             'message' => 'Agente atualizado com sucesso.',
+        ]);
+
+        return to_route('agents.edit', $agent);
+    }
+
+    public function publish(SaveAgentRequest $request, Agent $agent): RedirectResponse
+    {
+        $validated = $request->validated();
+
+        DB::transaction(function () use ($agent, $validated): void {
+            $lockedAgent = $agent->newQuery()
+                ->lockForUpdate()
+                ->whereKey($agent->getKey())
+                ->firstOrFail();
+
+            $this->saveDraft($lockedAgent, $validated);
+            $number = ((int) $lockedAgent->versions()->max('number')) + 1;
+
+            $lockedAgent->versions()->create([
+                'team_id' => $lockedAgent->team_id,
+                'number' => $number,
+                'objective' => $lockedAgent->objective,
+                'ecommerce_tools' => [
+                    'search_products' => $lockedAgent->search_products,
+                    'send_purchase_link' => $lockedAgent->send_purchase_link,
+                ],
+                'published_at' => now(),
+            ]);
+
+            $lockedAgent->forceFill(['shop_tools_enabled' => true])->save();
+        });
+
+        Inertia::flash('toast', [
+            'type' => 'success',
+            'message' => 'Versão do Agente publicada para os Canais.',
         ]);
 
         return to_route('agents.edit', $agent);
@@ -204,12 +233,17 @@ class AgentController extends Controller
         Agent $agent,
         bool $canManageAgents = false,
     ): array {
+        $shopConnected = $team->shops()->exists();
+        $publishedVersion = $agent->publishedVersion();
+
         return [
             'agent' => [
                 'id' => $agent->id,
                 'name' => $agent->name,
                 'description' => $agent->description,
                 'objective' => $agent->objective->value,
+                'searchProducts' => $agent->search_products ?? ($shopConnected && $agent->objective === AgentObjective::Sales),
+                'sendPurchaseLink' => $agent->send_purchase_link ?? ($shopConnected && $agent->objective === AgentObjective::Sales),
                 'tone' => $agent->tone->value,
                 'usesEmojis' => $agent->uses_emojis,
                 'responseLength' => $agent->response_length->value,
@@ -238,6 +272,12 @@ class AgentController extends Controller
                 ])
                 ->values(),
             'agendaConnected' => $team->integrations()->where('type', 'agenda')->where('status', 'connected')->exists(),
+            'shopConnected' => $shopConnected,
+            'productSearchConfigured' => $agent->search_products !== null,
+            'purchaseLinkConfigured' => $agent->send_purchase_link !== null,
+            'publishedVersion' => $publishedVersion === null ? null : [
+                'number' => $publishedVersion->number,
+            ],
             'objectives' => AgentObjective::options(),
             'tones' => AgentTone::options(),
             'responseLengths' => AgentResponseLength::options(),
@@ -245,5 +285,16 @@ class AgentController extends Controller
                 'canManageAgents' => $canManageAgents,
             ],
         ];
+    }
+
+    private function saveDraft(Agent $agent, array $validated): void
+    {
+        $collectionIds = $validated['collection_ids'] ?? [];
+        $calendarIds = $validated['schedulable_calendar_ids'] ?? [];
+        unset($validated['collection_ids'], $validated['schedulable_calendar_ids']);
+
+        $agent->update($validated);
+        $agent->collections()->sync($collectionIds);
+        $agent->schedulableCalendars()->sync($calendarIds);
     }
 }

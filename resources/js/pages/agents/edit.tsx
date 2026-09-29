@@ -1,4 +1,4 @@
-import { Form, Head, Link } from '@inertiajs/react';
+import { Form, Head, Link, router } from '@inertiajs/react';
 import { ArrowDown, ArrowLeft, ArrowUp, Bot, Plus, X } from 'lucide-react';
 import { useState } from 'react';
 import AgentPlayground, {
@@ -23,7 +23,7 @@ import {
     SelectTrigger,
     SelectValue,
 } from '@/components/ui/select';
-import { index, update } from '@/routes/agents';
+import { index, publish, update } from '@/routes/agents';
 import { show as showIntegration } from '@/routes/integrations';
 
 type Option = {
@@ -52,6 +52,12 @@ type Props = {
     collections: CollectionOption[];
     schedulableCalendars: SchedulableCalendarOption[];
     agendaConnected: boolean;
+    shopConnected: boolean;
+    productSearchConfigured: boolean;
+    purchaseLinkConfigured: boolean;
+    publishedVersion: {
+        number: number;
+    } | null;
     objectives: Option[];
     tones: Option[];
     responseLengths: Option[];
@@ -250,11 +256,25 @@ function AgentForm({
     permissions,
     schedulableCalendars,
     agendaConnected,
+    shopConnected,
+    productSearchConfigured,
+    purchaseLinkConfigured,
+    publishedVersion,
 }: Props) {
     const [name, setName] = useState(agent.name);
     const [description, setDescription] = useState(agent.description ?? '');
     const [objective, setObjective] = useState(
         agent.objective || objectives[0]?.value || '',
+    );
+    const [searchProducts, setSearchProducts] = useState(agent.searchProducts);
+    const [isProductSearchConfigured, setIsProductSearchConfigured] = useState(
+        productSearchConfigured,
+    );
+    const [sendPurchaseLink, setSendPurchaseLink] = useState(
+        agent.sendPurchaseLink,
+    );
+    const [isPurchaseLinkConfigured, setIsPurchaseLinkConfigured] = useState(
+        purchaseLinkConfigured,
     );
     const [tone, setTone] = useState(agent.tone || tones[0]?.value || '');
     const [responseLength, setResponseLength] = useState(
@@ -272,6 +292,7 @@ function AgentForm({
     const [activePanel, setActivePanel] = useState<'config' | 'playground'>(
         'config',
     );
+    const [isPublishing, setIsPublishing] = useState(false);
     const draft: AgentDraft = {
         name,
         objective,
@@ -283,6 +304,50 @@ function AgentForm({
         rules,
         collectionIds: selectedCollectionIds,
         schedulableCalendarIds: selectedSchedulableCalendarIds,
+        searchProducts,
+        sendPurchaseLink,
+    };
+
+    const updateObjective = (nextObjective: string) => {
+        setObjective(nextObjective);
+
+        if (!isProductSearchConfigured) {
+            setSearchProducts(nextObjective === 'sales' && shopConnected);
+        }
+
+        if (!isPurchaseLinkConfigured) {
+            setSendPurchaseLink(nextObjective === 'sales' && shopConnected);
+        }
+    };
+
+    const publishDraft = () => {
+        router.post(
+            publish.url(agent.id),
+            {
+                name,
+                description: description || null,
+                objective,
+                ...(isProductSearchConfigured
+                    ? { search_products: searchProducts }
+                    : {}),
+                ...(isPurchaseLinkConfigured
+                    ? { send_purchase_link: sendPurchaseLink }
+                    : {}),
+                tone,
+                uses_emojis: usesEmojis,
+                response_length: responseLength,
+                welcome_message: welcomeMessage,
+                instructions,
+                rules,
+                collection_ids: selectedCollectionIds,
+                schedulable_calendar_ids: selectedSchedulableCalendarIds,
+            },
+            {
+                preserveScroll: true,
+                onStart: () => setIsPublishing(true),
+                onFinish: () => setIsPublishing(false),
+            },
+        );
     };
 
     const toggleCollection = (collectionId: string) => {
@@ -302,10 +367,7 @@ function AgentForm({
     };
 
     return (
-        <Form
-            {...update.form(agent.id)}
-            className="grid gap-5"
-        >
+        <Form {...update.form(agent.id)} className="grid gap-5">
             {({ errors, processing }) => (
                 <>
                     <div className="bg-muted grid grid-cols-2 rounded-lg p-1 lg:hidden">
@@ -352,6 +414,26 @@ function AgentForm({
                                         name="objective"
                                         value={objective}
                                     />
+                                    {shopConnected &&
+                                        isProductSearchConfigured && (
+                                            <input
+                                                type="hidden"
+                                                name="search_products"
+                                                value={
+                                                    searchProducts ? '1' : '0'
+                                                }
+                                            />
+                                        )}
+                                    {shopConnected &&
+                                        isPurchaseLinkConfigured && (
+                                            <input
+                                                type="hidden"
+                                                name="send_purchase_link"
+                                                value={
+                                                    sendPurchaseLink ? '1' : '0'
+                                                }
+                                            />
+                                        )}
                                     <input
                                         type="hidden"
                                         name="tone"
@@ -431,7 +513,7 @@ function AgentForm({
                                             id="agent-objective"
                                             label="Objetivo"
                                             value={objective}
-                                            onValueChange={setObjective}
+                                            onValueChange={updateObjective}
                                             options={objectives}
                                             error={errors.objective}
                                         />
@@ -499,6 +581,72 @@ function AgentForm({
                                             />
                                         </div>
                                     </div>
+
+                                    {shopConnected && (
+                                        <section className="grid gap-3">
+                                            <div className="grid gap-1">
+                                                <Label>Buscar produtos</Label>
+                                                <p className="text-muted-foreground text-sm">
+                                                    Permita que o Agente
+                                                    consulte o catálogo da Loja
+                                                    para recomendar produtos com
+                                                    preços, opções e
+                                                    disponibilidade atuais.
+                                                </p>
+                                            </div>
+                                            <label className="border-input hover:bg-muted/50 flex cursor-pointer items-start gap-3 rounded-md border px-3 py-3 text-sm">
+                                                <input
+                                                    type="checkbox"
+                                                    checked={searchProducts}
+                                                    onChange={(event) => {
+                                                        setSearchProducts(
+                                                            event.target
+                                                                .checked,
+                                                        );
+                                                        setIsProductSearchConfigured(
+                                                            true,
+                                                        );
+                                                    }}
+                                                    className="accent-primary mt-0.5 size-4"
+                                                />
+                                                <span>
+                                                    O Agente pode buscar
+                                                    produtos da Loja
+                                                </span>
+                                            </label>
+                                            <div className="grid gap-1 pt-2">
+                                                <Label>
+                                                    Mandar Link de compra
+                                                </Label>
+                                                <p className="text-muted-foreground text-sm">
+                                                    Permita que o Agente gere um
+                                                    link de checkout com as
+                                                    Variantes e quantidades
+                                                    escolhidas pelo Contato.
+                                                </p>
+                                            </div>
+                                            <label className="border-input hover:bg-muted/50 flex cursor-pointer items-start gap-3 rounded-md border px-3 py-3 text-sm">
+                                                <input
+                                                    type="checkbox"
+                                                    checked={sendPurchaseLink}
+                                                    onChange={(event) => {
+                                                        setSendPurchaseLink(
+                                                            event.target
+                                                                .checked,
+                                                        );
+                                                        setIsPurchaseLinkConfigured(
+                                                            true,
+                                                        );
+                                                    }}
+                                                    className="accent-primary mt-0.5 size-4"
+                                                />
+                                                <span>
+                                                    O Agente pode mandar Links
+                                                    de compra da Loja
+                                                </span>
+                                            </label>
+                                        </section>
+                                    )}
 
                                     <ListEditor
                                         label="Instruções"
@@ -580,53 +728,97 @@ function AgentForm({
                                         <div className="grid gap-1">
                                             <Label>Agenda</Label>
                                             <p className="text-muted-foreground text-sm">
-                                                Escolha em quais Calendários agendáveis este Agente pode marcar.
+                                                Escolha em quais Calendários
+                                                agendáveis este Agente pode
+                                                marcar.
                                             </p>
                                         </div>
                                         {!agendaConnected ? (
                                             <p className="text-muted-foreground rounded-md border border-dashed p-3 text-sm">
                                                 Conecte a Agenda em{' '}
-                                                <Link className="text-primary underline" href={showIntegration('agenda').url}>
+                                                <Link
+                                                    className="text-primary underline"
+                                                    href={
+                                                        showIntegration(
+                                                            'agenda',
+                                                        ).url
+                                                    }
+                                                >
                                                     Integrações
                                                 </Link>{' '}
                                                 para liberar Calendários.
                                             </p>
-                                        ) : schedulableCalendars.length === 0 ? (
+                                        ) : schedulableCalendars.length ===
+                                          0 ? (
                                             <p className="text-muted-foreground rounded-md border border-dashed p-3 text-sm">
-                                                Libere um Calendário na Agenda para disponibilizá-lo aqui.
+                                                Libere um Calendário na Agenda
+                                                para disponibilizá-lo aqui.
                                             </p>
                                         ) : (
                                             <div className="grid gap-2 sm:grid-cols-2">
-                                                {schedulableCalendars.map((calendar) => {
-                                                    const selected = selectedSchedulableCalendarIds.includes(calendar.id);
+                                                {schedulableCalendars.map(
+                                                    (calendar) => {
+                                                        const selected =
+                                                            selectedSchedulableCalendarIds.includes(
+                                                                calendar.id,
+                                                            );
 
-                                                    return (
-                                                        <label
-                                                            key={calendar.id}
-                                                            className="border-input hover:bg-muted/50 flex cursor-pointer items-start gap-3 rounded-md border px-3 py-2 text-sm"
-                                                        >
-                                                            <input
-                                                                type="checkbox"
-                                                                checked={selected}
-                                                                onChange={() => toggleSchedulableCalendar(calendar.id)}
-                                                                className="accent-primary mt-0.5 size-4"
-                                                            />
-                                                            <span>
-                                                                <span className="block font-medium">{calendar.name}</span>
-                                                                {calendar.description && (
-                                                                    <span className="text-muted-foreground block text-xs">{calendar.description}</span>
-                                                                )}
-                                                            </span>
-                                                        </label>
-                                                    );
-                                                })}
+                                                        return (
+                                                            <label
+                                                                key={
+                                                                    calendar.id
+                                                                }
+                                                                className="border-input hover:bg-muted/50 flex cursor-pointer items-start gap-3 rounded-md border px-3 py-2 text-sm"
+                                                            >
+                                                                <input
+                                                                    type="checkbox"
+                                                                    checked={
+                                                                        selected
+                                                                    }
+                                                                    onChange={() =>
+                                                                        toggleSchedulableCalendar(
+                                                                            calendar.id,
+                                                                        )
+                                                                    }
+                                                                    className="accent-primary mt-0.5 size-4"
+                                                                />
+                                                                <span>
+                                                                    <span className="block font-medium">
+                                                                        {
+                                                                            calendar.name
+                                                                        }
+                                                                    </span>
+                                                                    {calendar.description && (
+                                                                        <span className="text-muted-foreground block text-xs">
+                                                                            {
+                                                                                calendar.description
+                                                                            }
+                                                                        </span>
+                                                                    )}
+                                                                </span>
+                                                            </label>
+                                                        );
+                                                    },
+                                                )}
                                             </div>
                                         )}
-                                        <InputError message={nestedError(errors, 'schedulable_calendar_ids')} />
+                                        <InputError
+                                            message={nestedError(
+                                                errors,
+                                                'schedulable_calendar_ids',
+                                            )}
+                                        />
                                     </section>
 
                                     {permissions.canManageAgents && (
                                         <div className="flex flex-col-reverse gap-3 border-t pt-6 sm:flex-row sm:justify-end">
+                                            <p className="text-muted-foreground mr-auto self-center text-sm">
+                                                {publishedVersion === null
+                                                    ? 'Ainda não há uma versão publicada nos Canais.'
+                                                    : `Última versão publicada nos Canais: ${publishedVersion.number}.`}{' '}
+                                                O rascunho atual só vai aos
+                                                Canais quando você publicar.
+                                            </p>
                                             <Button
                                                 type="button"
                                                 variant="outline"
@@ -641,8 +833,19 @@ function AgentForm({
                                                 disabled={processing}
                                             >
                                                 {processing
-                                                    ? 'Salvando...'
-                                                    : 'Salvar alterações'}
+                                                    ? 'Salvando rascunho...'
+                                                    : 'Salvar rascunho'}
+                                            </Button>
+                                            <Button
+                                                type="button"
+                                                onClick={publishDraft}
+                                                disabled={
+                                                    processing || isPublishing
+                                                }
+                                            >
+                                                {isPublishing
+                                                    ? 'Publicando...'
+                                                    : 'Publicar para os Canais'}
                                             </Button>
                                         </div>
                                     )}

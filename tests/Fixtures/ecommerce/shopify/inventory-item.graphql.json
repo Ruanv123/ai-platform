@@ -1,0 +1,17 @@
+{
+  "data": {
+    "inventoryItem": {
+      "id": "gid://shopify/InventoryItem/5001",
+      "variants": {
+        "nodes": [
+          {
+            "id": "gid://shopify/ProductVariant/2001",
+            "inventoryQuantity": 9,
+            "availableForSale": true,
+            "product": { "id": "gid://shopify/Product/1001" }
+          }
+        ]
+      }
+    }
+  }
+}

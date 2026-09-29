@@ -30,6 +30,8 @@ class SaveAgentRequest extends FormRequest
             'name' => ['required', 'string', 'max:255'],
             'description' => ['nullable', 'string', 'max:1000'],
             'objective' => ['required', Rule::enum(AgentObjective::class)],
+            'search_products' => ['sometimes', 'nullable', 'boolean'],
+            'send_purchase_link' => ['sometimes', 'nullable', 'boolean'],
             'tone' => ['required', Rule::enum(AgentTone::class)],
             'uses_emojis' => ['required', 'boolean'],
             'response_length' => ['required', Rule::enum(AgentResponseLength::class)],
