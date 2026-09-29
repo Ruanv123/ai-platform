@@ -9,6 +9,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import ShopifyConnectionPanel from '@/components/integrations/shopify-connection-panel';
+import CrmConnectionPanel from '@/components/integrations/crm-connection-panel';
 import agenda from '@/routes/integrations/agenda';
 import calendars from '@/routes/integrations/agenda/calendars';
 import { destroy, index, show, store, test, update } from '@/routes/integrations';
@@ -30,6 +31,7 @@ type ConfiguredIntegration = {
     type: string;
     provider: string | null;
     accountEmail?: string | null;
+    crmMetadataLoadedAt?: string | null;
     status: string;
     statusLabel: string;
     statusMessage: string | null;
@@ -82,6 +84,8 @@ type Props = {
     shop: ShopifyStore | null;
     shopifyError: string | null;
     shopifySuccess: string | null;
+    crmError: string | null;
+    crmSuccess: string | null;
     permissions: TeamPermissions;
 };
 
@@ -115,6 +119,13 @@ export default function IntegrationShowPage(props: Props) {
 
     if (type === 'agenda') {
         return <AgendaPage {...props} />;
+    }
+
+    if (type === 'crm') {
+        return <>
+            <Head title="RD Station CRM" />
+            <CrmConnectionPanel integration={integration} crmError={props.crmError} crmSuccess={props.crmSuccess} permissions={permissions} />
+        </>;
     }
 
     const title = integration ? (selectedCatalogItem?.name ?? integration.name) : (selectedCatalogItem?.name ?? 'Conectar integração');

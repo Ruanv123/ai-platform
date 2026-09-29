@@ -1,0 +1,6 @@
+{
+  "access_token": "rd-next-access-token",
+  "refresh_token": "rd-next-refresh-token",
+  "expires_in": 7200,
+  "token_type": "bearer"
+}
