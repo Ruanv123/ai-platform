@@ -14,6 +14,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
     'team_id',
     'shop_id',
     'store_customer_id',
+    'purchase_attribution_id',
     'customer_external_id',
     'external_id',
     'order_number',
@@ -36,6 +37,11 @@ class StoreOrder extends Model
     public function storeCustomer(): BelongsTo
     {
         return $this->belongsTo(StoreCustomer::class);
+    }
+
+    public function purchaseAttribution(): BelongsTo
+    {
+        return $this->belongsTo(PurchaseAttribution::class);
     }
 
     public function items(): HasMany

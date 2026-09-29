@@ -173,6 +173,7 @@ final class StartShopifyCustomerOrderImport implements ShouldBeUnique, ShouldQue
                     displayFulfillmentStatus
                     totalPriceSet { shopMoney { amount currencyCode } }
                     customer { id }
+                    customAttributes { key value }
                     lineItems {
                       edges {
                         node {

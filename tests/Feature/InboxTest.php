@@ -19,6 +19,7 @@ use App\Models\FlowExecution;
 use App\Models\FlowVersion;
 use App\Models\Integration;
 use App\Models\Message;
+use App\Models\PurchaseAttribution;
 use App\Models\Shop;
 use App\Models\StoreCustomer;
 use App\Models\StoreOrder;
@@ -159,7 +160,8 @@ it('shows a linked store customer and recent orders in the Contact detail', func
     $contact = Contact::factory()->for($team)->create([
         'name' => 'Nome do atendimento',
     ]);
-    $channel = Channel::factory()->for($team)->connected()->create();
+    $agent = Agent::factory()->for($team)->create();
+    $channel = Channel::factory()->for($team)->for($agent)->connected()->create();
     Message::factory()->for($contact)->for($channel)->create(['content' => 'Quero saber sobre meu pedido.']);
     $integration = Integration::factory()->for($team)->create([
         'type' => 'ecommerce',
@@ -174,6 +176,14 @@ it('shows a linked store customer and recent orders in the Contact detail', func
         'total_spent' => '823.50',
         'currency_code' => 'BRL',
     ]);
+    $purchaseAttribution = PurchaseAttribution::query()->create([
+        'team_id' => $team->getKey(),
+        'shop_id' => $shop->getKey(),
+        'contact_id' => $contact->getKey(),
+        'agent_id' => $agent->getKey(),
+        'channel_id' => $channel->getKey(),
+        'token_hash' => hash('sha256', 'inbox-purchase-token'),
+    ]);
     StoreOrder::factory()->for($team)->for($shop)->for($customer, 'storeCustomer')->create([
         'team_id' => $team->id,
         'shop_id' => $shop->getKey(),
@@ -185,6 +195,7 @@ it('shows a linked store customer and recent orders in the Contact detail', func
         'team_id' => $team->id,
         'shop_id' => $shop->getKey(),
         'store_customer_id' => $customer->getKey(),
+        'purchase_attribution_id' => $purchaseAttribution->getKey(),
         'order_number' => '#1043',
         'ordered_at' => now(),
     ]);
@@ -197,8 +208,46 @@ it('shows a linked store customer and recent orders in the Contact detail', func
             ->where('selected.contact.storeCustomer.name', 'Mariana Costa')
             ->where('selected.contact.storeCustomer.email', 'mariana.costa@example.test')
             ->where('selected.contact.storeCustomer.totalSpent', '823.50')
-            ->where('selected.contact.storeCustomer.orders.0.orderNumber', '#1043')
-            ->where('selected.contact.storeCustomer.orders.1.orderNumber', '#1042'));
+            ->where('selected.contact.storeOrders.0.orderNumber', '#1043')
+            ->where('selected.contact.storeOrders.0.attributed', true)
+            ->where('selected.contact.storeOrders.1.orderNumber', '#1042')
+            ->where('selected.contact.storeOrders.1.attributed', false));
+});
+
+it('shows a guest order attributed to the Contact without a linked store customer', function () {
+    $user = User::factory()->withTeam()->create();
+    $team = $user->company();
+    $contact = Contact::factory()->for($team)->create();
+    $agent = Agent::factory()->for($team)->create();
+    $channel = Channel::factory()->for($team)->for($agent)->connected()->create();
+    Message::factory()->for($contact)->for($channel)->create(['content' => 'Quero saber sobre meu pedido.']);
+    $integration = Integration::factory()->for($team)->create([
+        'type' => 'ecommerce',
+        'provider' => 'shopify',
+        'status' => 'connected',
+    ]);
+    $shop = Shop::factory()->for($team)->for($integration)->create();
+    $purchaseAttribution = PurchaseAttribution::query()->create([
+        'team_id' => $team->getKey(),
+        'shop_id' => $shop->getKey(),
+        'contact_id' => $contact->getKey(),
+        'agent_id' => $agent->getKey(),
+        'channel_id' => $channel->getKey(),
+        'token_hash' => hash('sha256', 'guest-purchase-token'),
+    ]);
+    StoreOrder::factory()->for($team)->for($shop)->create([
+        'store_customer_id' => null,
+        'purchase_attribution_id' => $purchaseAttribution->getKey(),
+        'order_number' => '#guest-1044',
+    ]);
+
+    $this->actingAs($user)
+        ->get(route('inbox.show', ['contact' => $contact, 'channel' => $channel]))
+        ->assertOk()
+        ->assertInertia(fn ($page) => $page
+            ->where('selected.contact.storeCustomer', null)
+            ->where('selected.contact.storeOrders.0.orderNumber', '#guest-1044')
+            ->where('selected.contact.storeOrders.0.attributed', true));
 });
 
 it('pauses a direct Agent conversation and records an explicit takeover', function () {

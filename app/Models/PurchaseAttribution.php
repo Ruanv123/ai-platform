@@ -9,6 +9,7 @@ use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 #[Fillable(['team_id', 'shop_id', 'contact_id', 'agent_id', 'channel_id', 'token_hash'])]
 #[Hidden(['token_hash'])]
@@ -34,5 +35,10 @@ class PurchaseAttribution extends Model
     public function channel(): BelongsTo
     {
         return $this->belongsTo(Channel::class);
+    }
+
+    public function orders(): HasMany
+    {
+        return $this->hasMany(StoreOrder::class);
     }
 }

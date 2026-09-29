@@ -542,10 +542,24 @@ final class InboxController extends Controller
 
         $flow = $execution?->flowVersion?->flow;
         $storeCustomer = $contact->storeCustomer()->first();
-        $storeOrders = $storeCustomer?->orders()
+        $storeOrders = StoreOrder::query()
+            ->where('team_id', $contact->team_id)
+            ->whereHas('shop', fn (Builder $query) => $query->where('team_id', $contact->team_id))
+            ->where(function (Builder $query) use ($contact, $storeCustomer): void {
+                $query->whereHas('purchaseAttribution', fn (Builder $attributionQuery) => $attributionQuery
+                    ->where('team_id', $contact->team_id)
+                    ->where('contact_id', $contact->getKey()));
+
+                if ($storeCustomer !== null) {
+                    $query->orWhere('store_customer_id', $storeCustomer->getKey());
+                }
+            })
+            ->distinct()
             ->orderByDesc('ordered_at')
             ->limit(5)
-            ->get() ?? collect();
+            ->get()
+            ->unique(fn (StoreOrder $order): string => $order->getKey())
+            ->values();
 
         return [
             'contact' => [
@@ -571,16 +585,17 @@ final class InboxController extends Controller
                     'email' => $storeCustomer->email,
                     'totalSpent' => $storeCustomer->total_spent,
                     'currencyCode' => $storeCustomer->currency_code,
-                    'orders' => $storeOrders->map(fn (StoreOrder $order): array => [
-                        'id' => $order->getKey(),
-                        'orderNumber' => $order->order_number,
-                        'totalAmount' => $order->total_amount,
-                        'currencyCode' => $order->currency_code,
-                        'financialStatus' => $order->financial_status,
-                        'fulfillmentStatus' => $order->fulfillment_status,
-                        'orderedAt' => $order->ordered_at?->toIso8601String(),
-                    ])->values(),
                 ],
+                'storeOrders' => $storeOrders->map(fn (StoreOrder $order): array => [
+                    'id' => $order->getKey(),
+                    'orderNumber' => $order->order_number,
+                    'totalAmount' => $order->total_amount,
+                    'currencyCode' => $order->currency_code,
+                    'financialStatus' => $order->financial_status,
+                    'fulfillmentStatus' => $order->fulfillment_status,
+                    'orderedAt' => $order->ordered_at?->toIso8601String(),
+                    'attributed' => $order->purchase_attribution_id !== null,
+                ])->values(),
             ],
             'channel' => [
                 'id' => $channel->id,

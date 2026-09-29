@@ -4,6 +4,7 @@ namespace App\Ecommerce;
 
 use App\Enums\ShopifyBulkOperationKind;
 use App\Models\ProductVariant;
+use App\Models\PurchaseAttribution;
 use App\Models\Shop;
 use App\Models\StoreCustomer;
 use App\Models\StoreOrder;
@@ -37,6 +38,7 @@ final class ShopifyCustomerOrderSynchronizer
             displayFulfillmentStatus
             totalPriceSet { shopMoney { amount currencyCode } }
             customer { id }
+            customAttributes { key value }
             lineItems(first: 250, after: $lineItemsAfter) {
               nodes {
                 id
@@ -333,10 +335,57 @@ final class ShopifyCustomerOrderSynchronizer
             $attributes['last_import_operation_id'] = $operationId;
         }
 
-        return StoreOrder::withoutGlobalScopes()->updateOrCreate(
+        $order = StoreOrder::withoutGlobalScopes()->updateOrCreate(
             ['shop_id' => $shop->getKey(), 'external_id' => $externalId],
             $attributes,
         );
+
+        if ($order->purchase_attribution_id === null) {
+            $purchaseAttributionId = $this->purchaseAttributionId($shop, $orderData);
+
+            if ($purchaseAttributionId !== null) {
+                StoreOrder::withoutGlobalScopes()
+                    ->whereKey($order->getKey())
+                    ->whereNull('purchase_attribution_id')
+                    ->update(['purchase_attribution_id' => $purchaseAttributionId]);
+                $order->refresh();
+            }
+        }
+
+        return $order;
+    }
+
+    private function purchaseAttributionId(Shop $shop, array $orderData): ?string
+    {
+        $customAttributes = data_get($orderData, 'customAttributes', []);
+
+        if (! is_array($customAttributes)) {
+            return null;
+        }
+
+        foreach ($customAttributes as $customAttribute) {
+            if (! is_array($customAttribute) || data_get($customAttribute, 'key') !== '_platform_attribution') {
+                continue;
+            }
+
+            $token = data_get($customAttribute, 'value');
+
+            if (! is_string($token) || $token === '') {
+                return null;
+            }
+
+            $purchaseAttributionId = PurchaseAttribution::withoutGlobalScopes()
+                ->where('team_id', $shop->team_id)
+                ->where('shop_id', $shop->getKey())
+                ->where('token_hash', hash('sha256', $token))
+                ->value('id');
+
+            if (is_string($purchaseAttributionId)) {
+                return $purchaseAttributionId;
+            }
+        }
+
+        return null;
     }
 
     private function deleteOrder(Shop $shop, string $externalId): void
