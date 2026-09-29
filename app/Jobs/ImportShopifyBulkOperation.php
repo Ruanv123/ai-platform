@@ -4,6 +4,7 @@ namespace App\Jobs;
 
 use App\Ecommerce\ProductEmbeddingSynchronizer;
 use App\Ecommerce\ShopifyCustomerOrderSynchronizer;
+use App\Ecommerce\ShopifySyncErrorNotifier;
 use App\Enums\ShopifyBulkOperationKind;
 use App\Models\Category;
 use App\Models\Product;
@@ -112,7 +113,7 @@ class ImportShopifyBulkOperation implements ShouldBeUnique, ShouldQueue
 
     public function failed(?Throwable $exception): void
     {
-        Shop::withoutGlobalScopes()
+        $updated = Shop::withoutGlobalScopes()
             ->whereKey($this->shopId)
             ->where('bulk_operation_id', $this->operationId)
             ->where('sync_status', 'importing')
@@ -121,6 +122,10 @@ class ImportShopifyBulkOperation implements ShouldBeUnique, ShouldQueue
                 'sync_error' => 'Não foi possível importar os dados da Loja Shopify.',
                 'suggested_action' => 'Tente reconectar a Loja pela tela de Integrações.',
             ]);
+
+        if ($updated > 0) {
+            app(ShopifySyncErrorNotifier::class)->notifyById($this->shopId);
+        }
     }
 
     private function streamJsonl(

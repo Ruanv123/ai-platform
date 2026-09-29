@@ -3,20 +3,26 @@
 use App\Ecommerce\EcommerceAdapter;
 use App\Ecommerce\ProductEmbeddingSynchronizer;
 use App\Ecommerce\ShopifyCustomerOrderSynchronizer;
+use App\Enums\TeamRole;
 use App\Jobs\CompleteShopifyBulkOperation;
 use App\Jobs\ImportShopifyBulkOperation;
 use App\Jobs\PollShopifyBulkOperation;
 use App\Jobs\StartShopifyCatalogImport;
 use App\Jobs\StartShopifyCustomerOrderImport;
 use App\Models\Category;
+use App\Models\Contact;
 use App\Models\Integration;
 use App\Models\Product;
 use App\Models\ProductVariant;
 use App\Models\Shop;
+use App\Models\StoreCustomer;
+use App\Models\StoreOrder;
 use App\Models\User;
+use App\Notifications\Shopify\ShopSyncErrorNotification;
 use Illuminate\Http\Client\Request as ClientRequest;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Notification;
 use Illuminate\Support\Facades\Queue;
 use Inertia\Testing\AssertableInertia as Assert;
 use Laravel\Ai\Embeddings;
@@ -63,6 +69,10 @@ it('keeps the Shopify store in importing status and exposes progress to the inte
         'sync_total_count' => 3,
         'sync_progress' => 63,
     ]);
+    $contact = Contact::factory()->for($user->company())->create();
+    Product::factory()->for($user->company())->for($shop)->create();
+    $customer = StoreCustomer::factory()->for($user->company())->for($shop)->for($contact)->create();
+    StoreOrder::factory()->for($user->company())->for($shop)->for($customer, 'storeCustomer')->create();
 
     $this->actingAs($user)
         ->get(route('integrations.show', ['type' => 'ecommerce', 'provider' => 'shopify']))
@@ -71,10 +81,31 @@ it('keeps the Shopify store in importing status and exposes progress to the inte
             ->where('shop.syncStatus', 'importing')
             ->where('shop.syncProgress', 63)
             ->where('shop.syncProcessedCount', 2)
-            ->where('shop.syncTotalCount', 3),
+            ->where('shop.syncTotalCount', 3)
+            ->where('shop.productCount', 1)
+            ->where('shop.customerCount', 1)
+            ->where('shop.orderCount', 1),
         );
 
     expect($shop->fresh()->sync_processed_count)->toBe(2);
+});
+
+it('notifies shop Owners and Admins when an import failure is persisted', function () {
+    $owner = User::factory()->withTeam()->create();
+    $team = $owner->company();
+    $admin = User::factory()->create();
+    $member = User::factory()->create();
+    $team->members()->attach($admin, ['role' => TeamRole::Admin->value]);
+    $team->members()->attach($member, ['role' => TeamRole::Member->value]);
+    $shop = createImportShop($owner, ['sync_status' => 'importing']);
+    Notification::fake();
+
+    (new StartShopifyCatalogImport($shop->getKey()))->failed(new RuntimeException('Shopify failed.'));
+
+    Notification::assertSentTo($owner, ShopSyncErrorNotification::class);
+    Notification::assertSentTo($admin, ShopSyncErrorNotification::class);
+    Notification::assertNotSentTo($member, ShopSyncErrorNotification::class);
+    expect($shop->fresh()->sync_status)->toBe('error');
 });
 
 it('returns 401 for an invalid Shopify webhook signature', function () {

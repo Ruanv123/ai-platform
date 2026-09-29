@@ -5,6 +5,7 @@ use App\Enums\TeamRole;
 use App\Jobs\RegisterShopifyCatalogWebhooks;
 use App\Jobs\StartShopifyCatalogImport;
 use App\Models\Integration;
+use App\Models\Product;
 use App\Models\Shop;
 use App\Models\User;
 use Illuminate\Http\Client\Request as ClientRequest;
@@ -156,6 +157,67 @@ it('completes Shopify OAuth, persists encrypted credentials and reuses the same 
         && str_contains($request->data()['query'], 'myshopifyDomain'));
 });
 
+it('uninstalls the previous store and clears its mirror when OAuth connects a replacement', function () {
+    $user = User::factory()->withTeam()->create();
+    $team = $user->company();
+    $integration = Integration::factory()->for($team)->create([
+        'type' => 'ecommerce',
+        'provider' => 'shopify',
+        'status' => 'connected',
+        'credentials' => [
+            'access_token' => 'old-access-token',
+            'refresh_token' => 'old-refresh-token',
+            'access_token_expires_at' => now()->addHour()->timestamp,
+            'refresh_token_expires_at' => now()->addDay()->timestamp,
+        ],
+    ]);
+    $oldShop = Shop::factory()->for($team)->for($integration)->create([
+        'domain' => 'old.myshopify.com',
+        'sync_status' => 'synced',
+    ]);
+    Product::factory()->for($team)->for($oldShop)->create();
+    $this->withoutVite()->actingAs($user);
+    Queue::fake([RegisterShopifyCatalogWebhooks::class, StartShopifyCatalogImport::class]);
+    Http::preventStrayRequests();
+    Http::fake([
+        'https://beta.myshopify.com/admin/oauth/access_token' => Http::response([
+            'access_token' => 'new-access-token',
+            'refresh_token' => 'new-refresh-token',
+            'expires_in' => 3600,
+            'refresh_token_expires_in' => 86400,
+            'scope' => 'read_products,read_inventory,read_customers,read_orders',
+        ]),
+        'https://beta.myshopify.com/admin/api/2026-07/graphql.json' => Http::response([
+            'data' => [
+                'shop' => [
+                    'name' => 'Beta Store',
+                    'myshopifyDomain' => 'beta.myshopify.com',
+                    'currencyCode' => 'BRL',
+                    'ianaTimezone' => 'America/Sao_Paulo',
+                    'shopAddress' => ['countryCodeV2' => 'BR'],
+                ],
+            ],
+        ]),
+        'https://old.myshopify.com/admin/api/2026-07/graphql.json' => Http::response([
+            'data' => ['appUninstall' => ['userErrors' => []]],
+        ]),
+    ]);
+
+    $state = startShopifyAuthorization($this, 'beta.myshopify.com');
+    $this->get(route('integrations.shopify.callback', shopifySignedCallback($state, 'beta.myshopify.com')))
+        ->assertRedirect(route('integrations.show', ['type' => 'ecommerce', 'provider' => 'shopify']))
+        ->assertSessionHas('shopify_success', 'Loja Shopify conectada.');
+
+    expect($oldShop->fresh()->domain)->toBe('beta.myshopify.com')
+        ->and($oldShop->fresh()->sync_status)->toBe('importing')
+        ->and(Product::withoutGlobalScopes()->where('shop_id', $oldShop->getKey())->count())->toBe(0)
+        ->and($integration->fresh()->credential('access_token'))->toBe('new-access-token');
+
+    Http::assertSent(fn (ClientRequest $request): bool => $request->url() === 'https://old.myshopify.com/admin/api/2026-07/graphql.json'
+        && str_contains($request->data()['query'], 'appUninstall')
+        && $request->hasHeader('X-Shopify-Access-Token', 'old-access-token'));
+});
+
 it('rejects invalid, expired or refused callbacks without creating integration data', function (string $callbackType) {
     $user = User::factory()->withTeam()->create();
     $this->actingAs($user);
@@ -262,7 +324,7 @@ it('marks the Shopify connection as expired when refresh fails', function () {
         ->and($shop->fresh()->sync_error)->toContain('Reconecte a Loja');
 });
 
-it('requires integration management permission for Shopify routes and disconnects by soft deleting both records', function () {
+it('requires integration management permission and uninstalls Shopify before soft deleting its records', function () {
     $owner = User::factory()->withTeam()->create();
     $member = User::factory()->create();
     $team = $owner->company();
@@ -272,9 +334,20 @@ it('requires integration management permission for Shopify routes and disconnect
         'type' => 'ecommerce',
         'provider' => 'shopify',
         'status' => 'connected',
-        'credentials' => ['access_token' => 'secret-access-token', 'refresh_token' => 'secret-refresh-token'],
+        'credentials' => [
+            'access_token' => 'secret-access-token',
+            'refresh_token' => 'secret-refresh-token',
+            'access_token_expires_at' => now()->addHour()->timestamp,
+            'refresh_token_expires_at' => now()->addDay()->timestamp,
+        ],
     ]);
     $shop = Shop::factory()->for($team)->for($integration)->create();
+    Http::preventStrayRequests();
+    Http::fake([
+        'https://'.$shop->domain.'/admin/api/2026-07/graphql.json' => Http::response([
+            'data' => ['appUninstall' => ['userErrors' => []]],
+        ]),
+    ]);
 
     $this->actingAs($member)->get(route('integrations.shopify.connect', ['shop' => $shop->domain]))->assertForbidden();
     $this->get(route('integrations.shopify.callback'))->assertForbidden();
@@ -362,11 +435,11 @@ it('rejects Shopify through the generic integration credential workflow', functi
     Http::assertNothingSent();
 });
 
-function shopifySignedCallback(string $state): array
+function shopifySignedCallback(string $state, string $domain = 'alpha.myshopify.com'): array
 {
     return shopifySignCallback([
         'code' => 'authorization-code',
-        'shop' => 'alpha.myshopify.com',
+        'shop' => $domain,
         'state' => $state,
         'timestamp' => (string) now()->timestamp,
     ]);

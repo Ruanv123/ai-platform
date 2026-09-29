@@ -503,6 +503,7 @@ it('uses conversation orders and the paired agent memory to select product varia
                 'variant_id' => $candidate['variant_id'],
                 'reason' => 'Atende às preferências lembradas.',
             ], array_slice($triageContext['candidates'], 1, 3)),
+            'contact_preferences' => 'Prefere tênis azuis e leves, no tamanho 38.',
         ];
     });
     WhatsAppAgent::fake([
@@ -526,6 +527,7 @@ it('uses conversation orders and the paired agent memory to select product varia
         ->and($triageContext['store_orders'][0]['order_number'])->toBe('#LOJA-81')
         ->and($triageContext['store_orders'][0]['items'][0]['title'])->toBe('Tênis que Mariana já comprou')
         ->and($triageContext['agent_memory'])->toBe('Prefere tênis azuis, leves e no tamanho 38.')
+        ->and(AgentContactMemory::query()->where('team_id', $team->getKey())->where('agent_id', $agent->getKey())->where('contact_id', $contact->getKey())->value('content'))->toBe('Prefere tênis azuis e leves, no tamanho 38.')
         ->and($toolPayload['results'])->toHaveCount(3);
     ProductTriageAgent::assertPrompted(fn (AgentPrompt $prompt): bool => $prompt->contains('Prefere tênis azuis'));
 });

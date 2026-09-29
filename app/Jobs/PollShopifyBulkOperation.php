@@ -3,6 +3,7 @@
 namespace App\Jobs;
 
 use App\Ecommerce\EcommerceAdapter;
+use App\Ecommerce\ShopifySyncErrorNotifier;
 use App\Enums\ShopifyBulkOperationKind;
 use App\Models\Shop;
 use Illuminate\Contracts\Queue\ShouldBeUniqueUntilProcessing;
@@ -81,11 +82,12 @@ class PollShopifyBulkOperation implements ShouldBeUniqueUntilProcessing, ShouldQ
             'sync_error' => 'A Shopify não conseguiu gerar os dados da Loja para importação.',
             'suggested_action' => 'Tente iniciar a sincronização novamente ou reconecte a Loja.',
         ])->save();
+        app(ShopifySyncErrorNotifier::class)->notifyById($this->shopId);
     }
 
     public function failed(?Throwable $exception): void
     {
-        Shop::withoutGlobalScopes()
+        $updated = Shop::withoutGlobalScopes()
             ->whereKey($this->shopId)
             ->where('bulk_operation_id', $this->operationId)
             ->where('sync_status', 'importing')
@@ -94,5 +96,9 @@ class PollShopifyBulkOperation implements ShouldBeUniqueUntilProcessing, ShouldQ
                 'sync_error' => 'Não foi possível consultar o andamento da importação Shopify.',
                 'suggested_action' => 'Tente reconectar a Loja pela tela de Integrações.',
             ]);
+
+        if ($updated > 0) {
+            app(ShopifySyncErrorNotifier::class)->notifyById($this->shopId);
+        }
     }
 }

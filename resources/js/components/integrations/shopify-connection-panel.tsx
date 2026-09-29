@@ -39,6 +39,9 @@ type ShopifyStore = {
     syncProgress: number;
     syncProcessedCount: number;
     syncTotalCount: number | null;
+    productCount: number;
+    customerCount: number;
+    orderCount: number;
     lastSyncedAt: string | null;
     syncError: string | null;
     suggestedAction: string | null;
@@ -120,6 +123,32 @@ export default function ShopifyConnectionPanel({
                         </a>
                     </CardHeader>
                     <CardContent className="grid gap-5">
+                        <dl className="grid grid-cols-3 gap-3 rounded-lg border bg-muted/30 p-4">
+                            <div className="grid gap-1">
+                                <dt className="text-muted-foreground text-xs">
+                                    Produtos
+                                </dt>
+                                <dd className="text-lg font-semibold tabular-nums">
+                                    {shop.productCount.toLocaleString('pt-BR')}
+                                </dd>
+                            </div>
+                            <div className="grid gap-1">
+                                <dt className="text-muted-foreground text-xs">
+                                    Clientes
+                                </dt>
+                                <dd className="text-lg font-semibold tabular-nums">
+                                    {shop.customerCount.toLocaleString('pt-BR')}
+                                </dd>
+                            </div>
+                            <div className="grid gap-1">
+                                <dt className="text-muted-foreground text-xs">
+                                    Pedidos
+                                </dt>
+                                <dd className="text-lg font-semibold tabular-nums">
+                                    {shop.orderCount.toLocaleString('pt-BR')}
+                                </dd>
+                            </div>
+                        </dl>
                         <dl className="grid gap-4 sm:grid-cols-2">
                             <div className="grid gap-1">
                                 <dt className="text-muted-foreground text-xs">

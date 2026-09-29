@@ -242,7 +242,12 @@ it('asks before replacing a shop, clears its mirror, and reuses the soft-deleted
         'type' => 'ecommerce',
         'provider' => 'shopify',
         'status' => 'connected',
-        'credentials' => ['access_token' => 'old-access-token', 'refresh_token' => 'old-refresh-token'],
+        'credentials' => [
+            'access_token' => 'old-access-token',
+            'refresh_token' => 'old-refresh-token',
+            'access_token_expires_at' => now()->addHour()->timestamp,
+            'refresh_token_expires_at' => now()->addDay()->timestamp,
+        ],
     ]);
     $shop = Shop::factory()->for($team)->for($integration)->create([
         'domain' => 'old.myshopify.com',
@@ -255,6 +260,12 @@ it('asks before replacing a shop, clears its mirror, and reuses the soft-deleted
     $agent = Agent::factory()->for($team)->create(['search_products' => true]);
     [$pending, $handoffToken] = createShopifyPendingInstallation('new.myshopify.com');
     Queue::fake([RegisterShopifyCatalogWebhooks::class, StartShopifyCatalogImport::class]);
+    Http::preventStrayRequests();
+    Http::fake([
+        'https://old.myshopify.com/admin/api/2026-07/graphql.json' => Http::response([
+            'data' => ['appUninstall' => ['userErrors' => []]],
+        ]),
+    ]);
 
     $this->actingAs($owner)
         ->withSession(shopifyInstallationSession($pending, $handoffToken))
@@ -285,6 +296,10 @@ it('asks before replacing a shop, clears its mirror, and reuses the soft-deleted
         ->and(Category::withoutGlobalScopes()->where('shop_id', $shop->getKey())->count())->toBe(0)
         ->and($pending->fresh()->consumed_at)->not->toBeNull()
         ->and($pending->fresh()->handoff_token_hash)->toBeNull();
+
+    Http::assertSent(fn (ClientRequest $request): bool => $request->url() === 'https://old.myshopify.com/admin/api/2026-07/graphql.json'
+        && str_contains($request->data()['query'], 'appUninstall')
+        && $request->hasHeader('X-Shopify-Access-Token', 'old-access-token'));
 });
 
 it('restores a soft-deleted same-domain shop and restarts its import', function () {

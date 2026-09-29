@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Integrations;
 
 use App\Ecommerce\EcommerceAdapter;
+use App\Ecommerce\ShopifyInstallationCleanup;
 use App\Enums\EcommerceProvider;
 use App\Enums\TeamPermission;
 use App\Http\Controllers\Controller;
@@ -51,7 +52,7 @@ class ShopifyConnectionController extends Controller
         }
     }
 
-    public function callback(Request $request, EcommerceAdapter $adapter): RedirectResponse
+    public function callback(Request $request, EcommerceAdapter $adapter, ShopifyInstallationCleanup $installationCleanup): RedirectResponse
     {
         $this->authorizeManagement($request);
         abort_unless($adapter->provider() === EcommerceProvider::Shopify, 404);
@@ -105,6 +106,18 @@ class ShopifyConnectionController extends Controller
 
             if ($shopBelongsToAnotherTeam) {
                 return $this->failed('Esta loja já está conectada a outra Empresa.');
+            }
+
+            $existingShop = Shop::withoutGlobalScope(TeamScope::class)
+                ->withTrashed()
+                ->where('team_id', $team->getKey())
+                ->first();
+            if ($existingShop !== null
+                && ! $existingShop->trashed()
+                && $existingShop->domain !== $connection->domain
+                && $existingShop->integration?->status === 'connected') {
+                $adapter->uninstallApp($existingShop);
+                $installationCleanup->clearMirrorForReplacement($existingShop);
             }
 
             DB::transaction(function () use ($team, $connection): void {

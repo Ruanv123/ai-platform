@@ -3,6 +3,7 @@
 namespace App\Jobs;
 
 use App\Ecommerce\EcommerceAdapter;
+use App\Ecommerce\ShopifySyncErrorNotifier;
 use App\Enums\ShopifyBulkOperationKind;
 use App\Models\Shop;
 use Illuminate\Contracts\Queue\ShouldBeUnique;
@@ -146,7 +147,7 @@ class StartShopifyCatalogImport implements ShouldBeUnique, ShouldQueue
 
     public function failed(?Throwable $exception): void
     {
-        Shop::withoutGlobalScopes()
+        $updated = Shop::withoutGlobalScopes()
             ->whereKey($this->shopId)
             ->where('sync_status', 'importing')
             ->where(function ($query): void {
@@ -159,5 +160,9 @@ class StartShopifyCatalogImport implements ShouldBeUnique, ShouldQueue
                 'sync_error' => 'Não foi possível iniciar a importação do catálogo Shopify.',
                 'suggested_action' => 'Tente reconectar a Loja pela tela de Integrações.',
             ]);
+
+        if ($updated > 0) {
+            app(ShopifySyncErrorNotifier::class)->notifyById($this->shopId);
+        }
     }
 }

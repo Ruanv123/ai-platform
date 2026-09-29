@@ -14,8 +14,11 @@ use App\Integrations\GoogleCalendarClient;
 use App\Integrations\IntegrationConnectionTester;
 use App\Models\Flow;
 use App\Models\Integration;
+use App\Models\Product;
 use App\Models\SchedulableCalendar;
 use App\Models\Shop;
+use App\Models\StoreCustomer;
+use App\Models\StoreOrder;
 use App\Models\Team;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
@@ -463,6 +466,18 @@ class IntegrationController extends Controller
             'syncProgress' => $shop->sync_progress,
             'syncProcessedCount' => $shop->sync_processed_count,
             'syncTotalCount' => $shop->sync_total_count,
+            'productCount' => Product::withoutGlobalScopes()
+                ->where('team_id', $shop->team_id)
+                ->where('shop_id', $shop->getKey())
+                ->count(),
+            'customerCount' => StoreCustomer::withoutGlobalScopes()
+                ->where('team_id', $shop->team_id)
+                ->where('shop_id', $shop->getKey())
+                ->count(),
+            'orderCount' => StoreOrder::withoutGlobalScopes()
+                ->where('team_id', $shop->team_id)
+                ->where('shop_id', $shop->getKey())
+                ->count(),
             'lastSyncedAt' => $shop->last_synced_at?->toIso8601String(),
             'syncError' => $shop->sync_error,
             'suggestedAction' => $shop->suggested_action,

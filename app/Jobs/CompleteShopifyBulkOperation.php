@@ -3,6 +3,7 @@
 namespace App\Jobs;
 
 use App\Ecommerce\EcommerceAdapter;
+use App\Ecommerce\ShopifySyncErrorNotifier;
 use App\Models\Shop;
 use Illuminate\Contracts\Queue\ShouldBeUnique;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -63,6 +64,7 @@ class CompleteShopifyBulkOperation implements ShouldBeUnique, ShouldQueue
                 'sync_error' => 'A Shopify não conseguiu gerar os dados da Loja para importação.',
                 'suggested_action' => 'Tente iniciar a sincronização novamente ou reconecte a Loja.',
             ])->save();
+            app(ShopifySyncErrorNotifier::class)->notifyById($this->shopId);
 
             return;
         }
@@ -77,7 +79,7 @@ class CompleteShopifyBulkOperation implements ShouldBeUnique, ShouldQueue
 
     public function failed(?Throwable $exception): void
     {
-        Shop::withoutGlobalScopes()
+        $updated = Shop::withoutGlobalScopes()
             ->whereKey($this->shopId)
             ->where('bulk_operation_id', $this->operationId)
             ->where('sync_status', 'importing')
@@ -86,5 +88,9 @@ class CompleteShopifyBulkOperation implements ShouldBeUnique, ShouldQueue
                 'sync_error' => 'Não foi possível buscar o resultado da importação da Shopify.',
                 'suggested_action' => 'Tente reconectar a Loja pela tela de Integrações.',
             ]);
+
+        if ($updated > 0) {
+            app(ShopifySyncErrorNotifier::class)->notifyById($this->shopId);
+        }
     }
 }

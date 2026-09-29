@@ -98,6 +98,13 @@ class ProductCatalogTriage
                 ];
             }
 
+            $this->rememberContactPreferences(
+                $team,
+                $agent,
+                $contact,
+                is_string($response['contact_preferences'] ?? null) ? $response['contact_preferences'] : '',
+            );
+
             return [
                 'variants' => $selected->pluck('variant'),
                 'reasons' => $selected->mapWithKeys(fn (array $recommendation): array => [
@@ -244,6 +251,29 @@ class ProductCatalogTriage
             ->value('content');
 
         return is_string($content) ? $this->plainText($content, 2000) : '';
+    }
+
+    private function rememberContactPreferences(Team $team, ConfiguredAgent $agent, ?Contact $contact, string $preferences): void
+    {
+        $preferences = $this->plainText($preferences, 2000);
+
+        if ($preferences === ''
+            || ! $agent->exists
+            || $agent->team_id !== $team->getKey()
+            || $contact === null
+            || ! $contact->exists
+            || $contact->team_id !== $team->getKey()) {
+            return;
+        }
+
+        AgentContactMemory::withoutGlobalScopes()->updateOrCreate(
+            [
+                'team_id' => $team->getKey(),
+                'agent_id' => $agent->getKey(),
+                'contact_id' => $contact->getKey(),
+            ],
+            ['content' => $preferences],
+        );
     }
 
     private function plainText(string $value, int $limit): string

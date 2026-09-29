@@ -16,7 +16,10 @@ use RuntimeException;
 
 final class ShopifyInstallationBinder
 {
-    public function __construct(private ShopifyInstallationCleanup $cleanup) {}
+    public function __construct(
+        private EcommerceAdapter $adapter,
+        private ShopifyInstallationCleanup $cleanup,
+    ) {}
 
     public function bind(
         string $pendingId,
@@ -25,6 +28,40 @@ final class ShopifyInstallationBinder
         User $user,
         bool $confirmReplacement,
     ): Shop {
+        if ($confirmReplacement) {
+            $membership = $user->teamMemberships()
+                ->where('team_id', $team->getKey())
+                ->first();
+            abort_unless($membership !== null && in_array($membership->role, [TeamRole::Owner, TeamRole::Admin], true), 403);
+
+            $pending = ShopifyPendingInstallation::query()
+                ->whereKey($pendingId)
+                ->first();
+            abort_unless($pending !== null
+                && $pending->isActive()
+                && $pending->handoff_started_at !== null
+                && is_string($pending->handoff_token_hash)
+                && hash_equals($pending->handoff_token_hash, $handoffHash), 410);
+
+            $otherShop = Shop::withoutGlobalScope(TeamScope::class)
+                ->withTrashed()
+                ->where('domain', $pending->domain)
+                ->where('team_id', '!=', $team->getKey())
+                ->first();
+            if ($otherShop !== null) {
+                throw new RuntimeException('Esta loja Shopify já está vinculada a outra Empresa.');
+            }
+
+            $shopToReplace = Shop::withoutGlobalScope(TeamScope::class)
+                ->withTrashed()
+                ->where('team_id', $team->getKey())
+                ->first();
+            if ($shopToReplace !== null && $shopToReplace->domain !== $pending->domain && ! $shopToReplace->trashed()) {
+                $this->adapter->uninstallApp($shopToReplace);
+                $this->cleanup->clearMirrorForReplacement($shopToReplace);
+            }
+        }
+
         return DB::transaction(function () use ($pendingId, $handoffHash, $team, $user, $confirmReplacement): Shop {
             $membership = $user->teamMemberships()
                 ->where('team_id', $team->getKey())
@@ -123,9 +160,16 @@ final class ShopifyInstallationBinder
                 return $existingShop;
             }
 
-            if ($existingShop !== null) {
+            if ($existingShop !== null && ! $existingShop->trashed()) {
                 $integration = $this->cleanup->clearMirrorForReplacement($existingShop);
                 $existingShop->refresh();
+            } elseif ($existingShop !== null) {
+                $integration = Integration::withoutGlobalScope(TeamScope::class)
+                    ->withTrashed()
+                    ->whereKey($existingShop->integration_id)
+                    ->where('team_id', $team->getKey())
+                    ->lockForUpdate()
+                    ->first();
             }
 
             $integration ??= Integration::withoutGlobalScope(TeamScope::class)

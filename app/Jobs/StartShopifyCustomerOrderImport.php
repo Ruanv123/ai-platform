@@ -3,6 +3,7 @@
 namespace App\Jobs;
 
 use App\Ecommerce\EcommerceAdapter;
+use App\Ecommerce\ShopifySyncErrorNotifier;
 use App\Enums\EcommerceProvider;
 use App\Enums\ShopifyBulkOperationKind;
 use App\Models\Scopes\TeamScope;
@@ -120,7 +121,7 @@ final class StartShopifyCustomerOrderImport implements ShouldBeUnique, ShouldQue
 
     public function failed(?Throwable $exception): void
     {
-        Shop::withoutGlobalScope(TeamScope::class)
+        $updated = Shop::withoutGlobalScope(TeamScope::class)
             ->whereKey($this->shopId)
             ->where('bulk_operation_kind', $this->kind->value)
             ->where('sync_status', 'importing')
@@ -129,6 +130,10 @@ final class StartShopifyCustomerOrderImport implements ShouldBeUnique, ShouldQue
                 'sync_error' => 'Não foi possível iniciar a importação de Clientes ou Pedidos da Shopify.',
                 'suggested_action' => 'Tente reconectar a Loja pela tela de Integrações.',
             ]);
+
+        if ($updated > 0) {
+            app(ShopifySyncErrorNotifier::class)->notifyById($this->shopId);
+        }
     }
 
     private function ordersCutoff(): string
