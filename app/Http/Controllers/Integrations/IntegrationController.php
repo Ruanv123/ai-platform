@@ -175,6 +175,7 @@ class IntegrationController extends Controller
         $this->authorizeManagement($request);
         $team = $request->user()->company();
         $data = $request->validated();
+        $this->rejectShopifyCredentialWorkflow($data);
         $existing = in_array($data['type'], self::SINGLETON_TYPES, true)
             ? $team->integrations()->where('type', $data['type'])->first()
             : null;
@@ -212,6 +213,7 @@ class IntegrationController extends Controller
     {
         $this->authorizeManagement($request, $integration);
         $data = $request->validated();
+        $this->rejectShopifyCredentialWorkflow($data, $integration);
         $integration->update([
             'name' => $data['name'],
             'type' => $data['type'],
@@ -234,6 +236,7 @@ class IntegrationController extends Controller
     public function test(Request $request, Integration $integration, IntegrationConnectionTester $tester): RedirectResponse|JsonResponse
     {
         $this->authorizeManagement($request, $integration);
+        $this->rejectShopifyCredentialWorkflow([], $integration);
         abort_if($integration->type === 'agenda', 404);
         $result = $tester->test($integration);
         $integration->forceFill([
@@ -313,6 +316,18 @@ class IntegrationController extends Controller
             'planned' => $item['value'] !== EcommerceProvider::Shopify->value,
             'available' => $item['value'] === EcommerceProvider::Shopify->value,
         ], EcommerceProvider::catalog());
+    }
+
+    private function rejectShopifyCredentialWorkflow(array $data, ?Integration $integration = null): void
+    {
+        $isShopifyIntegration = $integration?->type === 'ecommerce' && $integration->provider === EcommerceProvider::Shopify->value;
+        $isShopifyRequest = ($data['type'] ?? null) === 'ecommerce' && ($data['provider'] ?? null) === EcommerceProvider::Shopify->value;
+
+        if ($isShopifyIntegration || $isShopifyRequest) {
+            throw ValidationException::withMessages([
+                'provider' => 'A Shopify deve ser conectada e gerenciada pelo fluxo de autorização próprio.',
+            ]);
+        }
     }
 
     /** @param array<string, mixed> $data */

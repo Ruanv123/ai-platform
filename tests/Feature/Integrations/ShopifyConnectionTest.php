@@ -285,6 +285,61 @@ it('marks Shopify as available in the catalog while keeping other ecommerce prov
         );
 });
 
+it('rejects Shopify through the generic integration credential workflow', function () {
+    $user = User::factory()->withTeam()->create();
+    $team = $user->company();
+    Http::preventStrayRequests();
+
+    $this->actingAs($user)
+        ->postJson(route('integrations.store'), [
+            'name' => 'Shopify API',
+            'type' => 'ecommerce',
+            'provider' => 'shopify',
+            'credentials' => ['access_token' => 'unapproved-token'],
+        ])
+        ->assertUnprocessable()
+        ->assertJsonValidationErrors('provider');
+
+    $genericIntegration = Integration::factory()->for($team)->create([
+        'type' => 'ecommerce',
+        'provider' => 'woocommerce',
+    ]);
+
+    $this->patchJson(route('integrations.update', $genericIntegration), [
+        'name' => 'Shopify API',
+        'type' => 'ecommerce',
+        'provider' => 'shopify',
+        'credentials' => ['access_token' => 'unapproved-token'],
+    ])
+        ->assertUnprocessable()
+        ->assertJsonValidationErrors('provider');
+
+    $shopifyIntegration = Integration::factory()->for($team)->create([
+        'type' => 'ecommerce',
+        'provider' => 'shopify',
+        'status' => 'connected',
+    ]);
+
+    $this->patchJson(route('integrations.update', $shopifyIntegration), [
+        'name' => 'Other store',
+        'type' => 'ecommerce',
+        'provider' => 'woocommerce',
+    ])
+        ->assertUnprocessable()
+        ->assertJsonValidationErrors('provider');
+
+    $this->postJson(route('integrations.test', $shopifyIntegration))
+        ->assertUnprocessable()
+        ->assertJsonValidationErrors('provider');
+
+    expect(Integration::query()->where('team_id', $team->getKey())->count())->toBe(2)
+        ->and($genericIntegration->fresh()->provider)->toBe('woocommerce')
+        ->and($shopifyIntegration->fresh()->provider)->toBe('shopify')
+        ->and($shopifyIntegration->fresh()->status)->toBe('connected');
+
+    Http::assertNothingSent();
+});
+
 function shopifySignedCallback(string $state): array
 {
     return shopifySignCallback([
