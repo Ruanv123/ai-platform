@@ -76,10 +76,10 @@ final class MetaOutputAdapter extends AbstractWhatsAppOutputAdapter implements W
 
             $mediaContent = ['id' => $mediaId];
             if ($type === 'document') {
-                $mediaContent['filename'] = $media['filename'];
+                $mediaContent['filename'] = $media->filename;
             }
             if ($type === 'audio') {
-                $mediaContent['voice'] = $this->isOggOpus($media['mime_type'], $media['filename']);
+                $mediaContent['voice'] = $this->isOggOpus($media->mimeType, $media->filename);
             }
 
             $response = $this->request($channel)->post(
@@ -203,7 +203,7 @@ final class MetaOutputAdapter extends AbstractWhatsAppOutputAdapter implements W
 
                 $mediaParameter = ['type' => $mediaType, $mediaType => ['id' => $mediaId]];
                 if ($mediaType === 'document') {
-                    $mediaParameter['document']['filename'] = $storedMedia['filename'];
+                    $mediaParameter['document']['filename'] = $storedMedia->filename;
                 }
                 array_unshift($components, ['type' => 'header', 'parameters' => [$mediaParameter]]);
             }

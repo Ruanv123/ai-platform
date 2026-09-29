@@ -50,7 +50,7 @@ class WhatsAppController extends Controller
 
         $channel = $team->channels()
             ->where('type', ChannelType::WhatsApp)
-            ->with(['agent:id,name', 'whatsappPhoneNumber.whatsappAccount'])
+            ->with(['agent:id,name', 'whatsappPhoneNumber.whatsappAccount', 'whatsappConnectionAttempt'])
             ->first();
         $activeTab = $request->query('tab') === 'perfil' ? 'perfil' : 'conexao';
 
@@ -406,6 +406,7 @@ class WhatsAppController extends Controller
     {
         $phoneNumber = $channel->whatsappPhoneNumber;
         $account = $phoneNumber?->whatsappAccount;
+        $attempt = $channel->whatsappConnectionAttempt;
 
         return [
             'id' => $channel->id,
@@ -417,7 +418,8 @@ class WhatsAppController extends Controller
             'appSecretSet' => $canManage && filled($account?->app_secret),
             'appSecretMasked' => $canManage ? $this->maskSecret($account?->app_secret) : null,
             'verifyToken' => $canManage ? $account?->verify_token : null,
-            'method' => $account?->connection_method?->value,
+            'method' => $account?->connection_method?->value
+                ?? ($attempt === null ? null : WhatsAppConnectionMethod::TechProvider->value),
             'status' => $channel->status->value,
             'statusLabel' => $channel->status->label(),
             'lastError' => $channel->last_error,

@@ -2,6 +2,7 @@
 
 namespace App\WhatsApp;
 
+use App\Enums\WhatsAppConnectionMethod;
 use App\Enums\WhatsAppTemplateCategory;
 use App\Enums\WhatsAppTemplateStatus;
 use App\Models\WhatsAppAccount;
@@ -63,8 +64,12 @@ final class WhatsAppTemplateService
 
     public function uploadHeaderMedia(WhatsAppAccount $account, UploadedFile $file): string
     {
-        if (blank($account->app_id)) {
-            throw new RuntimeException('Configure o App ID da Meta na aba Conexão para enviar o exemplo de mídia.');
+        $appId = $account->connection_method === WhatsAppConnectionMethod::TechProvider
+            ? config('services.whatsapp.platform.app_id')
+            : $account->app_id;
+
+        if (blank($appId)) {
+            throw new RuntimeException('Configure o App ID da Meta para enviar o exemplo de mídia.');
         }
 
         $mimeType = $file->getMimeType() ?: 'application/octet-stream';
@@ -74,11 +79,12 @@ final class WhatsAppTemplateService
             $session = Http::connectTimeout(3)
                 ->timeout(15)
                 ->withHeaders(['Authorization' => 'OAuth '.$account->access_token])
-                ->post($baseUrl.'/'.rawurlencode((string) $account->app_id).'/uploads?'.http_build_query([
+                ->post($baseUrl.'/'.rawurlencode((string) $appId).'/uploads?'.http_build_query([
                     'file_length' => $file->getSize(),
                     'file_type' => $mimeType,
                     'file_name' => $file->getClientOriginalName(),
                 ]));
+            $this->responseHandler->markChannelUnavailableForInvalidToken($session, $account);
 
             if (! $session->successful()) {
                 throw new RuntimeException('Não foi possível criar uma sessão para enviar o exemplo de mídia à Meta.');
@@ -109,6 +115,7 @@ final class WhatsAppTemplateService
                     ])
                     ->withBody($stream, $mimeType)
                     ->post($baseUrl.'/'.$uploadId);
+                $this->responseHandler->markChannelUnavailableForInvalidToken($upload, $account);
             } finally {
                 fclose($stream);
             }

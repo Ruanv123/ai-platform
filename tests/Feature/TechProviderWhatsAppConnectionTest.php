@@ -9,6 +9,7 @@ use App\Models\Contact;
 use App\Models\Message;
 use App\Models\User;
 use App\Models\WhatsAppAccount;
+use App\Models\WhatsAppConnectionAttempt;
 use App\Models\WhatsAppPhoneNumber;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\DB;
@@ -31,11 +32,13 @@ function fakeMetaSignupRequests(
     bool $messagingGrantTargetsSecondPhone = false,
 ): void {
     Http::preventStrayRequests();
+    $failedPaths = [];
     Http::fake(function (Request $request) use (
         $failedPath,
         $multiplePhoneNumbers,
         $messagingGrantTargetsWaba,
         $messagingGrantTargetsSecondPhone,
+        &$failedPaths,
     ) {
         $path = (string) parse_url($request->url(), PHP_URL_PATH);
         $phoneIds = match (true) {
@@ -50,7 +53,9 @@ function fakeMetaSignupRequests(
             $phoneNumbers[] = ['id' => '15551234567891'];
         }
 
-        if ($failedPath !== null && $path === $failedPath['path']) {
+        if ($failedPath !== null && $path === $failedPath['path'] && ! isset($failedPaths[$path])) {
+            $failedPaths[$path] = true;
+
             return Http::response(['error' => $failedPath['error']], $failedPath['status']);
         }
 
@@ -134,6 +139,7 @@ it('completes embedded signup on the server and records each Meta step', functio
         ->and($phoneNumber->quality_rating)->toBe('GREEN')
         ->and($phoneNumber->name_status)->toBe('APPROVED')
         ->and($phoneNumber->messaging_limit_tier)->toBe('TIER_1K');
+    $this->assertDatabaseCount('whatsapp_connection_attempts', 0);
 
     expect(DB::table('whatsapp_phone_numbers')
         ->where('id', $phoneNumber->getKey())
@@ -197,8 +203,100 @@ it('fails when a multi-number WABA does not identify the selected phone in token
             'type' => 'error',
             'message' => 'Não foi possível identificar com segurança o número autorizado pela Meta.',
         ]);
-    $this->assertDatabaseCount('channels', 0);
+    $this->assertDatabaseCount('channels', 1);
     $this->assertDatabaseCount('whatsapp_accounts', 0);
+    $this->assertDatabaseCount('whatsapp_connection_attempts', 1);
+});
+
+it('persists encrypted initial credentials and resumes only the failed Meta step', function (string $failedPath) {
+    configureMetaSignup();
+    fakeMetaSignupRequests([
+        'path' => $failedPath,
+        'status' => 400,
+        'error' => ['code' => 10],
+    ]);
+    $user = User::factory()->withTeam()->create();
+
+    $this->actingAs($user)
+        ->post(route('channels.whatsapp.connect-with-meta'), ['code' => 'one-time-meta-code'])
+        ->assertInertiaFlash('toast', [
+            'type' => 'error',
+            'message' => 'O token não tem permissão para acessar este número.',
+        ]);
+
+    $channel = Channel::query()->where('team_id', $user->company()->getKey())->firstOrFail();
+    $attempt = WhatsAppConnectionAttempt::query()->where('channel_id', $channel->getKey())->firstOrFail();
+    $rawAttempt = DB::table('whatsapp_connection_attempts')->where('id', $attempt->getKey())->firstOrFail();
+
+    expect($channel->status)->toBe(ChannelStatus::Error)
+        ->and($channel->last_error)->toBe('O token não tem permissão para acessar este número.')
+        ->and(DB::table('whatsapp_connection_attempts')->count())->toBe(1);
+
+    if ($failedPath === '/v23.0/oauth/access_token') {
+        expect($rawAttempt->authorization_code)->not->toBe('one-time-meta-code')
+            ->and($attempt->authorization_code)->toBe('one-time-meta-code')
+            ->and($attempt->access_token)->toBeNull();
+    } else {
+        expect($rawAttempt->access_token)->not->toBe('business-token')
+            ->and($attempt->authorization_code)->toBeNull()
+            ->and($attempt->access_token)->toBe('business-token');
+    }
+
+    $this->actingAs($user)
+        ->get(route('channels.whatsapp.edit'))
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('whatsapp.method', 'tech_provider')
+            ->where('whatsapp.lastError', 'O token não tem permissão para acessar este número.')
+        );
+
+    $this->actingAs($user)
+        ->post(route('channels.whatsapp.connect-with-meta'))
+        ->assertInertiaFlash('toast', [
+            'type' => 'success',
+            'message' => 'WhatsApp conectado à Meta e Templates sincronizados.',
+        ]);
+
+    $attemptCounts = Http::recorded()
+        ->map(fn (array $pair): string => (string) parse_url($pair[0]->url(), PHP_URL_PATH))
+        ->countBy()
+        ->all();
+
+    expect($attemptCounts['/v23.0/oauth/access_token'])->toBe(
+        $failedPath === '/v23.0/oauth/access_token' ? 2 : 1,
+    )->and($attemptCounts['/v23.0/debug_token'])->toBe(
+        $failedPath === '/v23.0/debug_token' ? 2 : 1,
+    )->and($attemptCounts['/v23.0/102030405060708/phone_numbers'])->toBe(
+        $failedPath === '/v23.0/102030405060708/phone_numbers' ? 2 : 1,
+    );
+
+    $this->assertDatabaseCount('whatsapp_connection_attempts', 0);
+    expect($channel->fresh()->status)->toBe(ChannelStatus::Connected);
+})->with([
+    'code exchange' => ['/v23.0/oauth/access_token'],
+    'token validation' => ['/v23.0/debug_token'],
+    'WABA number discovery' => ['/v23.0/102030405060708/phone_numbers'],
+]);
+
+it('does not reuse an App próprio channel for Tech Provider signup', function () {
+    configureMetaSignup();
+    Http::preventStrayRequests();
+    $user = User::factory()->withTeam()->create();
+    $team = $user->company();
+    $channel = Channel::factory()->for($team)->create(['type' => ChannelType::WhatsApp]);
+    $account = WhatsAppAccount::factory()->for($team, 'team')->create();
+    WhatsAppPhoneNumber::factory()->for($channel)->for($account, 'whatsappAccount')->create();
+
+    $this->actingAs($user)
+        ->post(route('channels.whatsapp.connect-with-meta'), ['code' => 'new-code'])
+        ->assertInertiaFlash('toast', [
+            'type' => 'error',
+            'message' => 'Esta Empresa já possui um Canal oficial do WhatsApp conectado.',
+        ]);
+
+    expect($account->fresh()->connection_method)->toBe(WhatsAppConnectionMethod::OwnApp);
+    Http::assertNothingSent();
+    $this->assertDatabaseCount('channels', 1);
+    $this->assertDatabaseCount('whatsapp_connection_attempts', 0);
 });
 
 it('registers the second number selected by the messaging grant', function () {

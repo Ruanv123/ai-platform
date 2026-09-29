@@ -1,7 +1,9 @@
 <?php
 
+use App\Enums\ChannelStatus;
 use App\Enums\ChannelType;
 use App\Enums\TeamRole;
+use App\Enums\WhatsAppConnectionMethod;
 use App\Models\Channel;
 use App\Models\Contact;
 use App\Models\User;
@@ -290,6 +292,83 @@ it('uploads a media header example and submits its resumable handle to Meta', fu
     expect($syncedHeader->media_path)->toBe($header->media_path);
     Storage::disk('whatsapp_media')->assertExists($syncedHeader->media_path);
 });
+
+it('uses the platform App ID when a Tech Provider uploads a template header', function () {
+    Storage::fake('whatsapp_media');
+    Http::preventStrayRequests();
+    config()->set('services.whatsapp.platform.app_id', 'platform-app-id');
+    Http::fake([
+        'graph.facebook.com/*' => Http::sequence()
+            ->push(['id' => 'upload:tech-provider-header-session'])
+            ->push(['h' => 'tech-provider-header-handle']),
+    ]);
+    $user = User::factory()->withTeam()->create();
+    [$channel, , $account] = createTemplateWhatsAppChannel($user);
+    $account->forceFill([
+        'connection_method' => WhatsAppConnectionMethod::TechProvider,
+        'app_id' => null,
+        'app_secret' => null,
+        'access_token' => 'tech-provider-media-access-token',
+    ])->save();
+
+    $this->actingAs($user)
+        ->post(route('templates.store'), [
+            'whatsapp_account_id' => $account->getKey(),
+            'name' => 'tech_provider_exame',
+            'language' => 'pt_BR',
+            'requested_category' => 'utility',
+            'header_type' => 'IMAGE',
+            'header_media' => UploadedFile::fake()->create('exame.png', 1, 'image/png'),
+            'body' => 'Seu exame ficou pronto.',
+        ], ['Accept' => 'application/json'])
+        ->assertCreated();
+
+    Http::assertSent(fn (Request $request): bool => str_contains($request->url(), '/platform-app-id/uploads?')
+        && $request->hasHeader('Authorization', 'OAuth tech-provider-media-access-token'));
+    expect($account->fresh()->app_id)->toBeNull()
+        ->and($channel->fresh()->status)->not->toBe(ChannelStatus::Error);
+});
+
+it('marks the WhatsApp channel unavailable when either resumable upload step returns token error 190', function (string $failedStep) {
+    Storage::fake('whatsapp_media');
+    Http::preventStrayRequests();
+    config()->set('services.whatsapp.platform.app_id', 'platform-app-id');
+    Http::fake(function (Request $request) use ($failedStep) {
+        if (str_contains($request->url(), '/uploads?')) {
+            return $failedStep === 'session'
+                ? Http::response(['error' => ['code' => 190]], 401)
+                : Http::response(['id' => 'upload:template-header-session']);
+        }
+
+        return Http::response(['error' => ['code' => 190]], 401);
+    });
+    $user = User::factory()->withTeam()->create();
+    [$channel, , $account] = createTemplateWhatsAppChannel($user);
+    $account->forceFill([
+        'connection_method' => WhatsAppConnectionMethod::TechProvider,
+        'app_id' => null,
+        'app_secret' => null,
+        'access_token' => 'tech-provider-media-access-token',
+    ])->save();
+
+    $this->actingAs($user)
+        ->post(route('templates.store'), [
+            'whatsapp_account_id' => $account->getKey(),
+            'name' => 'tech_provider_exame',
+            'language' => 'pt_BR',
+            'requested_category' => 'utility',
+            'header_type' => 'IMAGE',
+            'header_media' => UploadedFile::fake()->create('exame.png', 1, 'image/png'),
+            'body' => 'Seu exame ficou pronto.',
+        ], ['Accept' => 'application/json'])
+        ->assertJsonValidationErrors('header_media');
+
+    expect($channel->fresh()->status)->toBe(ChannelStatus::Error)
+        ->and($channel->fresh()->last_error)->toBe('O access token é inválido ou expirou.');
+})->with([
+    'upload session' => ['session'],
+    'file upload' => ['upload'],
+]);
 
 it('rejects an invalid media example before starting a Meta upload', function () {
     Http::preventStrayRequests();

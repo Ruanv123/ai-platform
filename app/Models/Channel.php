@@ -89,6 +89,11 @@ class Channel extends Model
         return $this->hasOne(WhatsAppPhoneNumber::class);
     }
 
+    public function whatsappConnectionAttempt(): HasOne
+    {
+        return $this->hasOne(WhatsAppConnectionAttempt::class);
+    }
+
     /**
      * Get the non-official WhatsApp connection attached to this channel.
      *

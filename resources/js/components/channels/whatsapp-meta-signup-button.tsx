@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react';
+import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 
 type FacebookLoginResponse = {
@@ -24,6 +24,7 @@ type Props = {
     configId: string | null;
     graphApiVersion: string;
     status: ConnectionStatus;
+    connectButtonLabel?: string;
     onStatusChange: (status: ConnectionStatus) => void;
     onAuthorization: (code: string) => void;
 };
@@ -114,23 +115,13 @@ export default function WhatsAppMetaSignupButton({
     configId,
     graphApiVersion,
     status,
+    connectButtonLabel,
     onStatusChange,
     onAuthorization,
 }: Props) {
     const [sdkLoading, setSdkLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const isConfigured = appId !== null && configId !== null;
-
-    const preloadSdkRef = useCallback(
-        (node: HTMLDivElement | null) => {
-            if (node !== null && appId !== null && configId !== null) {
-                void initializeFacebookSdk(appId, graphApiVersion).catch(
-                    () => undefined,
-                );
-            }
-        },
-        [appId, configId, graphApiVersion],
-    );
 
     const connect = () => {
         if (appId === null || configId === null) {
@@ -195,10 +186,10 @@ export default function WhatsAppMetaSignupButton({
             ? 'Finalizando conexão...'
             : status === 'authorizing' || sdkLoading
               ? 'Aguardando autorização...'
-              : 'Conectar com a Meta';
+              : (connectButtonLabel ?? 'Conectar com a Meta');
 
     return (
-        <div ref={preloadSdkRef} className="grid justify-items-start gap-3">
+        <div className="grid justify-items-start gap-3">
             <Button
                 type="button"
                 onClick={connect}
