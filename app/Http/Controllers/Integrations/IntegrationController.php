@@ -62,9 +62,9 @@ class IntegrationController extends Controller
             'ecommerceCatalog' => $this->ecommerceCatalog(),
             'agendaCatalog' => [$this->agendaCatalogEntry()],
             'singletonIntegrations' => [
-                'crm' => optional($configured->get('crm'), fn (Integration $integration): array => $this->serialize($integration)),
-                'ecommerce' => optional($configured->get('ecommerce'), fn (Integration $integration): array => $this->serialize($integration)),
-                'agenda' => optional($configured->get('agenda'), fn (Integration $integration): array => $this->serialize($integration)),
+                'crm' => optional($configured->get('crm'), fn (?Integration $integration): ?array => $integration === null ? null : $this->serialize($integration)),
+                'ecommerce' => optional($configured->get('ecommerce'), fn (?Integration $integration): ?array => $integration === null ? null : $this->serialize($integration)),
+                'agenda' => optional($configured->get('agenda'), fn (?Integration $integration): ?array => $integration === null ? null : $this->serialize($integration)),
             ],
             'permissions' => $request->user()->toTeamPermissions($team),
         ]);
@@ -356,6 +356,7 @@ class IntegrationController extends Controller
         return to_route('integrations.index');
     }
 
+    /** @return array<int, array{value: string, name: string, description: string, logo: string, capabilities: array<int, string>, planned: bool, available: bool}> */
     private function crmCatalog(): array
     {
         return array_map(fn (array $item): array => [
@@ -365,6 +366,7 @@ class IntegrationController extends Controller
         ], CrmProvider::catalog());
     }
 
+    /** @param array{type?: string, ...} $data */
     private function rejectCrmCredentialWorkflow(array $data, ?Integration $integration = null): void
     {
         $isCrmIntegration = $integration?->type === 'crm';
@@ -452,17 +454,35 @@ class IntegrationController extends Controller
         ];
     }
 
-    /** @return array<string, mixed> */
+    /** @return array{id: string, name: string, type: string, provider: string|null, baseUrl: string|null, accountEmail: string|null, crmAccount: array{teams: list<array{id: string, name: string}>}|null, crmMetadataLoadedAt: string|null, status: string, statusLabel: string, statusMessage: string|null, lastTestedAt: string|null} */
     private function serialize(Integration $integration): array
     {
+        $accountEmail = $integration->credential('email');
+        $account = data_get($integration->crm_metadata, 'account');
+        $crmAccount = null;
+
+        if (is_array($account) && is_array($account['teams'] ?? null)) {
+            $teams = [];
+
+            foreach ($account['teams'] as $team) {
+                if (! is_array($team) || ! is_string($team['id'] ?? null) || ! is_string($team['name'] ?? null)) {
+                    continue;
+                }
+
+                $teams[] = ['id' => $team['id'], 'name' => $team['name']];
+            }
+
+            $crmAccount = ['teams' => $teams];
+        }
+
         return [
-            'id' => $integration->getKey(),
+            'id' => $integration->id,
             'name' => $integration->name,
             'type' => $integration->type,
             'provider' => $integration->provider,
             'baseUrl' => $integration->baseUrl(),
-            'accountEmail' => $integration->credential('email'),
-            'crmAccount' => data_get($integration->crm_metadata, 'account'),
+            'accountEmail' => is_string($accountEmail) ? $accountEmail : null,
+            'crmAccount' => $crmAccount,
             'crmMetadataLoadedAt' => $integration->crm_metadata_loaded_at?->toIso8601String(),
             'status' => $integration->status,
             'statusLabel' => match ($integration->status) {
