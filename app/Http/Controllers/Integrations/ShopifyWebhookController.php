@@ -3,9 +3,11 @@
 namespace App\Http\Controllers\Integrations;
 
 use App\Ecommerce\EcommerceAdapter;
+use App\Ecommerce\ShopifyInstallationCleanup;
 use App\Http\Controllers\Controller;
 use App\Jobs\CompleteShopifyBulkOperation;
 use App\Jobs\SyncShopifyCatalogResource;
+use App\Models\ShopifyPendingInstallation;
 use Illuminate\Http\Request;
 use Symfony\Component\HttpFoundation\Response;
 
@@ -21,8 +23,11 @@ class ShopifyWebhookController extends Controller
         'collections/delete' => ['collection', 'Collection', true, 'id'],
     ];
 
-    public function handle(Request $request, EcommerceAdapter $adapter): Response
-    {
+    public function handle(
+        Request $request,
+        EcommerceAdapter $adapter,
+        ShopifyInstallationCleanup $installationCleanup,
+    ): Response {
         $body = $request->getContent();
         $signature = $request->header('X-Shopify-Hmac-Sha256');
 
@@ -31,6 +36,21 @@ class ShopifyWebhookController extends Controller
         }
 
         $shopDomain = $request->header('X-Shopify-Shop-Domain');
+        $topic = $request->header('X-Shopify-Topic');
+
+        if ($topic === 'app/uninstalled') {
+            if (is_string($shopDomain) && preg_match('/\A[a-z0-9][a-z0-9-]*\.myshopify\.com\z/i', $shopDomain) === 1) {
+                $shop = $adapter->identifyShopByDomain($shopDomain);
+                if ($shop !== null) {
+                    $installationCleanup->removeAfterUninstall($shop);
+                }
+
+                ShopifyPendingInstallation::query()->where('domain', strtolower($shopDomain))->delete();
+            }
+
+            return response()->noContent(Response::HTTP_OK);
+        }
+
         $shop = is_string($shopDomain) && $shopDomain !== ''
             ? $adapter->identifyShopByDomain($shopDomain)
             : null;
@@ -44,7 +64,6 @@ class ShopifyWebhookController extends Controller
             return response()->noContent(Response::HTTP_OK);
         }
 
-        $topic = $request->header('X-Shopify-Topic');
         if ($topic === 'bulk_operations/finish') {
             $operationId = data_get($payload, 'admin_graphql_api_id');
 

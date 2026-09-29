@@ -36,6 +36,10 @@
 
         @fonts
 
+        @if (request()->routeIs('shopify.embedded.bootstrap', 'shopify.embedded.home'))
+            <script src="https://cdn.shopify.com/shopifycloud/app-bridge.js" data-api-key="{{ config('services.shopify.client_id') }}" defer></script>
+        @endif
+
         @viteReactRefresh
         @vite(['resources/css/app.css', 'resources/js/app.tsx', "resources/js/pages/{$page['component']}.tsx"])
         <x-inertia::head>

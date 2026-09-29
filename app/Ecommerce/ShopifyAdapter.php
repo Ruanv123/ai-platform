@@ -164,6 +164,93 @@ final class ShopifyAdapter implements EcommerceAdapter
         );
     }
 
+    public function completeEmbeddedAuthorization(string $storeDomain, string $idToken): EcommerceConnection
+    {
+        if (! $this->isValidShopDomain($storeDomain)) {
+            throw new InvalidShopifyIdTokenException('O domínio retornado pela Shopify é inválido.');
+        }
+
+        $clientId = config('services.shopify.client_id');
+        $clientSecret = config('services.shopify.client_secret');
+        if (! is_string($clientId) || $clientId === '' || ! is_string($clientSecret) || $clientSecret === '') {
+            throw new RuntimeException('A configuração de conexão da Shopify está incompleta.');
+        }
+
+        $tokenResponse = Http::connectTimeout(3)
+            ->timeout(15)
+            ->asForm()
+            ->acceptJson()
+            ->post('https://'.$storeDomain.'/admin/oauth/access_token', [
+                'client_id' => $clientId,
+                'client_secret' => $clientSecret,
+                'grant_type' => 'urn:ietf:params:oauth:grant-type:token-exchange',
+                'subject_token' => $idToken,
+                'subject_token_type' => 'urn:ietf:params:oauth:token-type:id_token',
+                'requested_token_type' => 'urn:shopify:params:oauth:token-type:offline-access-token',
+                'expiring' => '1',
+            ]);
+
+        if ($tokenResponse->status() === 400) {
+            throw new InvalidShopifyIdTokenException('A sessão da Shopify expirou.');
+        }
+
+        if (! $tokenResponse->successful()) {
+            throw new RuntimeException('A Shopify não concluiu a autorização da loja. Tente novamente.');
+        }
+
+        $token = $tokenResponse->json();
+        if (! is_array($token)) {
+            throw new RuntimeException('A Shopify retornou uma resposta de autorização inválida.');
+        }
+
+        $accessToken = data_get($token, 'access_token');
+        $refreshToken = data_get($token, 'refresh_token');
+        $accessTokenLifetime = data_get($token, 'expires_in');
+        $refreshTokenLifetime = data_get($token, 'refresh_token_expires_in');
+        $grantedScopes = data_get($token, 'scope');
+
+        if (! is_string($accessToken) || $accessToken === '' || ! is_string($refreshToken) || $refreshToken === '' || ! is_numeric($accessTokenLifetime) || ! is_numeric($refreshTokenLifetime) || ! is_string($grantedScopes)) {
+            throw new RuntimeException('A Shopify não retornou as credenciais temporárias esperadas.');
+        }
+
+        $scopes = array_values(array_filter(array_map('trim', explode(',', $grantedScopes))));
+        if (array_diff($this->scopes(), $scopes) !== [] || array_diff($scopes, $this->scopes()) !== []) {
+            throw new RuntimeException('A autorização da Shopify precisa conceder somente as permissões de leitura solicitadas.');
+        }
+
+        $shopData = data_get($this->requestGraphql($storeDomain, $accessToken, self::SHOP_QUERY), 'shop');
+        if (! is_array($shopData)) {
+            throw new RuntimeException('A Shopify não retornou os dados necessários para conectar esta loja.');
+        }
+
+        $shopDomain = data_get($shopData, 'myshopifyDomain');
+        $shopName = data_get($shopData, 'name');
+        $currencyCode = data_get($shopData, 'currencyCode');
+        $countryCode = data_get($shopData, 'shopAddress.countryCodeV2');
+        $timezone = data_get($shopData, 'ianaTimezone');
+
+        if (! is_string($shopDomain) || strtolower($shopDomain) !== strtolower($storeDomain) || ! is_string($shopName) || ! is_string($currencyCode) || ! is_string($timezone) || ($countryCode !== null && ! is_string($countryCode))) {
+            throw new RuntimeException('A Shopify não retornou os dados necessários para conectar esta loja.');
+        }
+
+        $connectedAt = now();
+
+        return new EcommerceConnection(
+            domain: strtolower($shopDomain),
+            name: $shopName,
+            currencyCode: $currencyCode,
+            countryCode: $countryCode,
+            timezone: $timezone,
+            credentials: [
+                'access_token' => $accessToken,
+                'refresh_token' => $refreshToken,
+                'access_token_expires_at' => $connectedAt->copy()->addSeconds((int) $accessTokenLifetime)->timestamp,
+                'refresh_token_expires_at' => $connectedAt->copy()->addSeconds((int) $refreshTokenLifetime)->timestamp,
+                'scopes' => $scopes,
+            ],
+        );
+    }
+
     public function refreshAccessToken(Shop $shop): string
     {
         $accessToken = DB::transaction(function () use ($shop): ?string {

@@ -2,6 +2,7 @@
 
 namespace App\Http\Responses;
 
+use App\Ecommerce\ShopifyInstallationFlow;
 use Illuminate\Http\JsonResponse;
 use Laravel\Fortify\Contracts\LoginResponse as LoginResponseContract;
 use Laravel\Fortify\Fortify;
@@ -9,6 +10,8 @@ use Symfony\Component\HttpFoundation\Response;
 
 class LoginResponse implements LoginResponseContract
 {
+    public function __construct(private ShopifyInstallationFlow $shopifyInstallationFlow) {}
+
     public function toResponse($request): Response
     {
         $invitationCode = $request->input('invitation') ?? $request->session()->pull('team_invitation_code');
@@ -17,6 +20,11 @@ class LoginResponse implements LoginResponseContract
             return redirect()->route('invitations.show', [
                 'invitation' => $invitationCode,
             ]);
+        }
+
+        $installationRedirect = $this->shopifyInstallationFlow->redirectAfterAuthentication($request);
+        if ($installationRedirect !== null) {
+            return $installationRedirect;
         }
 
         return $request->wantsJson()
