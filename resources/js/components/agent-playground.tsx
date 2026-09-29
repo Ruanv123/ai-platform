@@ -7,6 +7,8 @@ import {
 } from '@/components/ui/collapsible';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import {
     Card,
     CardContent,
@@ -31,6 +33,7 @@ export type AgentDraft = {
     schedulableCalendarIds: string[];
     searchProducts: boolean;
     sendPurchaseLink: boolean;
+    crmLookupEnabled: boolean;
 };
 
 type Source = {
@@ -135,6 +138,7 @@ export default function AgentPlayground({ draft }: Props) {
         createWelcomeMessage(draft.welcomeMessage),
     ]);
     const [messageDraft, setMessageDraft] = useState('');
+    const [crmLookupPhone, setCrmLookupPhone] = useState('');
     const [isStreaming, setIsStreaming] = useState(false);
     const abortController = useRef<AbortController | null>(null);
     const displayedMessages =
@@ -256,6 +260,8 @@ export default function AgentPlayground({ draft }: Props) {
                     send_purchase_link: draft.sendPurchaseLink,
                     collection_ids: draft.collectionIds,
                     schedulable_calendar_ids: draft.schedulableCalendarIds,
+                    crm_lookup_enabled: draft.crmLookupEnabled,
+                    crm_lookup_phone: crmLookupPhone || null,
                     history,
                     message,
                 }),
@@ -335,6 +341,23 @@ export default function AgentPlayground({ draft }: Props) {
                             Teste como {draft.name || 'este Agente'} responde
                             com a configuração atual.
                         </CardDescription>
+                        {draft.crmLookupEnabled && (
+                            <div className="mt-3 grid gap-2">
+                                <Label htmlFor="playground-crm-phone">
+                                    Telefone para consulta no CRM
+                                </Label>
+                                <Input
+                                    id="playground-crm-phone"
+                                    type="tel"
+                                    value={crmLookupPhone}
+                                    onChange={(event) =>
+                                        setCrmLookupPhone(event.target.value)
+                                    }
+                                    placeholder="+55 (11) 99999-8888"
+                                    autoComplete="tel"
+                                />
+                            </div>
+                        )}
                     </div>
                     <Button
                         type="button"

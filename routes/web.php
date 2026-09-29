@@ -22,6 +22,7 @@ use App\Http\Controllers\InboxController;
 use App\Http\Controllers\InboxMediaController;
 use App\Http\Controllers\Integrations\AgendaCalendarController;
 use App\Http\Controllers\Integrations\CrmConnectionController;
+use App\Http\Controllers\Integrations\CrmFieldVisibilityController;
 use App\Http\Controllers\Integrations\IntegrationController;
 use App\Http\Controllers\Integrations\IntegrationWebhookFailureController;
 use App\Http\Controllers\Integrations\ShopifyConnectionController;
@@ -191,6 +192,8 @@ Route::middleware(['auth', EnsureUserHasTeam::class])->group(function () {
         ->name('integrations.crm.rd-station.connect');
     Route::get('integrations/crm/rd-station/callback', [CrmConnectionController::class, 'callback'])
         ->name('integrations.crm.rd-station.callback');
+    Route::put('integrations/crm/fields/visible-to-agent', [CrmFieldVisibilityController::class, 'update'])
+        ->name('integrations.crm.fields.visible-to-agent.update');
     Route::post('integrations', [IntegrationController::class, 'store'])
         ->name('integrations.store');
     Route::post('integrations/agenda/calendars', [AgendaCalendarController::class, 'store'])

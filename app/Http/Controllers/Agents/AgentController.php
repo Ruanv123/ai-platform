@@ -87,6 +87,7 @@ class AgentController extends Controller
                 ])
                 ->values(),
             'agendaConnected' => $team->integrations()->where('type', 'agenda')->where('status', 'connected')->exists(),
+            'crmConnected' => $team->integrations()->where('type', 'crm')->where('status', 'connected')->exists(),
             'permissions' => $user->toTeamPermissions($team),
             'objectives' => AgentObjective::options(),
             'tones' => AgentTone::options(),
@@ -234,6 +235,7 @@ class AgentController extends Controller
         bool $canManageAgents = false,
     ): array {
         $shopConnected = $team->shops()->exists();
+        $crmConnected = $team->integrations()->where('type', 'crm')->where('status', 'connected')->exists();
         $publishedVersion = $agent->publishedVersion();
 
         return [
@@ -252,6 +254,8 @@ class AgentController extends Controller
                 'rules' => $agent->rules,
                 'collectionIds' => $agent->collections->modelKeys(),
                 'schedulableCalendarIds' => $agent->schedulableCalendars->modelKeys(),
+                'crmLookupEnabled' => $agent->crm_lookup_enabled ?? ($crmConnected && in_array($agent->objective, [AgentObjective::Sales, AgentObjective::Qualification], true)),
+                'crmLookupConfigured' => $agent->crm_lookup_enabled !== null,
             ],
             'collections' => $team->collections()
                 ->orderBy('name')
@@ -272,6 +276,7 @@ class AgentController extends Controller
                 ])
                 ->values(),
             'agendaConnected' => $team->integrations()->where('type', 'agenda')->where('status', 'connected')->exists(),
+            'crmConnected' => $crmConnected,
             'shopConnected' => $shopConnected,
             'productSearchConfigured' => $agent->search_products !== null,
             'purchaseLinkConfigured' => $agent->send_purchase_link !== null,

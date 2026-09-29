@@ -102,6 +102,11 @@ class Contact extends Model
         return $this->hasMany(Appointment::class);
     }
 
+    public function crmLink(): HasOne
+    {
+        return $this->hasOne(CrmContactLink::class);
+    }
+
     public function storeCustomer(): HasOne
     {
         return $this->hasOne(StoreCustomer::class);

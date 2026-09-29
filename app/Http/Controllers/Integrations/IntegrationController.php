@@ -137,6 +137,8 @@ class IntegrationController extends Controller
             'shopifySuccess' => session('shopify_success'),
             'crmError' => $crmError,
             'crmSuccess' => session('crm_success'),
+            'crmFields' => $type === 'crm' ? $this->crmFieldOptions($integration) : [],
+            'visibleCrmFieldIds' => data_get($integration?->crm_settings, 'agent_visible_field_ids', []),
             'permissions' => $request->user()->toTeamPermissions($team),
         ]);
     }
@@ -507,6 +509,20 @@ class IntegrationController extends Controller
             'minimumNoticeMinutes' => $calendar->minimum_notice_minutes,
             'businessHours' => $calendar->business_hours,
         ];
+    }
+
+    /** @return array<int, array{id: string, name: string}> */
+    private function crmFieldOptions(?Integration $integration): array
+    {
+        return collect($integration?->crm_metadata['fields'] ?? [])
+            ->filter(fn (array $field): bool => ($field['entity'] ?? null) === 'contact')
+            ->map(fn (array $field): array => [
+                'id' => (string) ($field['id'] ?? ''),
+                'name' => (string) ($field['name'] ?? $field['id'] ?? ''),
+            ])
+            ->filter(fn (array $field): bool => $field['id'] !== '')
+            ->values()
+            ->all();
     }
 
     private function serializeShop(Shop $shop): array

@@ -26,7 +26,7 @@ use Illuminate\Support\Carbon;
  * @property Carbon|null $last_tested_at
  * @property-read Team $team
  */
-#[Fillable(['team_id', 'name', 'type', 'provider', 'credentials', 'status', 'status_message', 'last_tested_at', 'crm_metadata', 'crm_metadata_loaded_at', 'crm_singleton_key'])]
+#[Fillable(['team_id', 'name', 'type', 'provider', 'credentials', 'status', 'status_message', 'last_tested_at', 'crm_metadata', 'crm_metadata_loaded_at', 'crm_settings', 'crm_singleton_key'])]
 #[Hidden(['credentials'])]
 class Integration extends Model
 {
@@ -63,6 +63,11 @@ class Integration extends Model
         return $this->hasOne(Shop::class);
     }
 
+    public function crmContactLinks(): HasMany
+    {
+        return $this->hasMany(CrmContactLink::class);
+    }
+
     protected function casts(): array
     {
         return [
@@ -70,6 +75,7 @@ class Integration extends Model
             'last_tested_at' => 'immutable_datetime',
             'crm_metadata' => 'array',
             'crm_metadata_loaded_at' => 'immutable_datetime',
+            'crm_settings' => 'array',
             'deleted_at' => 'immutable_datetime',
         ];
     }

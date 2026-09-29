@@ -4,6 +4,7 @@ namespace Tests\Support\Crm\Fakes;
 
 use App\Crm\AbstractCrmProviderAdapter;
 use App\Models\Integration;
+use Throwable;
 
 /**
  * @phpstan-import-type CrmActivity from \App\Crm\Contracts\CrmProviderAdapter
@@ -19,6 +20,20 @@ use App\Models\Integration;
  */
 class FakeCrmProviderAdapter extends AbstractCrmProviderAdapter
 {
+    public array $people = [];
+
+    public array $openDeals = [];
+
+    public ?Throwable $lookupFailure = null;
+
+    public array $phoneSearches = [];
+
+    public array $personReads = [];
+
+    public array $dealSearches = [];
+
+    public array $lookupBudgets = [];
+
     public function provider(): string
     {
         return 'fake';
@@ -39,7 +54,7 @@ class FakeCrmProviderAdapter extends AbstractCrmProviderAdapter
         ];
     }
 
-    public function freshIntegration(Integration $integration): Integration
+    public function freshIntegration(Integration $integration, float $timeoutSeconds = 15.0): Integration
     {
         return $integration;
     }
@@ -57,15 +72,29 @@ class FakeCrmProviderAdapter extends AbstractCrmProviderAdapter
     }
 
     /** @return list<CrmPerson> */
-    public function findPeopleByPhone(Integration $integration, string $phone): array
+    public function findPeopleByPhone(Integration $integration, string $phone, float $timeoutSeconds = 15.0): array
     {
-        return [];
+        $this->phoneSearches[] = $phone;
+        $this->lookupBudgets[] = $timeoutSeconds;
+
+        if ($this->lookupFailure !== null) {
+            throw $this->lookupFailure;
+        }
+
+        return $this->people;
     }
 
     /** @return CrmPerson */
-    public function findPerson(Integration $integration, string $personId): array
+    public function findPerson(Integration $integration, string $personId, float $timeoutSeconds = 15.0): array
     {
-        return $this->person($personId);
+        $this->personReads[] = $personId;
+        $this->lookupBudgets[] = $timeoutSeconds;
+
+        if ($this->lookupFailure !== null) {
+            throw $this->lookupFailure;
+        }
+
+        return collect($this->people)->firstWhere('id', $personId) ?? $this->person($personId);
     }
 
     /** @return CrmDeal */
@@ -75,9 +104,16 @@ class FakeCrmProviderAdapter extends AbstractCrmProviderAdapter
     }
 
     /** @return list<CrmDeal> */
-    public function findOpenDeals(Integration $integration, string $personId): array
+    public function findOpenDeals(Integration $integration, string $personId, float $timeoutSeconds = 15.0): array
     {
-        return [];
+        $this->dealSearches[] = $personId;
+        $this->lookupBudgets[] = $timeoutSeconds;
+
+        if ($this->lookupFailure !== null) {
+            throw $this->lookupFailure;
+        }
+
+        return $this->openDeals;
     }
 
     /** @param CrmPersonAttributes $attributes
@@ -167,6 +203,7 @@ class FakeCrmProviderAdapter extends AbstractCrmProviderAdapter
             'organization_id' => $attributes['organization_id'] ?? null,
             'owner_id' => $attributes['owner_id'] ?? null,
             'fields' => $attributes['fields'] ?? [],
+            'updated_at' => $attributes['updated_at'] ?? now()->toIso8601String(),
         ];
     }
 

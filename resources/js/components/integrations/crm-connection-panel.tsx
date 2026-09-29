@@ -1,5 +1,6 @@
 import { Link, router } from '@inertiajs/react';
 import { ArrowLeft, Check, Trash2 } from 'lucide-react';
+import { useState } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
@@ -11,6 +12,7 @@ import {
 } from '@/components/ui/card';
 import Heading from '@/components/heading';
 import { destroy, index } from '@/routes/integrations';
+import visibleToAgent from '@/routes/integrations/crm/fields/visible-to-agent';
 import { connect } from '@/routes/integrations/crm/rd-station';
 import type { TeamPermissions } from '@/types';
 
@@ -29,6 +31,8 @@ type Props = {
     integration: Integration | null;
     crmError: string | null;
     crmSuccess: string | null;
+    crmFields: { id: string; name: string }[];
+    visibleCrmFieldIds: string[];
     permissions: TeamPermissions;
 };
 
@@ -36,8 +40,11 @@ export default function CrmConnectionPanel({
     integration,
     crmError,
     crmSuccess,
+    crmFields,
+    visibleCrmFieldIds,
     permissions,
 }: Props) {
+    const [selectedFieldIds, setSelectedFieldIds] = useState(visibleCrmFieldIds);
     const connected = integration?.status === 'connected';
     const teamAccountNames =
         integration?.crmAccount?.teams.map(
@@ -161,6 +168,59 @@ export default function CrmConnectionPanel({
                                 <Trash2 /> Desconectar
                             </Button>
                         )}
+                    </CardContent>
+                </Card>
+            )}
+            {connected && permissions.canManageIntegrations && (
+                <Card className="max-w-2xl">
+                    <CardHeader>
+                        <CardTitle>Campos visíveis ao Agente</CardTitle>
+                        <CardDescription>
+                            Escolha quais Campos personalizados da Pessoa podem ser usados na consulta da ficha. Negócios abertos e Responsável continuam disponíveis.
+                        </CardDescription>
+                    </CardHeader>
+                    <CardContent className="grid gap-4">
+                        {crmFields.length === 0 ? (
+                            <p className="text-muted-foreground text-sm">
+                                Nenhum Campo de Pessoa foi encontrado nesta conta.
+                            </p>
+                        ) : (
+                            <div className="grid gap-2 sm:grid-cols-2">
+                                {crmFields.map((field) => (
+                                    <label
+                                        key={field.id}
+                                        className="border-input hover:bg-muted/50 flex cursor-pointer items-start gap-3 rounded-md border px-3 py-2 text-sm"
+                                    >
+                                        <input
+                                            type="checkbox"
+                                            checked={selectedFieldIds.includes(field.id)}
+                                            onChange={() =>
+                                                setSelectedFieldIds((current) =>
+                                                    current.includes(field.id)
+                                                        ? current.filter((id) => id !== field.id)
+                                                        : [...current, field.id],
+                                                )
+                                            }
+                                            className="accent-primary mt-0.5 size-4"
+                                        />
+                                        <span>{field.name}</span>
+                                    </label>
+                                ))}
+                            </div>
+                        )}
+                        <Button
+                            type="button"
+                            className="w-fit"
+                            onClick={() =>
+                                router.put(
+                                    visibleToAgent.update().url,
+                                    { visible_field_ids: selectedFieldIds },
+                                    { preserveScroll: true },
+                                )
+                            }
+                        >
+                            Salvar Campos visíveis
+                        </Button>
                     </CardContent>
                 </Card>
             )}
