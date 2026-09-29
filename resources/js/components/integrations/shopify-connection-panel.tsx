@@ -12,6 +12,7 @@ import {
 } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import ShopifyCatalogImportProgress from '@/components/integrations/shopify-catalog-import-progress';
 import shopifyRoutes from '@/routes/integrations/shopify';
 import { destroy } from '@/routes/integrations';
 import type { TeamPermissions } from '@/types';
@@ -36,6 +37,8 @@ type ShopifyStore = {
     syncStatus: string;
     syncStatusLabel: string;
     syncProgress: number;
+    syncProcessedCount: number;
+    syncTotalCount: number | null;
     lastSyncedAt: string | null;
     syncError: string | null;
     suggestedAction: string | null;
@@ -69,7 +72,8 @@ export default function ShopifyConnectionPanel({
                 <div className="grid gap-1">
                     <h1 className="text-2xl font-semibold">Shopify</h1>
                     <p className="text-muted-foreground text-sm">
-                        Conecte o catálogo da sua loja à Empresa com acesso somente de leitura.
+                        Conecte o catálogo da sua loja à Empresa com acesso
+                        somente de leitura.
                     </p>
                 </div>
             </div>
@@ -91,8 +95,16 @@ export default function ShopifyConnectionPanel({
                         <div className="grid gap-1">
                             <CardTitle className="flex flex-wrap items-center gap-2">
                                 {shop.name}
-                                <Badge variant={shop.syncStatus === 'error' ? 'destructive' : 'success'}>
-                                    {shop.syncStatus === 'synced' && <Check className="size-3" />}
+                                <Badge
+                                    variant={
+                                        shop.syncStatus === 'error'
+                                            ? 'destructive'
+                                            : 'success'
+                                    }
+                                >
+                                    {shop.syncStatus === 'synced' && (
+                                        <Check className="size-3" />
+                                    )}
                                     {shop.syncStatusLabel}
                                 </Badge>
                             </CardTitle>
@@ -110,36 +122,73 @@ export default function ShopifyConnectionPanel({
                     <CardContent className="grid gap-5">
                         <dl className="grid gap-4 sm:grid-cols-2">
                             <div className="grid gap-1">
-                                <dt className="text-muted-foreground text-xs">Moeda</dt>
-                                <dd className="text-sm font-medium">{shop.currencyCode}</dd>
+                                <dt className="text-muted-foreground text-xs">
+                                    Moeda
+                                </dt>
+                                <dd className="text-sm font-medium">
+                                    {shop.currencyCode}
+                                </dd>
                             </div>
                             <div className="grid gap-1">
-                                <dt className="text-muted-foreground text-xs">País</dt>
-                                <dd className="text-sm font-medium">{shop.countryCode ?? 'Não informado'}</dd>
+                                <dt className="text-muted-foreground text-xs">
+                                    País
+                                </dt>
+                                <dd className="text-sm font-medium">
+                                    {shop.countryCode ?? 'Não informado'}
+                                </dd>
                             </div>
                             <div className="grid gap-1">
-                                <dt className="text-muted-foreground text-xs">Fuso horário</dt>
-                                <dd className="text-sm font-medium">{shop.timezone ?? 'Não informado'}</dd>
+                                <dt className="text-muted-foreground text-xs">
+                                    Fuso horário
+                                </dt>
+                                <dd className="text-sm font-medium">
+                                    {shop.timezone ?? 'Não informado'}
+                                </dd>
                             </div>
                             <div className="grid gap-1">
-                                <dt className="text-muted-foreground text-xs">Última sincronização</dt>
+                                <dt className="text-muted-foreground text-xs">
+                                    Última sincronização
+                                </dt>
                                 <dd className="text-sm font-medium">
                                     {shop.lastSyncedAt
-                                        ? new Date(shop.lastSyncedAt).toLocaleString('pt-BR')
+                                        ? new Date(
+                                              shop.lastSyncedAt,
+                                          ).toLocaleString('pt-BR')
                                         : 'Aguardando a primeira importação'}
                                 </dd>
                             </div>
                         </dl>
+                        {shop.syncStatus === 'importing' && (
+                            <ShopifyCatalogImportProgress
+                                progress={shop.syncProgress}
+                                processedCount={shop.syncProcessedCount}
+                                totalCount={shop.syncTotalCount}
+                            />
+                        )}
                         {(shop.syncError || shop.suggestedAction) && (
                             <div className="border-destructive/30 bg-destructive/5 grid gap-1 rounded-lg border p-4 text-sm">
-                                {shop.syncError && <p className="text-destructive">{shop.syncError}</p>}
-                                {shop.suggestedAction && <p className="text-muted-foreground">{shop.suggestedAction}</p>}
+                                {shop.syncError && (
+                                    <p className="text-destructive">
+                                        {shop.syncError}
+                                    </p>
+                                )}
+                                {shop.suggestedAction && (
+                                    <p className="text-muted-foreground">
+                                        {shop.suggestedAction}
+                                    </p>
+                                )}
                             </div>
                         )}
                         <div className="flex flex-wrap gap-2 border-t pt-5">
                             {canManage && (
                                 <Button asChild>
-                                    <a href={shopifyRoutes.connect({ query: { shop: shop.domain } }).url}>
+                                    <a
+                                        href={
+                                            shopifyRoutes.connect({
+                                                query: { shop: shop.domain },
+                                            }).url
+                                        }
+                                    >
                                         Reconectar
                                     </a>
                                 </Button>
@@ -148,7 +197,11 @@ export default function ShopifyConnectionPanel({
                                 <Button
                                     type="button"
                                     variant="outline"
-                                    onClick={() => router.delete(destroy(integration.id).url)}
+                                    onClick={() =>
+                                        router.delete(
+                                            destroy(integration.id).url,
+                                        )
+                                    }
                                 >
                                     <Trash2 /> Desconectar
                                 </Button>
@@ -163,7 +216,8 @@ export default function ShopifyConnectionPanel({
                     <CardHeader>
                         <CardTitle>Conectar uma loja</CardTitle>
                         <CardDescription>
-                            Informe o domínio myshopify.com. Você autorizará o acesso de leitura na Shopify.
+                            Informe o domínio myshopify.com. Você autorizará o
+                            acesso de leitura na Shopify.
                         </CardDescription>
                     </CardHeader>
                     <CardContent>
@@ -175,12 +229,16 @@ export default function ShopifyConnectionPanel({
                                 className="grid gap-4"
                             >
                                 <div className="grid gap-2">
-                                    <Label htmlFor="shopify-domain">Domínio da loja</Label>
+                                    <Label htmlFor="shopify-domain">
+                                        Domínio da loja
+                                    </Label>
                                     <Input
                                         id="shopify-domain"
                                         name="shop"
                                         value={domain}
-                                        onChange={(event) => setDomain(event.target.value)}
+                                        onChange={(event) =>
+                                            setDomain(event.target.value)
+                                        }
                                         placeholder="minha-loja.myshopify.com"
                                         autoComplete="url"
                                         required
@@ -192,7 +250,8 @@ export default function ShopifyConnectionPanel({
                             </form>
                         ) : (
                             <p className="text-muted-foreground text-sm">
-                                Você não tem permissão para gerenciar Integrações.
+                                Você não tem permissão para gerenciar
+                                Integrações.
                             </p>
                         )}
                     </CardContent>

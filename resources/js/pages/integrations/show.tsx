@@ -62,6 +62,8 @@ type ShopifyStore = {
     syncStatus: string;
     syncStatusLabel: string;
     syncProgress: number;
+    syncProcessedCount: number;
+    syncTotalCount: number | null;
     lastSyncedAt: string | null;
     syncError: string | null;
     suggestedAction: string | null;

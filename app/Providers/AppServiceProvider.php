@@ -65,6 +65,15 @@ class AppServiceProvider extends ServiceProvider
                 ->by('whatsapp-webhook:'.(string) $request->ip().':'.$phoneNumberKey);
         });
 
+        RateLimiter::for('shopify-webhook', function (Request $request): Limit {
+            $shopDomain = $request->header('X-Shopify-Shop-Domain');
+            $shopKey = is_string($shopDomain) && $shopDomain !== ''
+                ? strtolower($shopDomain)
+                : 'unknown';
+
+            return Limit::perMinute(300)->by('shopify-webhook:'.(string) $request->ip().':'.$shopKey);
+        });
+
         RateLimiter::for('flow-webhook', function (Request $request): array {
             $channel = (string) $request->route('channelId');
             $team = (string) ($request->header('X-Company-Id') ?? 'unknown');

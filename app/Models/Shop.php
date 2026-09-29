@@ -20,6 +20,9 @@ use Illuminate\Database\Eloquent\SoftDeletes;
     'timezone',
     'sync_status',
     'sync_progress',
+    'bulk_operation_id',
+    'sync_processed_count',
+    'sync_total_count',
     'last_synced_at',
     'sync_error',
     'suggested_action',
@@ -38,6 +41,8 @@ class Shop extends Model
     {
         return [
             'sync_progress' => 'integer',
+            'sync_processed_count' => 'integer',
+            'sync_total_count' => 'integer',
             'last_synced_at' => 'immutable_datetime',
             'reconciliation_cursor' => 'immutable_datetime',
         ];

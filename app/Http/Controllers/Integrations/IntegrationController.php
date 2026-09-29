@@ -436,6 +436,8 @@ class IntegrationController extends Controller
                 default => 'Aguardando sincronização',
             },
             'syncProgress' => $shop->sync_progress,
+            'syncProcessedCount' => $shop->sync_processed_count,
+            'syncTotalCount' => $shop->sync_total_count,
             'lastSyncedAt' => $shop->last_synced_at?->toIso8601String(),
             'syncError' => $shop->sync_error,
             'suggestedAction' => $shop->suggested_action,
