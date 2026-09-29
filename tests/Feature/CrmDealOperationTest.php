@@ -597,8 +597,11 @@ it('loads, saves, and publishes the configured CRM pipeline and initial stage', 
         ->and($agent->fresh()->crm_ensure_deal_enabled)->toBeTrue()
         ->and(AgentVersion::query()->where('agent_id', $agent->getKey())->firstOrFail()->crm_tools)->toBe([
             'ensure_deal_enabled' => true,
+            'move_deal_enabled' => true,
+            'register_note_enabled' => true,
             'pipeline_id' => 'pipeline-sales',
             'initial_stage_id' => 'stage-qualification',
+            'allowed_stages' => [],
         ]);
 
     $factory = new AgentToolFactory(

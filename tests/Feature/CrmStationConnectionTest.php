@@ -284,6 +284,8 @@ it('conforms to the canonical metadata shape from provider fixtures', function (
             'person_update',
             'deal_create',
             'deal_update',
+            'deal_move',
+            'note',
         ])
         ->and(app($adapterClass)->rateLimit())->toBe(['requests' => 120, 'window_seconds' => 60]);
 })->with([
