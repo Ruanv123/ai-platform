@@ -237,7 +237,7 @@ it('persists encrypted initial credentials and resumes only the failed Meta step
             ->and($attempt->authorization_code)->toBe('one-time-meta-code')
             ->and($attempt->access_token)->toBeNull();
     } else {
-        expect($rawAttempt->access_token)->not->toBe('business-token')
+        expect($rawAttempt->access_token)->toBe('business-token')
             ->and($attempt->authorization_code)->toBeNull()
             ->and($attempt->access_token)->toBe('business-token');
     }

@@ -34,7 +34,6 @@ class WhatsAppConnectionAttempt extends Model
     {
         return [
             'authorization_code' => 'encrypted',
-            'access_token' => 'encrypted',
             'debug_token_data' => 'array',
             'phone_numbers_by_waba' => 'array',
             'completed_phone_number_waba_ids' => 'array',

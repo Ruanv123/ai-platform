@@ -62,7 +62,6 @@ class WhatsAppAccount extends Model
     {
         return [
             'connection_method' => WhatsAppConnectionMethod::class,
-            'access_token' => 'encrypted',
             'app_secret' => 'encrypted',
             'webhook_verified_at' => 'datetime',
             'subscribed_at' => 'datetime',

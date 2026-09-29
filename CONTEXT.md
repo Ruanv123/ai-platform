@@ -189,6 +189,68 @@ _Avoid_: Conversão, Origem, Tracking
 Uma compra feita na Loja, com suas Variantes, quantidades e valores. Na v1 serve de histórico do que o comprador já levou, para recomendar; o Agente não responde sobre o andamento dele.
 _Avoid_: Compra, Venda, Order
 
+### CRM
+
+**CRM**:
+A Integração da Empresa com o sistema de vendas em que o time comercial trabalha — RD Station CRM, Pipedrive, HubSpot. Uma Empresa tem no máximo um; trocar de Provedor de CRM é desconectar um e conectar outro. O CRM é a fonte da verdade dos seus registros: a plataforma não guarda cópia deles, só a sua configuração.
+_Avoid_: Integração de CRM, Conector, Sistema de vendas
+
+**Provedor de CRM**:
+O produto em que o CRM existe. Cada provedor tem a sua forma de conectar, nomear e avisar mudanças, mas o que o Agente enxerga é sempre igual.
+_Avoid_: Plataforma, Ferramenta
+
+**Pessoa do CRM**:
+O registro de uma pessoa dentro do CRM. Não é o Contato: o Contato é quem fala pelos Canais, a Pessoa do CRM é como o time comercial a conhece. Nunca é chamada de Contato, mesmo que o provedor a chame assim.
+_Avoid_: Contato do CRM, Lead, Cliente
+
+**Organização do CRM**:
+A empresa cliente registrada no CRM, à qual Pessoas do CRM e Negócios pertencem. Nunca é chamada só de Organização ou de Empresa, que é o tenant.
+_Avoid_: Empresa, Organização, Company, Conta
+
+**Vínculo**:
+A ligação entre um Contato e a sua Pessoa do CRM. Nasce na primeira vez que algo precisa do CRM para aquele Contato — achando a Pessoa do CRM pelo telefone ou criando uma quando é preciso escrever — e desfaz-se quando a Pessoa do CRM é apagada no CRM. Depois de criado, vale o registro ligado, mesmo que o telefone mude lá.
+_Avoid_: Mapeamento, Sincronização, Associação
+
+**Negócio**:
+Uma oportunidade de venda no CRM, que caminha pelas Etapas de um Funil de vendas e tem uma Situação: aberto, ganho ou perdido, com Motivo de perda quando perdido. Do ponto de vista da plataforma, uma Pessoa do CRM tem no máximo um Negócio aberto por Funil de vendas.
+_Avoid_: Oportunidade, Deal, Lead, Venda
+
+**Negócio vinculado**:
+Um Negócio de uma Pessoa do CRM que tem Vínculo com um Contato. É o único tipo de Negócio de que a plataforma lembra: a Etapa do funil, a Situação e o Responsável, para que o Agente saiba em que pé está o Contato e a IA saia da frente quando o time comercial assume.
+_Avoid_: Negócio do Contato, Oportunidade vinculada
+
+**Funil de vendas**:
+A sequência de Etapas do funil por onde os Negócios caminham no CRM. Sempre com o qualificador: "Funil" sozinho não é usado.
+_Avoid_: Funil, Pipeline, Jornada
+
+**Etapa do funil**:
+Uma posição dentro de um Funil de vendas. Sempre com o qualificador, para não se confundir com Nó.
+_Avoid_: Etapa, Stage, Fase
+
+**Etapa comercial**:
+Uma Etapa do funil que a Empresa marcou como conduzida pelo time comercial. Quando um Negócio vinculado entra nela, a IA é pausada para o Contato e a Equipe é avisada, como numa Transferência para humano. Um Agente que move o Negócio para ela passa o atendimento adiante.
+_Avoid_: Etapa humana, Etapa de vendedor, Etapa pausada
+
+**Atividade**:
+Um registro de trabalho no CRM ligado a uma Pessoa do CRM ou a um Negócio: uma nota com o que aconteceu ou uma tarefa para alguém do time comercial fazer.
+_Avoid_: Tarefa, Anotação, Engagement, Evento
+
+**Responsável**:
+O usuário do CRM encarregado de uma Pessoa do CRM ou de um Negócio. Não é alguém da Equipe: é alguém do time comercial dentro do CRM.
+_Avoid_: Dono, Owner, Vendedor, Usuário
+
+**Campo do CRM**:
+Um campo, padrão ou personalizado, que o CRM declara para Pessoas do CRM, Organizações do CRM ou Negócios. Diferente do Campo do Contato, que é declarado pela Empresa na plataforma. Um Campo do Contato pode ser mapeado a um Campo do CRM de tipo compatível, sempre numa direção só.
+_Avoid_: Custom field, Propriedade, Atributo
+
+**Operação do CRM**:
+Cada escrita que a plataforma pede ao CRM — por conta própria ou por uma Ação do Agente —, com a sua situação: pendente, feita ou com falha. É por ela que a Empresa vê o que não chegou ao CRM e tenta de novo.
+_Avoid_: Sincronização, Log, Job, Requisição
+
+**Resumo do atendimento**:
+A Atividade de nota que a plataforma registra no CRM depois de um período de silêncio do Contato, resumindo o que foi conversado desde o último resumo. Só existe para Contatos que já têm Vínculo.
+_Avoid_: Transcrição, Relatório, Histórico
+
 ### Atendimento
 
 **Contato**:
@@ -204,7 +266,7 @@ A sequência de Mensagens de um Contato com a Empresa em um Canal. É a unidade 
 _Avoid_: Thread, Sessão, Ticket
 
 **Pausa da IA**:
-A suspensão temporária das respostas automáticas do Agente em uma Conversa enquanto alguém da Equipe a conduz. Pode terminar por devolução manual ou pelo prazo da Empresa.
+A suspensão temporária das respostas automáticas do Agente em uma Conversa enquanto alguém da Equipe a conduz. Pode terminar por devolução manual ou pelo prazo da Empresa. Quando vem do CRM — um Negócio vinculado entrou numa Etapa comercial —, vale em todas as Conversas do Contato, não tem prazo e termina quando nenhum Negócio vinculado dele está mais numa Etapa comercial, ou por devolução manual.
 _Avoid_: Agente inativo, Transferência para humano
 
 **Reação**:
