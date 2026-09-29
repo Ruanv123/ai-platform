@@ -765,6 +765,8 @@ final class FlowEngine
                 $this->productCatalogSearch,
                 new ReturnToFlow($execution),
                 $execution->contact,
+                null,
+                $execution->channel,
             ))->prompt($prompt, provider: config('ai.playground.provider'), model: config('ai.playground.model'), timeout: (int) config('ai.playground.timeout', 60));
             $traceData = $this->aiTraceData($prompt, $response, $config, $execution->variables);
             $text = trim($response->text);
@@ -1201,7 +1203,7 @@ final class FlowEngine
         try {
             $history = $execution->contact?->history($execution->channel) ?? new Collection;
             $prompt = $this->interpolate((string) ($config['instruction'] ?? $config['prompt'] ?? ''), $execution);
-            $response = (new WhatsAppAgent($agent, $history, $this->instructionTemplate, $this->knowledgeBaseSearch, $this->productCatalogSearch, null, $execution->contact))
+            $response = (new WhatsAppAgent($agent, $history, $this->instructionTemplate, $this->knowledgeBaseSearch, $this->productCatalogSearch, null, $execution->contact, null, $execution->channel))
                 ->prompt($prompt, provider: config('ai.playground.provider'), model: config('ai.playground.model'), timeout: (int) config('ai.playground.timeout', 60));
             $traceData = $this->aiTraceData($prompt, $response, $config, $execution->variables);
             $value = trim($response->text);
@@ -1239,7 +1241,7 @@ final class FlowEngine
         try {
             $history = $execution->contact?->history($execution->channel) ?? new Collection;
             $prompt = $message !== null ? $message->content : (string) ($execution->variables['message'] ?? '');
-            $response = (new WhatsAppAgent($agent, $history, $this->instructionTemplate, $this->knowledgeBaseSearch, $this->productCatalogSearch, null, $execution->contact))
+            $response = (new WhatsAppAgent($agent, $history, $this->instructionTemplate, $this->knowledgeBaseSearch, $this->productCatalogSearch, null, $execution->contact, null, $execution->channel))
                 ->prompt($prompt, provider: config('ai.playground.provider'), model: config('ai.playground.model'), timeout: (int) config('ai.playground.timeout', 60));
             $traceData = $this->aiTraceData($prompt, $response, $config, $execution->variables);
             $intent = trim($response->text);

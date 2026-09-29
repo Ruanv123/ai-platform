@@ -171,6 +171,7 @@ class AgentController extends Controller
                 'objective' => $lockedAgent->objective,
                 'ecommerce_tools' => [
                     'search_products' => $lockedAgent->search_products,
+                    'send_purchase_link' => $lockedAgent->send_purchase_link,
                 ],
                 'published_at' => now(),
             ]);
@@ -240,6 +241,7 @@ class AgentController extends Controller
                 'description' => $agent->description,
                 'objective' => $agent->objective->value,
                 'searchProducts' => $agent->search_products ?? ($shopConnected && $agent->objective === AgentObjective::Sales),
+                'sendPurchaseLink' => $agent->send_purchase_link ?? ($shopConnected && $agent->objective === AgentObjective::Sales),
                 'tone' => $agent->tone->value,
                 'usesEmojis' => $agent->uses_emojis,
                 'responseLength' => $agent->response_length->value,
@@ -270,6 +272,7 @@ class AgentController extends Controller
             'agendaConnected' => $team->integrations()->where('type', 'agenda')->where('status', 'connected')->exists(),
             'shopConnected' => $shopConnected,
             'productSearchConfigured' => $agent->search_products !== null,
+            'purchaseLinkConfigured' => $agent->send_purchase_link !== null,
             'publishedVersion' => $publishedVersion === null ? null : [
                 'number' => $publishedVersion->number,
             ],

@@ -198,7 +198,7 @@ it('searches the shop catalog with semantic ranking and SQL filters from the Pla
         'description' => 'Espuma confortável e tecido respirável.',
         'embedding' => $embedding,
     ]);
-    ProductVariant::factory()->for($team)->for($shop)->for($product)->create([
+    $availableVariant = ProductVariant::factory()->for($team)->for($shop)->for($product)->create([
         'title' => 'Azul / 42',
         'options' => [
             ['name' => 'Cor', 'value' => 'Azul'],
@@ -306,6 +306,7 @@ it('searches the shop catalog with semantic ranking and SQL filters from the Pla
     $titles = array_column($results, 'title');
     expect($results)->toHaveCount(1)
         ->and($results[0]['title'])->toBe('Tênis de corrida leve')
+        ->and($results[0]['variant_id'])->toBe($availableVariant->id)
         ->and($results[0]['variant'])->toBe('Azul / 42')
         ->and($results[0]['compare_at_price'])->toBe('399.90')
         ->and($results[0]['url'])->toBe($product->url)

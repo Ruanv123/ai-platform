@@ -8,6 +8,7 @@ use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
 #[Fillable([
@@ -35,6 +36,11 @@ class Shop extends Model
     public function integration(): BelongsTo
     {
         return $this->belongsTo(Integration::class);
+    }
+
+    public function purchaseAttributions(): HasMany
+    {
+        return $this->hasMany(PurchaseAttribution::class);
     }
 
     protected function casts(): array

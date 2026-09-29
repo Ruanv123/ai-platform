@@ -42,6 +42,7 @@ class SearchProducts implements Tool
             $arguments['option'] ?? null,
             (bool) ($arguments['available_only'] ?? false),
         )->map(fn (ProductVariant $variant): array => [
+            'variant_id' => $variant->id,
             'title' => $variant->product_title,
             'variant' => $variant->variant_title,
             'options' => $variant->options,
