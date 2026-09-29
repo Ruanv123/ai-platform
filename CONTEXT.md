@@ -49,7 +49,7 @@ Uma situação específica descrita em linguagem natural — quando ela acontece
 _Avoid_: Instrução, Playbook, Roteiro, Fluxo
 
 **Ação**:
-Algo que o Agente pode fazer além de responder — consultar a Base de conhecimento, marcar na agenda, fazer a Transferência para humano, aplicar Tag, salvar Campo do Contato. A Empresa liga as que o Agente pode usar; um Cenário só pode pedir uma Ação ligada.
+Algo que o Agente pode fazer além de responder — consultar a Base de conhecimento, buscar produtos da Loja, mandar Link de compra, marcar na agenda, fazer a Transferência para humano, aplicar Tag, salvar Campo do Contato. A Empresa liga as que o Agente pode usar; um Cenário só pode pedir uma Ação ligada.
 _Avoid_: Ferramenta, Tool, Habilidade, Integração
 
 **Rascunho do agente**:
@@ -69,7 +69,7 @@ Uma conversa de exemplo salva junto do Agente, com o comportamento esperado — 
 _Avoid_: Cenário, Eval, Caso de teste, Teste
 
 **Playground**:
-O chat de teste do atendimento. Roda sobre o rascunho — o Rascunho do agente, no caso do Agente, e a Versão não publicada, no caso do Fluxo — e nada é enviado ao Contato. Consultar Horários disponíveis é real; marcar e cancelar Compromisso são simulados. No Fluxo, mostra o Traço do turno ao lado da conversa.
+O chat de teste do atendimento. Roda sobre o rascunho — o Rascunho do agente, no caso do Agente, e a Versão não publicada, no caso do Fluxo — e nada é enviado ao Contato. Consultar Horários disponíveis e buscar produtos da Loja é real; marcar e cancelar Compromisso são simulados, e o Link de compra sai sem Atribuição. No Fluxo, mostra o Traço do turno ao lado da conversa.
 _Avoid_: Simulador, Preview, Sandbox
 
 **Agente inativo**:
@@ -150,6 +150,44 @@ _Avoid_: Slot, Vaga, Horário livre
 **Compromisso**:
 Um evento que o Agente marcou num Calendário agendável para um Contato, registrado na plataforma. Só o que a plataforma marcou é Compromisso: eventos criados direto no Google não são. É por ele que o Agente sabe o que o Contato tem marcado e o que pode cancelar. O Google continua sendo a fonte da verdade: evento apagado lá é Compromisso cancelado, evento movido lá é Compromisso remarcado. Um Contato tem no máximo um Compromisso futuro por Calendário agendável; remarcar é cancelar e marcar de novo.
 _Avoid_: Agendamento, Evento, Consulta, Reserva
+
+### Loja
+
+**Loja**:
+A Integração de e-commerce da Empresa com a sua loja num Provedor de e-commerce — Shopify, Nuvemshop, VTEX, Loja Integrada. Uma Empresa tem no máximo uma. A plataforma mantém uma cópia do que o Agente precisa da Loja, no mesmo formato para qualquer provedor, sincronizada em segundo plano. É a Loja que sabe se essa cópia está em dia — importando, sincronizada ou com erro —, e com erro o Agente continua usando a última cópia.
+_Avoid_: E-commerce, Store, Shop, Integração de loja
+
+**Provedor de e-commerce**:
+A plataforma em que a Loja existe. Cada provedor tem a sua forma de conectar e de avisar mudanças, mas o que chega ao Agente é sempre igual.
+_Avoid_: Plataforma, Canal, Marketplace
+
+**Produto**:
+O que a Loja vende, com nome, descrição e Categorias. Não é comprado diretamente: quem se compra é uma Variante.
+_Avoid_: Item, Mercadoria, Anúncio
+
+**Variante**:
+A versão comprável de um Produto — tamanho M na cor azul —, com SKU, preço, preço comparativo e estoque somado de todos os locais.
+_Avoid_: SKU, Opção, Grade, Modelo
+
+**Categoria**:
+Um agrupamento de Produtos na Loja. Nunca é chamada de Coleção, que é da Base de conhecimento.
+_Avoid_: Coleção, Collection, Departamento
+
+**Cliente da loja**:
+Quem tem cadastro na Loja, como o Provedor de e-commerce o conhece — nome, e-mail, telefone e Pedidos. Liga-se a no máximo um Contato quando o telefone bate, e aparece na ficha dele sem ser copiado para o Contato. Pode existir sem Contato, quando comprou sem telefone.
+_Avoid_: Cliente, Comprador, Customer
+
+**Link de compra**:
+O endereço que o Agente manda ao Contato e que abre o checkout da Loja com as Variantes e quantidades escolhidas. Não cria nada na Loja até o Contato comprar, e leva a marca que permite a Atribuição.
+_Avoid_: Carrinho, Checkout, Link de pagamento
+
+**Atribuição**:
+A ligação entre um Pedido e o atendimento que gerou o Link de compra usado nele — qual Contato e qual Agente. É o que permite dizer quanto o Agente vendeu.
+_Avoid_: Conversão, Origem, Tracking
+
+**Pedido**:
+Uma compra feita na Loja, com suas Variantes, quantidades e valores. Na v1 serve de histórico do que o comprador já levou, para recomendar; o Agente não responde sobre o andamento dele.
+_Avoid_: Compra, Venda, Order
 
 ### Atendimento
 
