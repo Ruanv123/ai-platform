@@ -10,8 +10,11 @@ use App\Jobs\PollShopifyBulkOperation;
 use App\Jobs\StartShopifyCatalogImport;
 use App\Jobs\StartShopifyCustomerOrderImport;
 use App\Jobs\SyncShopifyCatalogResource;
+use App\Models\Agent;
+use App\Models\Channel;
 use App\Models\Contact;
 use App\Models\Integration;
+use App\Models\PurchaseAttribution;
 use App\Models\Shop;
 use App\Models\StoreCustomer;
 use App\Models\StoreOrder;
@@ -92,6 +95,8 @@ it('starts orders from the date sixty days ago and records their count', functio
         && ($request->data()['variables']['orderQuery'] ?? null) === 'created_at:>=2026-07-31');
     Http::assertSent(fn (ClientRequest $request): bool => $request->url() === $graphqlUrl
         && str_contains($request->data()['variables']['query'] ?? '', 'orders(query: "created_at:>=2026-07-31")'));
+    Http::assertSent(fn (ClientRequest $request): bool => $request->url() === $graphqlUrl
+        && str_contains($request->data()['variables']['query'] ?? '', 'customAttributes { key value }'));
     Queue::assertPushed(PollShopifyBulkOperation::class);
 });
 
@@ -141,6 +146,17 @@ it('imports customers before orders and marks the store synced after the last ph
     Queue::assertPushed(StartShopifyCustomerOrderImport::class, fn (StartShopifyCustomerOrderImport $job): bool => $job->shopId === $shop->getKey()
         && $job->kind === ShopifyBulkOperationKind::Orders, 1);
 
+    $agent = Agent::factory()->for($shop->team)->create();
+    $channel = Channel::factory()->for($shop->team)->for($agent)->create();
+    $purchaseAttribution = PurchaseAttribution::query()->create([
+        'team_id' => $shop->team_id,
+        'shop_id' => $shop->getKey(),
+        'contact_id' => $contact->getKey(),
+        'agent_id' => $agent->getKey(),
+        'channel_id' => $channel->getKey(),
+        'token_hash' => hash('sha256', 'channel-link-token-9001'),
+    ]);
+
     $olderOrder = StoreOrder::factory()->for($shop->team)->for($shop)->create([
         'team_id' => $shop->team_id,
         'shop_id' => $shop->getKey(),
@@ -173,11 +189,13 @@ it('imports customers before orders and marks the store synced after the last ph
 
     expect($registeredOrder->store_customer_id)->toBe($customer->getKey())
         ->and($registeredOrder->customer_external_id)->toBe('gid://shopify/Customer/7001')
+        ->and($registeredOrder->purchase_attribution_id)->toBe($purchaseAttribution->getKey())
         ->and($registeredOrder->order_number)->toBe('#1042')
         ->and($registeredOrder->items)->toHaveCount(1)
         ->and($registeredOrder->items->first()->title)->toBe('Tênis de corrida leve')
         ->and($guestOrder->store_customer_id)->toBeNull()
         ->and($guestOrder->customer_external_id)->toBeNull()
+        ->and($guestOrder->purchase_attribution_id)->toBeNull()
         ->and($guestOrder->items)->toHaveCount(1)
         ->and(StoreOrder::withoutGlobalScopes()->whereKey($olderOrder->getKey())->exists())->toBeTrue()
         ->and($shop->fresh()->sync_status)->toBe('synced')
@@ -185,6 +203,79 @@ it('imports customers before orders and marks the store synced after the last ph
         ->and($shop->fresh()->bulk_operation_kind)->toBeNull()
         ->and($shop->fresh()->last_synced_at)->not->toBeNull();
 
+});
+
+it('maps valid attribution from a signed order webhook and preserves the first attribution on reprocessing', function () {
+    $shop = customerOrderShop();
+    $contact = Contact::factory()->for($shop->team)->create();
+    $agent = Agent::factory()->for($shop->team)->create();
+    $channel = Channel::factory()->for($shop->team)->for($agent)->create();
+    $purchaseAttribution = PurchaseAttribution::query()->create([
+        'team_id' => $shop->team_id,
+        'shop_id' => $shop->getKey(),
+        'contact_id' => $contact->getKey(),
+        'agent_id' => $agent->getKey(),
+        'channel_id' => $channel->getKey(),
+        'token_hash' => hash('sha256', 'channel-link-token-9001'),
+    ]);
+    PurchaseAttribution::query()->create([
+        'team_id' => $shop->team_id,
+        'shop_id' => $shop->getKey(),
+        'contact_id' => $contact->getKey(),
+        'agent_id' => $agent->getKey(),
+        'channel_id' => $channel->getKey(),
+        'token_hash' => hash('sha256', 'replacement-token-9001'),
+    ]);
+    StoreCustomer::factory()->for($shop->team)->for($shop)->create([
+        'external_id' => 'gid://shopify/Customer/7001',
+    ]);
+    $body = json_encode([
+        'admin_graphql_api_id' => 'gid://shopify/Order/9001',
+        'id' => 9001,
+    ], JSON_THROW_ON_ERROR);
+    Queue::fake([SyncShopifyCatalogResource::class]);
+
+    $this->call(
+        'POST',
+        route('webhooks.shopify'),
+        [],
+        [],
+        [],
+        customerOrderWebhookHeaders($body, 'orders/updated'),
+        $body,
+    )->assertOk();
+
+    Queue::assertPushed(SyncShopifyCatalogResource::class, fn (SyncShopifyCatalogResource $job): bool => $job->shopId === $shop->getKey()
+        && $job->resourceType === 'order'
+        && $job->externalId === 'gid://shopify/Order/9001'
+        && ! $job->deleted, 1);
+
+    $updatedOrderPage = customerOrderFixtureJson('order-page-one.graphql.json');
+    $updatedOrderPage['data']['order']['customAttributes'][0]['value'] = 'replacement-token-9001';
+    Http::preventStrayRequests();
+    Http::fake([
+        customerOrderGraphqlUrl() => Http::sequence()
+            ->push(customerOrderFixtureJson('order-page-one.graphql.json'))
+            ->push(customerOrderFixtureJson('order-page-two.graphql.json'))
+            ->push($updatedOrderPage)
+            ->push(customerOrderFixtureJson('order-page-two.graphql.json')),
+    ]);
+
+    $job = new SyncShopifyCatalogResource($shop->getKey(), 'order', 'gid://shopify/Order/9001', false);
+    $job->handle(app(EcommerceAdapter::class), app(ShopifyCatalogSynchronizer::class), app(ShopifyCustomerOrderSynchronizer::class));
+    $order = StoreOrder::withoutGlobalScopes()->where('shop_id', $shop->getKey())->sole();
+
+    expect($order->purchase_attribution_id)->toBe($purchaseAttribution->getKey())
+        ->and($order->purchaseAttribution->contact_id)->toBe($contact->getKey());
+
+    $job->handle(app(EcommerceAdapter::class), app(ShopifyCatalogSynchronizer::class), app(ShopifyCustomerOrderSynchronizer::class));
+
+    expect(StoreOrder::withoutGlobalScopes()->where('shop_id', $shop->getKey())->count())->toBe(1)
+        ->and($order->fresh()->purchase_attribution_id)->toBe($purchaseAttribution->getKey())
+        ->and($order->fresh()->purchaseAttribution->agent_id)->toBe($agent->getKey());
+
+    Http::assertSent(fn (ClientRequest $request): bool => $request->url() === customerOrderGraphqlUrl()
+        && str_contains($request->data()['query'], 'customAttributes { key value }'));
 });
 
 it('fetches current customer data on a webhook and relinks the Contact after a phone change', function () {
@@ -238,7 +329,7 @@ it('fetches current customer data on a webhook and relinks the Contact after a p
         ->and($order->fresh()->customer_external_id)->toBeNull();
 });
 
-it('treats an order delete notice as a request to fetch current order state and deletes a missing order', function () {
+it('ignores an unknown purchase token when refreshing an order before its Shopify deletion', function () {
     $shop = customerOrderShop();
     $customer = StoreCustomer::factory()->for($shop->team)->for($shop)->create([
         'external_id' => 'gid://shopify/Customer/7001',
@@ -271,6 +362,7 @@ it('treats an order delete notice as a request to fetch current order state and 
         ->handle(app(EcommerceAdapter::class), app(ShopifyCatalogSynchronizer::class), app(ShopifyCustomerOrderSynchronizer::class));
 
     expect($order->fresh()->order_number)->toBe('#1042')
+        ->and($order->fresh()->purchase_attribution_id)->toBeNull()
         ->and($order->fresh()->items)->toHaveCount(2)
         ->and(StoreOrderItem::withoutGlobalScopes()->whereKey($oldItem->getKey())->exists())->toBeFalse();
 
@@ -347,6 +439,16 @@ function customerOrderShop(array $shopAttributes = []): Shop
 function customerOrderGraphqlUrl(): string
 {
     return 'https://alpha.myshopify.com/admin/api/2026-07/graphql.json';
+}
+
+function customerOrderWebhookHeaders(string $body, string $topic): array
+{
+    return [
+        'CONTENT_TYPE' => 'application/json',
+        'HTTP_X_SHOPIFY_HMAC_SHA256' => base64_encode(hash_hmac('sha256', $body, 'client-secret', true)),
+        'HTTP_X_SHOPIFY_SHOP_DOMAIN' => 'alpha.myshopify.com',
+        'HTTP_X_SHOPIFY_TOPIC' => $topic,
+    ];
 }
 
 function customerOrderFixture(string $name): string

@@ -4,66 +4,82 @@ export type StoreCustomerSummary = {
     email: string | null;
     totalSpent: string;
     currencyCode: string | null;
-    orders: {
-        id: string;
-        orderNumber: string;
-        totalAmount: string;
-        currencyCode: string;
-        financialStatus: string | null;
-        fulfillmentStatus: string | null;
-        orderedAt: string | null;
-    }[];
+};
+
+export type StoreOrderSummary = {
+    id: string;
+    orderNumber: string;
+    totalAmount: string;
+    currencyCode: string;
+    financialStatus: string | null;
+    fulfillmentStatus: string | null;
+    orderedAt: string | null;
+    attributed: boolean;
 };
 
 export default function ShopifyStoreCustomerCard({
     customer,
+    orders,
 }: {
     customer: StoreCustomerSummary | null;
+    orders: StoreOrderSummary[];
 }) {
-    if (customer === null) {
+    if (customer === null && orders.length === 0) {
         return null;
     }
 
     return (
         <section className="border-border/70 border-b px-4.5 py-3.5">
             <div className="text-muted-foreground mb-2.5 text-[10px] font-bold tracking-[0.07em] uppercase">
-                Cliente da loja
+                {customer === null ? 'Pedidos da loja' : 'Cliente da loja'}
             </div>
-            <div className="grid gap-2">
-                <div className="text-xs font-semibold">
-                    {customer.name ?? customer.email ?? 'Cliente da loja'}
-                </div>
-                {customer.name !== null && customer.email !== null && (
-                    <div className="text-muted-foreground text-xs">
-                        {customer.email}
+            {customer !== null ? (
+                <div className="grid gap-2">
+                    <div className="text-xs font-semibold">
+                        {customer.name ?? customer.email ?? 'Cliente da loja'}
                     </div>
-                )}
-                <div className="flex items-baseline justify-between gap-3 text-xs">
-                    <span className="text-muted-foreground">Total gasto</span>
-                    <span className="font-medium">
-                        {formatCurrency(customer.totalSpent, customer.currencyCode)}
-                    </span>
+                    {customer.name !== null && customer.email !== null ? (
+                        <div className="text-muted-foreground text-xs">
+                            {customer.email}
+                        </div>
+                    ) : null}
+                    <div className="flex items-baseline justify-between gap-3 text-xs">
+                        <span className="text-muted-foreground">Total gasto</span>
+                        <span className="font-medium">
+                            {formatCurrency(
+                                customer.totalSpent,
+                                customer.currencyCode,
+                            )}
+                        </span>
+                    </div>
                 </div>
-            </div>
+            ) : null}
             <div className="mt-3 grid gap-2">
                 <div className="text-muted-foreground text-[10px] font-bold tracking-[0.07em] uppercase">
                     Últimos pedidos
                 </div>
-                {customer.orders.length === 0 ? (
+                {orders.length === 0 ? (
                     <div className="text-muted-foreground text-xs">
                         Nenhum pedido espelhado.
                     </div>
                 ) : (
                     <ul className="grid gap-2">
-                        {customer.orders.map((order) => (
+                        {orders.map((order) => (
                             <li
                                 key={order.id}
                                 className="border-border/70 grid gap-1 rounded-lg border p-2.5"
                             >
                                 <div className="flex items-baseline justify-between gap-2 text-xs">
-                                    <span className="font-semibold">
-                                        {order.orderNumber}
-                                    </span>
+                                    <div className="flex min-w-0 items-center gap-1.5">
+                                        <span className="font-semibold">
+                                            {order.orderNumber}
+                                        </span>
+                                        {order.attributed ? (
+                                            <span className="bg-primary/10 text-primary shrink-0 rounded-full px-2 py-0.5 text-[9px] font-semibold">
+                                                Venda atribuída
+                                            </span>
+                                        ) : null}
+                                    </div>
                                     <span className="text-muted-foreground shrink-0">
                                         {formatDate(order.orderedAt)}
                                     </span>

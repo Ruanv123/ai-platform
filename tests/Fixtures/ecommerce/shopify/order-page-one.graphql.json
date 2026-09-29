@@ -8,6 +8,7 @@
       "displayFulfillmentStatus": "UNFULFILLED",
       "totalPriceSet": { "shopMoney": { "amount": "823.50", "currencyCode": "BRL" } },
       "customer": { "id": "gid://shopify/Customer/7001" },
+      "customAttributes": [{ "key": "_platform_attribution", "value": "channel-link-token-9001" }],
       "lineItems": {
         "nodes": [
           {
