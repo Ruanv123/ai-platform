@@ -22,6 +22,7 @@ use App\Http\Controllers\InboxController;
 use App\Http\Controllers\InboxMediaController;
 use App\Http\Controllers\Integrations\AgendaCalendarController;
 use App\Http\Controllers\Integrations\CrmAttendedContactSettingsController;
+use App\Http\Controllers\Integrations\CrmCommercialStagesController;
 use App\Http\Controllers\Integrations\CrmConnectionController;
 use App\Http\Controllers\Integrations\CrmDefaultOwnerController;
 use App\Http\Controllers\Integrations\CrmFieldVisibilityController;
@@ -210,6 +211,8 @@ Route::middleware(['auth', EnsureUserHasTeam::class])->group(function () {
         ->name('integrations.crm.operations.index');
     Route::post('integrations/crm/operations/{operation}/retry', [CrmOperationController::class, 'retry'])
         ->name('integrations.crm.operations.retry');
+    Route::put('integrations/crm/commercial-stages', [CrmCommercialStagesController::class, 'update'])
+        ->name('integrations.crm.commercial-stages.update');
     Route::post('integrations', [IntegrationController::class, 'store'])
         ->name('integrations.store');
     Route::post('integrations/agenda/calendars', [AgendaCalendarController::class, 'store'])

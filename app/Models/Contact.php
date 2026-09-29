@@ -24,6 +24,8 @@ use Illuminate\Support\Carbon;
  * @property string|null $name
  * @property bool $human_waiting
  * @property Carbon|null $human_waiting_at
+ * @property bool $crm_agent_paused
+ * @property bool $crm_pause_suppressed
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
  * @property-read Team $team
@@ -140,6 +142,8 @@ class Contact extends Model
         return [
             'human_waiting' => 'boolean',
             'human_waiting_at' => 'immutable_datetime',
+            'crm_agent_paused' => 'boolean',
+            'crm_pause_suppressed' => 'boolean',
         ];
     }
 

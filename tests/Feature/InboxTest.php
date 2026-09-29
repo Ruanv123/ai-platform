@@ -27,9 +27,13 @@ use App\Models\StoreOrder;
 use App\Models\User;
 use App\Models\WhatsAppPhoneNumber;
 use App\WhatsApp\IncomingMessageResponseDispatcher;
+use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
+use Tests\TestCase;
+
+uses(TestCase::class, RefreshDatabase::class);
 
 beforeEach(function (): void {
     config(['app.key' => 'base64:'.base64_encode(str_repeat('x', 32))]);

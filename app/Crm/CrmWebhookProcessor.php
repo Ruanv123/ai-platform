@@ -49,7 +49,11 @@ class CrmWebhookProcessor
     {
         $link = $this->findPersonLink($integration, $teamId, $personId);
         if ($deleted) {
+            $contactId = $link?->contact_id;
             $link?->delete();
+            if ($contactId !== null) {
+                app(CrmCommercialStageService::class)->reconcileContact($teamId, (int) $contactId);
+            }
 
             return;
         }
@@ -65,7 +69,9 @@ class CrmWebhookProcessor
                 throw $exception;
             }
 
+            $contactId = $link->contact_id;
             $link->delete();
+            app(CrmCommercialStageService::class)->reconcileContact($teamId, (int) $contactId);
         }
     }
 
@@ -189,7 +195,17 @@ class CrmWebhookProcessor
             throw new CrmProviderException(CrmErrorCategory::Definitive, 'O CRM retornou uma negociação sem os identificadores esperados.');
         }
 
-        CrmLinkedDeal::withoutGlobalScopes()->updateOrCreate(
+        $existingDeal = CrmLinkedDeal::withoutGlobalScopes()
+            ->where('team_id', $teamId)
+            ->where('integration_id', $integration->getKey())
+            ->where('external_deal_id', $deal['id'])
+            ->first();
+        $previousStatus = $existingDeal?->status;
+        $previousContactId = $existingDeal === null ? null : CrmContactLink::withoutGlobalScopes()
+            ->where('team_id', $teamId)
+            ->whereKey($existingDeal->crm_contact_link_id)
+            ->value('contact_id');
+        $linkedDeal = CrmLinkedDeal::withoutGlobalScopes()->updateOrCreate(
             [
                 'integration_id' => $integration->getKey(),
                 'external_deal_id' => $deal['id'],
@@ -205,14 +221,30 @@ class CrmWebhookProcessor
                 'provider_updated_at' => $deal['updated_at'],
             ],
         );
+        if ($previousContactId !== null && (int) $previousContactId !== (int) $personLink->contact_id) {
+            app(CrmCommercialStageService::class)->reconcileContact($teamId, (int) $previousContactId);
+        }
+        app(CrmCommercialStageService::class)->reconcileDealChange($linkedDeal, $previousStatus, $deal['loss_reason_id'] ?? null);
     }
 
     private function deleteLinkedDeal(Integration $integration, int $teamId, string $dealId): void
     {
-        CrmLinkedDeal::withoutGlobalScopes()
+        $linkedDeal = CrmLinkedDeal::withoutGlobalScopes()
             ->where('team_id', $teamId)
             ->where('integration_id', $integration->getKey())
             ->where('external_deal_id', $dealId)
-            ->delete();
+            ->first();
+        if ($linkedDeal === null) {
+            return;
+        }
+
+        $contactId = CrmContactLink::withoutGlobalScopes()
+            ->where('team_id', $teamId)
+            ->whereKey($linkedDeal->crm_contact_link_id)
+            ->value('contact_id');
+        $linkedDeal->delete();
+        if ($contactId !== null) {
+            app(CrmCommercialStageService::class)->reconcileContact($teamId, (int) $contactId);
+        }
     }
 }

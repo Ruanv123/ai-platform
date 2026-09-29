@@ -383,6 +383,7 @@ class AgentController extends Controller
                         'id' => $stage['id'],
                         'name' => (string) ($stage['name'] ?? $stage['id']),
                         'status' => is_string($stage['status'] ?? null) ? $stage['status'] : null,
+                        'commercial' => in_array($stage['id'], data_get($integration?->crm_settings, 'commercial_stage_ids', []), true),
                     ])
                     ->values()
                     ->all(),
