@@ -40,7 +40,9 @@ use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Collection as SupportCollection;
 use Laravel\Ai\Responses\AgentResponse;
+use Laravel\Ai\Responses\Data\ToolResult;
 use RuntimeException;
 use Throwable;
 
@@ -1617,6 +1619,7 @@ final class FlowEngine
     {
         $inputTokens = $response->usage->promptTokens;
         $outputTokens = $response->usage->completionTokens;
+        $triageUsage = $this->productTriageUsage($response->toolResults);
         $model = $response->meta->model ?? (string) config('ai.playground.model');
         $pricing = config('flows.ai_trace_pricing', []);
         $modelPricing = is_array($pricing['models'] ?? null) && is_array($pricing['models'][$model] ?? null)
@@ -1624,7 +1627,9 @@ final class FlowEngine
             : [];
         $inputPrice = (float) ($modelPricing['input_per_million_brl'] ?? $pricing['default_input_per_million_brl'] ?? 0);
         $outputPrice = (float) ($modelPricing['output_per_million_brl'] ?? $pricing['default_output_per_million_brl'] ?? 0);
-        $cost = (($inputTokens / 1_000_000) * $inputPrice) + (($outputTokens / 1_000_000) * $outputPrice);
+        $cost = (($inputTokens / 1_000_000) * $inputPrice)
+            + (($outputTokens / 1_000_000) * $outputPrice)
+            + $triageUsage['cost_brl'];
         $toolResults = $response->toolResults->keyBy('id');
         $toolCalls = $response->toolCalls->map(function (mixed $toolCall) use ($toolResults, $config): array {
             $call = method_exists($toolCall, 'toArray') ? $toolCall->toArray() : (array) $toolCall;
@@ -1641,11 +1646,34 @@ final class FlowEngine
         return [
             'ai_prompt' => $this->traceSanitizer->sanitizeText($prompt, $this->sensitiveFields($config), $variables),
             'ai_response' => $this->traceSanitizer->sanitizeText($response->text, $this->sensitiveFields($config), $variables),
-            'ai_input_tokens' => $inputTokens,
-            'ai_output_tokens' => $outputTokens,
+            'ai_input_tokens' => $inputTokens + $triageUsage['input_tokens'],
+            'ai_output_tokens' => $outputTokens + $triageUsage['output_tokens'],
             'ai_cost_brl' => round($cost, 4),
             'ai_tool_calls' => $toolCalls,
         ];
+    }
+
+    private function productTriageUsage(SupportCollection $toolResults): array
+    {
+        return $toolResults
+            ->where('name', 'search_products')
+            ->reduce(function (array $usage, mixed $toolResult): array {
+                if (! $toolResult instanceof ToolResult || ! is_string($toolResult->result)) {
+                    return $usage;
+                }
+
+                $result = json_decode($toolResult->result, true);
+                $trace = is_array($result) ? ($result['triage_trace'] ?? null) : null;
+                if (! is_array($trace)) {
+                    return $usage;
+                }
+
+                $usage['input_tokens'] += is_numeric($trace['input_tokens'] ?? null) ? (int) $trace['input_tokens'] : 0;
+                $usage['output_tokens'] += is_numeric($trace['output_tokens'] ?? null) ? (int) $trace['output_tokens'] : 0;
+                $usage['cost_brl'] += is_numeric($trace['cost_brl'] ?? null) ? max(0, (float) $trace['cost_brl']) : 0;
+
+                return $usage;
+            }, ['input_tokens' => 0, 'output_tokens' => 0, 'cost_brl' => 0.0]);
     }
 
     /**

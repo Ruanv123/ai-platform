@@ -20,6 +20,7 @@ class ProductCatalogSearch
         ?string $category = null,
         ?string $option = null,
         bool $availableOnly = false,
+        ?int $limit = null,
     ): Collection {
         $query = Str::squish($query);
 
@@ -36,7 +37,7 @@ class ProductCatalogSearch
             ->first();
 
         $minimumSimilarity = (float) config('knowledge.search.min_similarity', 0.35);
-        $resultLimit = min(max((int) config('knowledge.search.top_k', 5), 1), 10);
+        $resultLimit = min(max($limit ?? (int) config('knowledge.search.top_k', 5), 1), 30);
         $teamId = $team->getKey();
 
         return ProductVariant::withoutGlobalScopes()

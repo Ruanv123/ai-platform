@@ -26,6 +26,12 @@ return [
         'timeout' => (int) env('AI_PLAYGROUND_TIMEOUT', 60),
     ],
 
+    'product_triage' => [
+        'provider' => env('AI_PRODUCT_TRIAGE_PROVIDER', 'openai'),
+        'model' => env('AI_PRODUCT_TRIAGE_MODEL', 'gpt-5.6-luna'),
+        'timeout' => (int) env('AI_PRODUCT_TRIAGE_TIMEOUT', 20),
+    ],
+
     /*
     |--------------------------------------------------------------------------
     | Caching
