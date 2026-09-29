@@ -22,6 +22,18 @@ _Avoid_: Permissão, Role, Cargo
 O pedido pendente para uma pessoa entrar na Equipe com um Papel definido. Expira em três dias e some da lista ao expirar; reconvidar é a forma de renovar.
 _Avoid_: Invite, Convocação
 
+**Dados da Empresa**:
+O que a Empresa é e como encontrá-la: segmento, descrição do negócio, produtos e serviços, público-alvo, contatos públicos, endereço e Horário de atendimento. Todo Agente da Empresa os conhece sem consultar a Base de conhecimento.
+_Avoid_: Perfil da Empresa, Cadastro, Sobre
+
+**Voz da marca**:
+O jeito de falar da Empresa, válido para todos os seus Agentes: uma descrição de como a marca soa, com frases de exemplo tiradas da própria marca. Trata de como se diz, nunca do que não se diz ou não se faz, que é Limite. Pertence à Empresa, não ao Agente; cada Agente pode ajustá-la com o seu Estilo.
+_Avoid_: Tom de voz, Personalidade, Branding, Estilo
+
+**Leitura do site**:
+Uma passada da plataforma pelas páginas-chave do site da Empresa, com a sua situação: em andamento, concluída ou com falha. Transforma o que leu em Documentos da Coleção do site e em valores propostos para os Dados da Empresa e a Voz da marca, que só valem depois que alguém da Equipe confirma; nunca sobrescreve em silêncio o que já foi confirmado. Só roda quando alguém pede. A Empresa guarda o histórico; vale a última.
+_Avoid_: Scraping, Crawl, Importação, Varredura, Scan
+
 **Horário de atendimento**:
 Os dias e faixas de horário em que a Empresa atende, com o fuso horário em que são lidos.
 _Avoid_: Expediente, Horário comercial, Business hours
@@ -37,7 +49,7 @@ Para que o Agente existe — Atendimento, Vendas, Qualificação ou Agendamento.
 _Avoid_: Papel, Função, Tipo de agente
 
 **Estilo**:
-Como o Agente fala: tom, uso de emojis, tamanho das respostas e diretrizes livres sobre a forma da resposta. Nunca diz o que ele faz nem o que ele evita.
+Como o Agente fala: tom, uso de emojis, tamanho das respostas e diretrizes livres sobre a forma da resposta. É o ajuste do Agente sobre a Voz da marca, e vale por cima dela quando as duas divergem. Nunca diz o que ele faz nem o que ele evita.
 _Avoid_: Diretriz de resposta, Instrução, Personalidade
 
 **Limite**:
@@ -84,6 +96,10 @@ _Avoid_: Base de conhecimento, Pasta, Categoria, Knowledge base
 
 **Base de conhecimento**:
 O conjunto de todo o conhecimento da Empresa. É o nome da seção, nunca de uma Coleção individual.
+
+**Coleção do site**:
+A Coleção que a Leitura do site cria e mantém, com um Documento por página lida e o FAQ do site como Documento FAQ. A Leitura só mexe nos Documentos que ela mesma criou: atualiza os que continuam no site, remove os que sumiram e não traz de volta os que alguém da Equipe apagou. Fora isso, é uma Coleção como outra qualquer, e todo Agente novo nasce consultando-a.
+_Avoid_: Coleção do site importado, Base do site
 
 **Documento**:
 Uma fonte de conhecimento dentro de uma Coleção: arquivo, texto livre, FAQ ou URL. É processado em segundo plano e vira Trechos pesquisáveis.
