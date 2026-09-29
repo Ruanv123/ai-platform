@@ -23,24 +23,24 @@ class AgentVersion extends Model
         });
     }
 
-    public function shouldSearchProducts(bool $shopConnected): bool
+    public function shouldSearchProducts(bool $shopConnected, bool $shopToolsEnabled = true): bool
     {
         $toolSettings = $this->getAttribute('ecommerce_tools');
         $searchProducts = is_array($toolSettings)
             ? ($toolSettings['search_products'] ?? $this->objectiveValue() === AgentObjective::Sales)
             : $this->objectiveValue() === AgentObjective::Sales;
 
-        return $shopConnected && (bool) $searchProducts;
+        return $shopConnected && $shopToolsEnabled && (bool) $searchProducts;
     }
 
-    public function shouldSendPurchaseLink(bool $shopConnected): bool
+    public function shouldSendPurchaseLink(bool $shopConnected, bool $shopToolsEnabled = true): bool
     {
         $toolSettings = $this->getAttribute('ecommerce_tools');
         $sendPurchaseLink = is_array($toolSettings)
             ? ($toolSettings['send_purchase_link'] ?? $this->objectiveValue() === AgentObjective::Sales)
             : $this->objectiveValue() === AgentObjective::Sales;
 
-        return $shopConnected && (bool) $sendPurchaseLink;
+        return $shopConnected && $shopToolsEnabled && (bool) $sendPurchaseLink;
     }
 
     public function objectiveValue(): AgentObjective

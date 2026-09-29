@@ -28,6 +28,7 @@ class AgentFactory extends Factory
             'objective' => AgentObjective::Support,
             'search_products' => null,
             'send_purchase_link' => null,
+            'shop_tools_enabled' => true,
             'tone' => AgentTone::Friendly,
             'uses_emojis' => false,
             'response_length' => AgentResponseLength::Short,

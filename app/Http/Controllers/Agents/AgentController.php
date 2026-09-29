@@ -175,6 +175,8 @@ class AgentController extends Controller
                 ],
                 'published_at' => now(),
             ]);
+
+            $lockedAgent->forceFill(['shop_tools_enabled' => true])->save();
         });
 
         Inertia::flash('toast', [
