@@ -1,0 +1,14 @@
+{
+  "data": {
+    "collection": {
+      "id": "gid://shopify/Collection/3001",
+      "title": "Corrida de trilha",
+      "products": {
+        "nodes": [
+          { "id": "gid://shopify/Product/1002" }
+        ],
+        "pageInfo": { "hasNextPage": false, "endCursor": null }
+      }
+    }
+  }
+}

@@ -1,6 +1,7 @@
 <?php
 
 use App\Ecommerce\EcommerceAdapter;
+use App\Ecommerce\ProductEmbeddingSynchronizer;
 use App\Jobs\CompleteShopifyBulkOperation;
 use App\Jobs\ImportShopifyBulkOperation;
 use App\Jobs\PollShopifyBulkOperation;
@@ -128,7 +129,7 @@ it('dispatches a signed bulk finish through GraphQL result lookup to JSONL impor
         $shop->getKey(),
         'gid://shopify/BulkOperation/987654321',
         'https://storage.googleapis.com/shopify/catalog-987654321.jsonl',
-    ))->handle();
+    ))->handle(app(ProductEmbeddingSynchronizer::class));
 
     expect(DB::table('shops')->where('id', $shop->getKey())->value('sync_status'))->toBe('synced')
         ->and(Product::withoutGlobalScopes()->where('shop_id', $shop->getKey())->count())->toBe(1);
@@ -150,7 +151,8 @@ it('streams the Shopify JSONL fixture into the canonical catalog and repeats wit
         $jsonlUrl => Http::response(shopifyFixture('catalog.jsonl', $provider), 200, ['Content-Type' => 'application/x-ndjson']),
     ]);
 
-    (new ImportShopifyBulkOperation($shop->getKey(), $operationId, $jsonlUrl))->handle();
+    (new ImportShopifyBulkOperation($shop->getKey(), $operationId, $jsonlUrl))
+        ->handle(app(ProductEmbeddingSynchronizer::class));
 
     $product = Product::withoutGlobalScopes()->where('shop_id', $shop->getKey())->sole();
     $variant = ProductVariant::withoutGlobalScopes()->where('shop_id', $shop->getKey())->sole();
@@ -192,7 +194,8 @@ it('streams the Shopify JSONL fixture into the canonical catalog and repeats wit
     ])->save();
     Embeddings::fake()->preventStrayEmbeddings();
 
-    (new ImportShopifyBulkOperation($shop->getKey(), $nextOperationId, $jsonlUrl))->handle();
+    (new ImportShopifyBulkOperation($shop->getKey(), $nextOperationId, $jsonlUrl))
+        ->handle(app(ProductEmbeddingSynchronizer::class));
 
     expect(Product::withoutGlobalScopes()->where('shop_id', $shop->getKey())->count())->toBe(1)
         ->and(ProductVariant::withoutGlobalScopes()->where('shop_id', $shop->getKey())->count())->toBe(1)

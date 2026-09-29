@@ -6,6 +6,7 @@ use App\Ecommerce\EcommerceAdapter;
 use App\Enums\EcommerceProvider;
 use App\Enums\TeamPermission;
 use App\Http\Controllers\Controller;
+use App\Jobs\RegisterShopifyCatalogWebhooks;
 use App\Jobs\StartShopifyCatalogImport;
 use App\Models\Integration;
 use App\Models\Scopes\TeamScope;
@@ -156,6 +157,7 @@ class ShopifyConnectionController extends Controller
             });
 
             $shop = $team->shops()->firstOrFail();
+            RegisterShopifyCatalogWebhooks::dispatch($shop->getKey());
             StartShopifyCatalogImport::dispatch($shop->getKey());
 
             return $this->redirectToShopifySettings()->with('shopify_success', 'Loja Shopify conectada.');
