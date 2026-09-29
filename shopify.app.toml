@@ -1,0 +1,27 @@
+name = "IA Plataforma"
+client_id = "REPLACE_WITH_SHOPIFY_CLIENT_ID"
+application_url = "https://replace-with-public-platform-domain.example/shopify/embedded"
+embedded = true
+
+[access_scopes]
+scopes = "read_products,read_inventory,read_customers,read_orders"
+
+[auth]
+redirect_urls = [
+    "https://replace-with-public-platform-domain.example/integrations/ecommerce/shopify/callback",
+]
+
+[webhooks]
+api_version = "2026-07"
+
+[[webhooks.subscriptions]]
+topics = ["app/uninstalled"]
+uri = "/webhooks/shopify"
+
+[[webhooks.subscriptions]]
+compliance_topics = [
+    "customers/data_request",
+    "customers/redact",
+    "shop/redact",
+]
+uri = "/webhooks/shopify"

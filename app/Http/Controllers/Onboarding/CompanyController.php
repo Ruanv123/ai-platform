@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Onboarding;
 
 use App\Actions\Teams\CreateTeam;
+use App\Ecommerce\ShopifyInstallationFlow;
 use App\Enums\TeamSegment;
 use App\Enums\Weekday;
 use App\Http\Controllers\Controller;
@@ -28,8 +29,11 @@ class CompanyController extends Controller
     /**
      * Create the company and make the authenticated user its owner.
      */
-    public function store(SaveCompanyRequest $request, CreateTeam $createTeam): RedirectResponse
-    {
+    public function store(
+        SaveCompanyRequest $request,
+        CreateTeam $createTeam,
+        ShopifyInstallationFlow $shopifyInstallationFlow,
+    ): RedirectResponse {
         $user = $request->user();
 
         abort_if($user?->company() !== null, 403, 'Você já pertence a uma Empresa.');
@@ -38,6 +42,11 @@ class CompanyController extends Controller
         $createTeam->handle($user, $validated['name'], $validated);
 
         Inertia::flash('toast', ['type' => 'success', 'message' => 'Empresa criada com sucesso.']);
+
+        $installationRedirect = $shopifyInstallationFlow->redirectAfterAuthentication($request);
+        if ($installationRedirect !== null) {
+            return $installationRedirect;
+        }
 
         return to_route('dashboard');
     }

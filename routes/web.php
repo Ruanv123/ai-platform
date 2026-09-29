@@ -24,6 +24,8 @@ use App\Http\Controllers\Integrations\AgendaCalendarController;
 use App\Http\Controllers\Integrations\IntegrationController;
 use App\Http\Controllers\Integrations\IntegrationWebhookFailureController;
 use App\Http\Controllers\Integrations\ShopifyConnectionController;
+use App\Http\Controllers\Integrations\ShopifyEmbeddedController;
+use App\Http\Controllers\Integrations\ShopifyInstallationController;
 use App\Http\Controllers\Integrations\ShopifyWebhookController;
 use App\Http\Controllers\Knowledge\CollectionController;
 use App\Http\Controllers\Knowledge\DocumentController;
@@ -32,6 +34,7 @@ use App\Http\Controllers\Teams\TeamInvitationController;
 use App\Http\Controllers\Templates\WhatsAppTemplateController;
 use App\Http\Middleware\EnsureUserHasTeam;
 use App\Http\Middleware\RedirectIfUserHasTeam;
+use App\Http\Middleware\SetShopifyEmbeddedSecurityHeaders;
 use App\Models\Channel;
 use Illuminate\Support\Facades\Route;
 
@@ -51,6 +54,30 @@ Route::post('webhooks/whatsapp-test', [WhatsAppTestWebhookController::class, 'ha
 Route::post('webhooks/shopify', [ShopifyWebhookController::class, 'handle'])
     ->middleware('throttle:shopify-webhook')
     ->name('webhooks.shopify');
+
+Route::get('shopify/embedded', [ShopifyEmbeddedController::class, 'bootstrap'])
+    ->middleware(SetShopifyEmbeddedSecurityHeaders::class)
+    ->name('shopify.embedded.bootstrap');
+
+Route::post('shopify/embedded/authenticate', [ShopifyEmbeddedController::class, 'authenticate'])
+    ->middleware('throttle:30,1')
+    ->name('shopify.embedded.authenticate');
+
+Route::get('shopify/embedded/home', [ShopifyEmbeddedController::class, 'home'])
+    ->middleware(['signed', SetShopifyEmbeddedSecurityHeaders::class])
+    ->name('shopify.embedded.home');
+
+Route::get('shopify/install/{handoffToken}', [ShopifyInstallationController::class, 'start'])
+    ->where('handoffToken', '[A-Za-z0-9]{64}')
+    ->middleware('throttle:10,1')
+    ->name('shopify.install.start');
+
+Route::middleware('auth')->group(function (): void {
+    Route::get('shopify/install', [ShopifyInstallationController::class, 'resume'])
+        ->name('shopify.install.resume');
+    Route::post('shopify/install', [ShopifyInstallationController::class, 'store'])
+        ->name('shopify.install.store');
+});
 
 Route::get(
     'webhooks/whatsapp-test/profile-photo/{photoToken}/{extension}',
