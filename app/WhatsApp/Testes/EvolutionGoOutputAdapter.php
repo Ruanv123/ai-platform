@@ -53,7 +53,7 @@ final class EvolutionGoOutputAdapter extends AbstractWhatsAppOutputAdapter
                 $this->request($connection),
                 $this->endpoint($connection, 'send/media'),
                 [
-                    'number' => $contact->phone,
+                    'number' => E164PhoneNumber::recipient($contact->phone),
                     'type' => $type,
                     'filename' => $media['filename'],
                 ],

@@ -24,16 +24,29 @@ type ButtonDraft = {
 };
 
 function emptyButton(): ButtonDraft {
-    return { type: 'quick_reply', text: '', url: '', phoneNumber: '', example: '' };
+    return {
+        type: 'quick_reply',
+        text: '',
+        url: '',
+        phoneNumber: '',
+        example: '',
+    };
 }
 
 function positionsForText(text: string): number[] {
     return Array.from(
-        new Set(Array.from(text.matchAll(/{{\s*(\d+)\s*}}/g), (match) => Number(match[1]))),
+        new Set(
+            Array.from(text.matchAll(/{{\s*(\d+)\s*}}/g), (match) =>
+                Number(match[1]),
+            ),
+        ),
     );
 }
 
-function headerMediaValidationMessage(file: File, type: 'IMAGE' | 'DOCUMENT'): string {
+function headerMediaValidationMessage(
+    file: File,
+    type: 'IMAGE' | 'DOCUMENT',
+): string {
     const isImage = type === 'IMAGE';
     const extensions = isImage
         ? ['jpg', 'jpeg', 'png']
@@ -51,8 +64,9 @@ function headerMediaValidationMessage(file: File, type: 'IMAGE' | 'DOCUMENT'): s
               'text/plain',
           ];
     const extension = file.name.split('.').pop()?.toLowerCase();
-    const invalidType = !extensions.includes(extension ?? '')
-        || (file.type !== '' && !mimeTypes.includes(file.type));
+    const invalidType =
+        !extensions.includes(extension ?? '') ||
+        (file.type !== '' && !mimeTypes.includes(file.type));
     if (invalidType) {
         return isImage
             ? 'A imagem de exemplo deve estar no formato JPEG ou PNG.'
@@ -78,7 +92,9 @@ export default function CreateTemplateDialog({
     accounts: { id: number; label: string }[];
 }) {
     const [body, setBody] = useState('');
-    const [headerType, setHeaderType] = useState<'TEXT' | 'IMAGE' | 'DOCUMENT'>('TEXT');
+    const [headerType, setHeaderType] = useState<'TEXT' | 'IMAGE' | 'DOCUMENT'>(
+        'TEXT',
+    );
     const [headerText, setHeaderText] = useState('');
     const [footer, setFooter] = useState('');
     const [buttons, setButtons] = useState<ButtonDraft[]>([]);
@@ -193,13 +209,18 @@ export default function CreateTemplateDialog({
                                 )}
                             </div>
                             <div className="grid gap-2">
-                                <Label htmlFor="header_type">Tipo de cabeçalho</Label>
+                                <Label htmlFor="header_type">
+                                    Tipo de cabeçalho
+                                </Label>
                                 <select
                                     id="header_type"
                                     name="header_type"
                                     value={headerType}
                                     onChange={(event) => {
-                                        setHeaderType(event.target.value as typeof headerType);
+                                        setHeaderType(
+                                            event.target
+                                                .value as typeof headerType,
+                                        );
                                         setHeaderMediaError('');
                                     }}
                                     className="border-input bg-background h-9 rounded-md border px-3 text-sm"
@@ -236,17 +257,24 @@ export default function CreateTemplateDialog({
                                         name="header_media"
                                         type="file"
                                         required
-                                        accept={headerType === 'IMAGE'
-                                            ? '.jpg,.jpeg,.png,image/jpeg,image/png'
-                                            : '.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt'}
+                                        accept={
+                                            headerType === 'IMAGE'
+                                                ? '.jpg,.jpeg,.png,image/jpeg,image/png'
+                                                : '.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt'
+                                        }
                                         onChange={(event) => {
-                                            const file = event.currentTarget.files?.[0];
+                                            const file =
+                                                event.currentTarget.files?.[0];
                                             if (file === undefined) {
                                                 setHeaderMediaError('');
                                                 return;
                                             }
 
-                                            const error = headerMediaValidationMessage(file, headerType);
+                                            const error =
+                                                headerMediaValidationMessage(
+                                                    file,
+                                                    headerType,
+                                                );
                                             setHeaderMediaError(error);
                                             if (error !== '') {
                                                 event.currentTarget.value = '';
@@ -254,9 +282,11 @@ export default function CreateTemplateDialog({
                                         }}
                                         className="border-input file:bg-muted file:text-foreground rounded-md border px-3 py-2 text-xs file:mr-3 file:rounded file:border-0 file:px-2 file:py-1"
                                     />
-                                    {(headerMediaError || errors.header_media) && (
+                                    {(headerMediaError ||
+                                        errors.header_media) && (
                                         <p className="text-destructive text-xs">
-                                            {headerMediaError || errors.header_media}
+                                            {headerMediaError ||
+                                                errors.header_media}
                                         </p>
                                     )}
                                 </div>
@@ -284,11 +314,15 @@ export default function CreateTemplateDialog({
                                             key={`${variable.component}-${variable.position}`}
                                             className="grid gap-2"
                                         >
-                                            <Label htmlFor={`variable-${index}`}>
+                                            <Label
+                                                htmlFor={`variable-${index}`}
+                                            >
                                                 {variable.component === 'header'
                                                     ? 'Cabeçalho'
                                                     : 'Corpo'}{' '}
-                                                {'{{'}{variable.position}{'}}'}
+                                                {'{{'}
+                                                {variable.position}
+                                                {'}}'}
                                             </Label>
                                             <input
                                                 type="hidden"
@@ -327,10 +361,12 @@ export default function CreateTemplateDialog({
                                     return (
                                         <div
                                             key={index}
-                                            className="grid gap-3 rounded-md bg-muted/40 p-3 sm:grid-cols-2"
+                                            className="bg-muted/40 grid gap-3 rounded-md p-3 sm:grid-cols-2"
                                         >
                                             <div className="grid gap-2">
-                                                <Label htmlFor={`button-type-${index}`}>
+                                                <Label
+                                                    htmlFor={`button-type-${index}`}
+                                                >
                                                     Tipo
                                                 </Label>
                                                 <select
@@ -339,10 +375,20 @@ export default function CreateTemplateDialog({
                                                     value={button.type}
                                                     onChange={(event) =>
                                                         setButtons((current) =>
-                                                            current.map((item, itemIndex) =>
-                                                                itemIndex === index
-                                                                    ? { ...item, type: event.target.value as ButtonType }
-                                                                    : item,
+                                                            current.map(
+                                                                (
+                                                                    item,
+                                                                    itemIndex,
+                                                                ) =>
+                                                                    itemIndex ===
+                                                                    index
+                                                                        ? {
+                                                                              ...item,
+                                                                              type: event
+                                                                                  .target
+                                                                                  .value as ButtonType,
+                                                                          }
+                                                                        : item,
                                                             ),
                                                         )
                                                     }
@@ -351,7 +397,9 @@ export default function CreateTemplateDialog({
                                                     <option value="quick_reply">
                                                         Resposta rápida
                                                     </option>
-                                                    <option value="url">URL</option>
+                                                    <option value="url">
+                                                        URL
+                                                    </option>
                                                     <option value="phone_number">
                                                         Telefone
                                                     </option>
@@ -362,7 +410,9 @@ export default function CreateTemplateDialog({
                                             </div>
                                             {button.type !== 'copy_code' && (
                                                 <div className="grid gap-2">
-                                                    <Label htmlFor={`button-text-${index}`}>
+                                                    <Label
+                                                        htmlFor={`button-text-${index}`}
+                                                    >
                                                         Texto do botão
                                                     </Label>
                                                     <Input
@@ -370,12 +420,23 @@ export default function CreateTemplateDialog({
                                                         name={fieldName('text')}
                                                         value={button.text}
                                                         onChange={(event) =>
-                                                            setButtons((current) =>
-                                                                current.map((item, itemIndex) =>
-                                                                    itemIndex === index
-                                                                        ? { ...item, text: event.target.value }
-                                                                        : item,
-                                                                ),
+                                                            setButtons(
+                                                                (current) =>
+                                                                    current.map(
+                                                                        (
+                                                                            item,
+                                                                            itemIndex,
+                                                                        ) =>
+                                                                            itemIndex ===
+                                                                            index
+                                                                                ? {
+                                                                                      ...item,
+                                                                                      text: event
+                                                                                          .target
+                                                                                          .value,
+                                                                                  }
+                                                                                : item,
+                                                                    ),
                                                             )
                                                         }
                                                     />
@@ -384,41 +445,81 @@ export default function CreateTemplateDialog({
                                             {button.type === 'url' && (
                                                 <>
                                                     <div className="grid gap-2 sm:col-span-2">
-                                                        <Label htmlFor={`button-url-${index}`}>
+                                                        <Label
+                                                            htmlFor={`button-url-${index}`}
+                                                        >
                                                             Endereço
                                                         </Label>
                                                         <Input
                                                             id={`button-url-${index}`}
-                                                            name={fieldName('url')}
+                                                            name={fieldName(
+                                                                'url',
+                                                            )}
                                                             value={button.url}
                                                             onChange={(event) =>
-                                                                setButtons((current) =>
-                                                                    current.map((item, itemIndex) =>
-                                                                        itemIndex === index
-                                                                            ? { ...item, url: event.target.value }
-                                                                            : item,
-                                                                    ),
+                                                                setButtons(
+                                                                    (current) =>
+                                                                        current.map(
+                                                                            (
+                                                                                item,
+                                                                                itemIndex,
+                                                                            ) =>
+                                                                                itemIndex ===
+                                                                                index
+                                                                                    ? {
+                                                                                          ...item,
+                                                                                          url: event
+                                                                                              .target
+                                                                                              .value,
+                                                                                      }
+                                                                                    : item,
+                                                                        ),
                                                                 )
                                                             }
                                                             placeholder="https://exemplo.com/{{1}}"
                                                         />
                                                     </div>
-                                                    {positionsForText(button.url).length > 0 && (
+                                                    {positionsForText(
+                                                        button.url,
+                                                    ).length > 0 && (
                                                         <div className="grid gap-2 sm:col-span-2">
-                                                            <Label htmlFor={`button-example-${index}`}>
-                                                                Exemplo do endereço
+                                                            <Label
+                                                                htmlFor={`button-example-${index}`}
+                                                            >
+                                                                Exemplo do
+                                                                endereço
                                                             </Label>
                                                             <Input
                                                                 id={`button-example-${index}`}
-                                                                name={fieldName('example')}
-                                                                value={button.example}
-                                                                onChange={(event) =>
-                                                                    setButtons((current) =>
-                                                                        current.map((item, itemIndex) =>
-                                                                            itemIndex === index
-                                                                                ? { ...item, example: event.target.value }
-                                                                                : item,
-                                                                        ),
+                                                                name={fieldName(
+                                                                    'example',
+                                                                )}
+                                                                value={
+                                                                    button.example
+                                                                }
+                                                                onChange={(
+                                                                    event,
+                                                                ) =>
+                                                                    setButtons(
+                                                                        (
+                                                                            current,
+                                                                        ) =>
+                                                                            current.map(
+                                                                                (
+                                                                                    item,
+                                                                                    itemIndex,
+                                                                                ) =>
+                                                                                    itemIndex ===
+                                                                                    index
+                                                                                        ? {
+                                                                                              ...item,
+                                                                                              example:
+                                                                                                  event
+                                                                                                      .target
+                                                                                                      .value,
+                                                                                          }
+                                                                                        : item,
+                                                                            ),
                                                                     )
                                                                 }
                                                             />
@@ -428,20 +529,38 @@ export default function CreateTemplateDialog({
                                             )}
                                             {button.type === 'phone_number' && (
                                                 <div className="grid gap-2 sm:col-span-2">
-                                                    <Label htmlFor={`button-phone-${index}`}>
+                                                    <Label
+                                                        htmlFor={`button-phone-${index}`}
+                                                    >
                                                         Telefone
                                                     </Label>
                                                     <Input
                                                         id={`button-phone-${index}`}
-                                                        name={fieldName('phone_number')}
-                                                        value={button.phoneNumber}
+                                                        name={fieldName(
+                                                            'phone_number',
+                                                        )}
+                                                        value={
+                                                            button.phoneNumber
+                                                        }
                                                         onChange={(event) =>
-                                                            setButtons((current) =>
-                                                                current.map((item, itemIndex) =>
-                                                                    itemIndex === index
-                                                                        ? { ...item, phoneNumber: event.target.value }
-                                                                        : item,
-                                                                ),
+                                                            setButtons(
+                                                                (current) =>
+                                                                    current.map(
+                                                                        (
+                                                                            item,
+                                                                            itemIndex,
+                                                                        ) =>
+                                                                            itemIndex ===
+                                                                            index
+                                                                                ? {
+                                                                                      ...item,
+                                                                                      phoneNumber:
+                                                                                          event
+                                                                                              .target
+                                                                                              .value,
+                                                                                  }
+                                                                                : item,
+                                                                    ),
                                                             )
                                                         }
                                                         placeholder="+5511999999999"
@@ -450,20 +569,36 @@ export default function CreateTemplateDialog({
                                             )}
                                             {button.type === 'copy_code' && (
                                                 <div className="grid gap-2 sm:col-span-2">
-                                                    <Label htmlFor={`button-example-${index}`}>
+                                                    <Label
+                                                        htmlFor={`button-example-${index}`}
+                                                    >
                                                         Código de exemplo
                                                     </Label>
                                                     <Input
                                                         id={`button-example-${index}`}
-                                                        name={fieldName('example')}
+                                                        name={fieldName(
+                                                            'example',
+                                                        )}
                                                         value={button.example}
                                                         onChange={(event) =>
-                                                            setButtons((current) =>
-                                                                current.map((item, itemIndex) =>
-                                                                    itemIndex === index
-                                                                        ? { ...item, example: event.target.value }
-                                                                        : item,
-                                                                ),
+                                                            setButtons(
+                                                                (current) =>
+                                                                    current.map(
+                                                                        (
+                                                                            item,
+                                                                            itemIndex,
+                                                                        ) =>
+                                                                            itemIndex ===
+                                                                            index
+                                                                                ? {
+                                                                                      ...item,
+                                                                                      example:
+                                                                                          event
+                                                                                              .target
+                                                                                              .value,
+                                                                                  }
+                                                                                : item,
+                                                                    ),
                                                             )
                                                         }
                                                     />
@@ -476,7 +611,11 @@ export default function CreateTemplateDialog({
                                                 className="w-fit sm:col-span-2"
                                                 onClick={() =>
                                                     setButtons((current) =>
-                                                        current.filter((_, itemIndex) => itemIndex !== index),
+                                                        current.filter(
+                                                            (_, itemIndex) =>
+                                                                itemIndex !==
+                                                                index,
+                                                        ),
                                                     )
                                                 }
                                             >
@@ -491,12 +630,20 @@ export default function CreateTemplateDialog({
                                     size="sm"
                                     className="w-fit"
                                     disabled={buttons.length >= 3}
-                                    onClick={() => setButtons((current) => [...current, emptyButton()])}
+                                    onClick={() =>
+                                        setButtons((current) => [
+                                            ...current,
+                                            emptyButton(),
+                                        ])
+                                    }
                                 >
                                     <Plus /> Adicionar botão
                                 </Button>
                             </fieldset>
-                            {(body || headerText || footer || buttons.length > 0) && (
+                            {(body ||
+                                headerText ||
+                                footer ||
+                                buttons.length > 0) && (
                                 <div className="bg-muted/50 grid gap-2 rounded-lg border p-3">
                                     <span className="text-muted-foreground text-xs font-medium">
                                         Prévia
@@ -521,7 +668,8 @@ export default function CreateTemplateDialog({
                                         >
                                             {button.type === 'copy_code'
                                                 ? 'Copiar código'
-                                                : button.text || `Botão ${index + 1}`}
+                                                : button.text ||
+                                                  `Botão ${index + 1}`}
                                         </span>
                                     ))}
                                 </div>

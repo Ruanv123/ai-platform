@@ -25,16 +25,19 @@ export function VoiceMessageRecorder({
     const [isStarting, setIsStarting] = useState(false);
     const [isRecording, setIsRecording] = useState(false);
     const [recordingError, setRecordingError] = useState<string | null>(null);
-    const audioPreviewRef = useCallback((audio: HTMLAudioElement | null) => {
-        if (audio === null || file === null) {
-            return;
-        }
+    const audioPreviewRef = useCallback(
+        (audio: HTMLAudioElement | null) => {
+            if (audio === null || file === null) {
+                return;
+            }
 
-        const previewUrl = URL.createObjectURL(file);
-        audio.src = previewUrl;
+            const previewUrl = URL.createObjectURL(file);
+            audio.src = previewUrl;
 
-        return () => URL.revokeObjectURL(previewUrl);
-    }, [file]);
+            return () => URL.revokeObjectURL(previewUrl);
+        },
+        [file],
+    );
     const closeRecorder = useCallback((recorder: Recorder) => {
         if (closedRecordersRef.current.has(recorder)) {
             return;
@@ -43,23 +46,31 @@ export function VoiceMessageRecorder({
         closedRecordersRef.current.add(recorder);
         void recorder.close().catch(() => undefined);
     }, []);
-    const releaseRecorder = useCallback((recorder: Recorder) => {
-        if (recorderRef.current === recorder) {
-            recorderRef.current = null;
-        }
+    const releaseRecorder = useCallback(
+        (recorder: Recorder) => {
+            if (recorderRef.current === recorder) {
+                recorderRef.current = null;
+            }
 
-        void recorder.stop()
-            .catch(() => undefined)
-            .finally(() => closeRecorder(recorder));
-    }, [closeRecorder]);
-    const recorderControlRef = useCallback((node: HTMLDivElement | null) => {
-        if (node !== null || recorderRef.current === null) {
-            return;
-        }
+            void recorder
+                .stop()
+                .catch(() => undefined)
+                .finally(() => closeRecorder(recorder));
+        },
+        [closeRecorder],
+    );
+    const recorderControlRef = useCallback(
+        (node: HTMLDivElement | null) => {
+            if (node !== null || recorderRef.current === null) {
+                return;
+            }
 
-        releaseRecorder(recorderRef.current);
-    }, [releaseRecorder]);
-    const canRecord = typeof window !== 'undefined' && Recorder.isRecordingSupported();
+            releaseRecorder(recorderRef.current);
+        },
+        [releaseRecorder],
+    );
+    const canRecord =
+        typeof window !== 'undefined' && Recorder.isRecordingSupported();
 
     const startRecording = async () => {
         if (disabled || !canRecord || recorderRef.current !== null) {
@@ -79,7 +90,9 @@ export function VoiceMessageRecorder({
             });
         } catch {
             setIsStarting(false);
-            setRecordingError('Não foi possível iniciar a gravação. Verifique o suporte do navegador e a conexão segura.');
+            setRecordingError(
+                'Não foi possível iniciar a gravação. Verifique o suporte do navegador e a conexão segura.',
+            );
 
             return;
         }
@@ -88,7 +101,9 @@ export function VoiceMessageRecorder({
         recorder.ondataavailable = (data) => {
             if (recorderRef.current !== recorder || data.byteLength === 0) {
                 if (data.byteLength === 0 && recorderRef.current === recorder) {
-                    setRecordingError('A gravação ficou vazia. Grave novamente ou anexe um arquivo.');
+                    setRecordingError(
+                        'A gravação ficou vazia. Grave novamente ou anexe um arquivo.',
+                    );
                 }
 
                 return;
@@ -96,11 +111,13 @@ export function VoiceMessageRecorder({
 
             const audioBytes = new Uint8Array(data.byteLength);
             audioBytes.set(data);
-            onFileChange(new File(
-                [audioBytes.buffer],
-                `mensagem-de-voz-${Date.now()}.ogg`,
-                { type: voiceNoteMimeType },
-            ));
+            onFileChange(
+                new File(
+                    [audioBytes.buffer],
+                    `mensagem-de-voz-${Date.now()}.ogg`,
+                    { type: voiceNoteMimeType },
+                ),
+            );
         };
         recorder.onstart = () => {
             if (recorderRef.current !== recorder) {
@@ -126,7 +143,9 @@ export function VoiceMessageRecorder({
             if (recorderRef.current === recorder) {
                 recorderRef.current = null;
                 setIsStarting(false);
-                setRecordingError('Não foi possível acessar o microfone. Confira a permissão do navegador.');
+                setRecordingError(
+                    'Não foi possível acessar o microfone. Confira a permissão do navegador.',
+                );
             }
 
             closeRecorder(recorder);
@@ -140,10 +159,13 @@ export function VoiceMessageRecorder({
             return;
         }
 
-        void recorder.stop()
+        void recorder
+            .stop()
             .catch(() => {
                 if (recorderRef.current === recorder) {
-                    setRecordingError('Não foi possível finalizar a gravação. Tente novamente.');
+                    setRecordingError(
+                        'Não foi possível finalizar a gravação. Tente novamente.',
+                    );
                 }
             })
             .finally(() => closeRecorder(recorder));
@@ -166,14 +188,22 @@ export function VoiceMessageRecorder({
                         onClick={isRecording ? stopRecording : startRecording}
                     >
                         {isRecording ? <Square /> : <Mic />}
-                        {isStarting ? 'Preparando microfone…' : isRecording ? 'Parar gravação' : 'Gravar áudio'}
+                        {isStarting
+                            ? 'Preparando microfone…'
+                            : isRecording
+                              ? 'Parar gravação'
+                              : 'Gravar áudio'}
                     </Button>
                 ) : (
                     <p className="text-muted-foreground text-xs">
-                        A gravação precisa de um navegador compatível e uma conexão segura. Você ainda pode anexar um arquivo.
+                        A gravação precisa de um navegador compatível e uma
+                        conexão segura. Você ainda pode anexar um arquivo.
                     </p>
                 )}
-                <label htmlFor="inbox-audio" className="text-muted-foreground text-xs">
+                <label
+                    htmlFor="inbox-audio"
+                    className="text-muted-foreground text-xs"
+                >
                     Anexar áudio · até 16 MB
                 </label>
                 <Input
@@ -187,7 +217,13 @@ export function VoiceMessageRecorder({
             </div>
             {file !== null && (
                 <div className="flex flex-wrap items-center gap-2">
-                    <audio ref={audioPreviewRef} controls preload="metadata" className="h-10 max-w-full flex-1" aria-label="Ouvir áudio antes de enviar" />
+                    <audio
+                        ref={audioPreviewRef}
+                        controls
+                        preload="metadata"
+                        className="h-10 max-w-full flex-1"
+                        aria-label="Ouvir áudio antes de enviar"
+                    />
                     <Button
                         type="button"
                         variant="ghost"
@@ -201,9 +237,15 @@ export function VoiceMessageRecorder({
                 </div>
             )}
             {recordingError !== null && (
-                <p className="text-destructive text-xs" role="alert">{recordingError}</p>
+                <p className="text-destructive text-xs" role="alert">
+                    {recordingError}
+                </p>
             )}
-            {error && <p className="text-destructive text-xs" role="alert">{error}</p>}
+            {error && (
+                <p className="text-destructive text-xs" role="alert">
+                    {error}
+                </p>
+            )}
         </div>
     );
 }

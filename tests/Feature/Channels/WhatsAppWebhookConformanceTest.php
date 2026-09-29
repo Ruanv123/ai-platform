@@ -501,7 +501,7 @@ it('records every message and status across entries and changes and starts a res
     expect($outgoingMessage->fresh()->delivery_status)->toBe(MessageDeliveryStatus::Read);
 
     $expectedContactIds = Contact::query()
-        ->whereIn('phone', ['5511999999001', '5511999999002', '5511999999004'])
+        ->whereIn('phone', ['+5511999999001', '+5511999999002', '+5511999999004'])
         ->pluck('id')
         ->sort()
         ->values()

@@ -35,7 +35,10 @@ import {
     show as inboxShow,
     take,
 } from '@/routes/inbox';
-import { pause as pauseAgent, takeOver as takeOverAgent } from '@/routes/inbox/agent';
+import {
+    pause as pauseAgent,
+    takeOver as takeOverAgent,
+} from '@/routes/inbox/agent';
 import { store as messagesStore } from '@/routes/inbox/messages';
 import { VoiceMessageRecorder } from '@/components/inbox-voice-recorder';
 
@@ -161,12 +164,17 @@ type SelectedConversation = {
 
 function failureReasonLabel(failureReason: string | null): string {
     const translatedReasons: Record<string, string> = {
-        customer_care_window_closed: 'Janela de 24 h encerrada · use um Template',
+        customer_care_window_closed:
+            'Janela de 24 h encerrada · use um Template',
         agent_response_failed: 'Falha na resposta do Agente · pausa mantida',
         provider_error: 'Falha no envio · tente novamente',
     };
 
-    return translatedReasons[failureReason ?? ''] ?? failureReason ?? 'Falha no envio · tente novamente';
+    return (
+        translatedReasons[failureReason ?? ''] ??
+        failureReason ??
+        'Falha no envio · tente novamente'
+    );
 }
 
 type Props = {
@@ -195,7 +203,13 @@ type Props = {
     currentUserId: number;
 };
 
-type MessageType = 'text' | 'template' | 'image' | 'document' | 'video' | 'audio';
+type MessageType =
+    | 'text'
+    | 'template'
+    | 'image'
+    | 'document'
+    | 'video'
+    | 'audio';
 
 type OutgoingMediaOption = {
     label: string;
@@ -208,7 +222,10 @@ type OutgoingMediaOption = {
     invalidSizeMessage: string;
 };
 
-const outgoingMediaOptions: Record<'image' | 'document' | 'video' | 'audio', OutgoingMediaOption> = {
+const outgoingMediaOptions: Record<
+    'image' | 'document' | 'video' | 'audio',
+    OutgoingMediaOption
+> = {
     image: {
         label: 'Imagem',
         accept: '.jpg,.jpeg,.png,image/jpeg,image/png',
@@ -235,7 +252,8 @@ const outgoingMediaOptions: Record<'image' | 'document' | 'video' | 'audio', Out
         ],
         maxBytes: 100 * 1024 * 1024,
         maxLabel: '100 MB',
-        invalidTypeMessage: 'Escolha um documento PDF, DOC, DOCX, XLS, XLSX, PPT, PPTX ou TXT.',
+        invalidTypeMessage:
+            'Escolha um documento PDF, DOC, DOCX, XLS, XLSX, PPT, PPTX ou TXT.',
         invalidSizeMessage: 'O documento deve ter no máximo 100 MB.',
     },
     video: {
@@ -252,7 +270,17 @@ const outgoingMediaOptions: Record<'image' | 'document' | 'video' | 'audio', Out
         label: 'Áudio',
         accept: '.ogg,.opus,.mp3,.aac,.mp4,.m4a,audio/ogg,audio/mpeg,audio/aac,audio/mp4,video/mp4',
         extensions: ['ogg', 'opus', 'mp3', 'aac', 'mp4', 'm4a'],
-        mimeTypes: ['audio/ogg', 'application/ogg', 'audio/opus', 'audio/mpeg', 'audio/mp3', 'audio/aac', 'audio/x-aac', 'audio/mp4', 'video/mp4'],
+        mimeTypes: [
+            'audio/ogg',
+            'application/ogg',
+            'audio/opus',
+            'audio/mpeg',
+            'audio/mp3',
+            'audio/aac',
+            'audio/x-aac',
+            'audio/mp4',
+            'video/mp4',
+        ],
         maxBytes: 16 * 1024 * 1024,
         maxLabel: '16 MB',
         invalidTypeMessage: 'Escolha um áudio OGG/Opus, MP3, AAC ou MP4.',
@@ -268,11 +296,17 @@ const deliveryStatusLabels: Record<string, string> = {
     failed: 'Falhou',
 };
 
-function outgoingMediaValidationMessage(file: File, type: 'image' | 'document' | 'video' | 'audio'): string | null {
+function outgoingMediaValidationMessage(
+    file: File,
+    type: 'image' | 'document' | 'video' | 'audio',
+): string | null {
     const option = outgoingMediaOptions[type];
     const extension = file.name.split('.').pop()?.toLowerCase();
     const mimeType = file.type.split(';')[0]?.trim().toLowerCase() ?? '';
-    if (!option.extensions.includes(extension ?? '') || (mimeType !== '' && !option.mimeTypes.includes(mimeType))) {
+    if (
+        !option.extensions.includes(extension ?? '') ||
+        (mimeType !== '' && !option.mimeTypes.includes(mimeType))
+    ) {
         return option.invalidTypeMessage;
     }
 
@@ -283,8 +317,15 @@ function outgoingMediaValidationMessage(file: File, type: 'image' | 'document' |
     return null;
 }
 
-function isOutgoingMediaType(type: MessageType): type is keyof typeof outgoingMediaOptions {
-    return type === 'image' || type === 'document' || type === 'video' || type === 'audio';
+function isOutgoingMediaType(
+    type: MessageType,
+): type is keyof typeof outgoingMediaOptions {
+    return (
+        type === 'image' ||
+        type === 'document' ||
+        type === 'video' ||
+        type === 'audio'
+    );
 }
 
 const realtimeProps = ['conversations', 'counts', 'selected'];
@@ -475,7 +516,9 @@ function ConversationsPanel({
                 <select
                     value={filters.state}
                     onChange={(event) =>
-                        onUpdateFilters({ state: event.target.value || undefined })
+                        onUpdateFilters({
+                            state: event.target.value || undefined,
+                        })
                     }
                     className="border-border/70 bg-background mt-2 h-[30px] w-full rounded-md border px-2 text-[11.5px]"
                     aria-label="Estado da conversa"
@@ -534,7 +577,9 @@ function ConversationsPanel({
                                 <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
                                     {conversation.state === 'agent' ? (
                                         <span className="bg-signal-live/10 text-signal-live rounded-md px-1.5 py-0.5 text-[10px] font-semibold">
-                                            {conversation.agentPaused ? 'Pausa da IA' : 'Agente ativo'}
+                                            {conversation.agentPaused
+                                                ? 'Pausa da IA'
+                                                : 'Agente ativo'}
                                         </span>
                                     ) : (
                                         <>
@@ -546,7 +591,8 @@ function ConversationsPanel({
                                                     className={cn(
                                                         'rounded-md px-1.5 py-0.5 text-[10px] font-semibold',
                                                         reasonBadgeClass(
-                                                            conversation.reason.code,
+                                                            conversation.reason
+                                                                .code,
                                                         ),
                                                     )}
                                                 >
@@ -555,11 +601,12 @@ function ConversationsPanel({
                                             )}
                                         </>
                                     )}
-                                    {conversation.state === 'flow' && conversation.assignee === null && (
-                                        <span className="border-border text-muted-foreground rounded-md border px-1.5 py-0.5 text-[10px] font-semibold">
-                                            não atribuída
-                                        </span>
-                                    )}
+                                    {conversation.state === 'flow' &&
+                                        conversation.assignee === null && (
+                                            <span className="border-border text-muted-foreground rounded-md border px-1.5 py-0.5 text-[10px] font-semibold">
+                                                não atribuída
+                                            </span>
+                                        )}
                                     {conversation.assignee !== null && (
                                         <span className="bg-muted inline-flex items-center gap-1 rounded-full py-0.5 pr-2 pl-0.5 text-[10px] font-semibold">
                                             <span className="bg-border flex size-3.5 items-center justify-center rounded-full text-[8px]">
@@ -577,12 +624,14 @@ function ConversationsPanel({
                                         <span
                                             className={cn(
                                                 'ml-auto text-[10.5px]',
-                                                conversation.channel.status === 'connected'
+                                                conversation.channel.status ===
+                                                    'connected'
                                                     ? 'text-muted-foreground'
                                                     : 'text-destructive font-semibold',
                                             )}
                                         >
-                                            {conversation.channel.status === 'connected'
+                                            {conversation.channel.status ===
+                                            'connected'
                                                 ? conversation.channel.label
                                                 : `${conversation.channel.label} · ${conversation.channel.statusLabel}`}
                                         </span>
@@ -708,8 +757,7 @@ function ConversationThread({
                 if (
                     messageScroll === null ||
                     !anchor.isConnected ||
-                    (!isInitialPlacement &&
-                        !shouldFollowLatestRef.current)
+                    (!isInitialPlacement && !shouldFollowLatestRef.current)
                 ) {
                     return;
                 }
@@ -740,11 +788,12 @@ function ConversationThread({
     const selectedTemplate = selected.templates.find(
         (template) => template.name === form.data.template,
     );
-    const templateMediaType = selectedTemplate?.headerType === 'IMAGE'
-        ? 'image'
-        : selectedTemplate?.headerType === 'DOCUMENT'
-          ? 'document'
-          : null;
+    const templateMediaType =
+        selectedTemplate?.headerType === 'IMAGE'
+            ? 'image'
+            : selectedTemplate?.headerType === 'DOCUMENT'
+              ? 'document'
+              : null;
     const isVideoTemplate = selectedTemplate?.headerType === 'VIDEO';
 
     const sendMessage = (event: FormEvent<HTMLFormElement>) => {
@@ -760,18 +809,21 @@ function ConversationThread({
                           .filter(Boolean)
                     : [],
         }));
-        form.post(messagesStore({
-            contact: selected.contact.id,
-            channel: selected.channel.id,
-        }).url, {
-            preserveScroll: true,
-            onSuccess: () => {
-                form.reset('content', 'template', 'parameters', 'media');
-                if (mediaInputRef.current !== null) {
-                    mediaInputRef.current.value = '';
-                }
+        form.post(
+            messagesStore({
+                contact: selected.contact.id,
+                channel: selected.channel.id,
+            }).url,
+            {
+                preserveScroll: true,
+                onSuccess: () => {
+                    form.reset('content', 'template', 'parameters', 'media');
+                    if (mediaInputRef.current !== null) {
+                        mediaInputRef.current.value = '';
+                    }
+                },
             },
-        });
+        );
     };
 
     const selectMessageType = (type: MessageType) => {
@@ -794,11 +846,12 @@ function ConversationThread({
             return;
         }
 
-        const selectedMediaType = messageType === 'template'
-            ? templateMediaType
-            : isOutgoingMediaType(messageType)
-              ? messageType
-              : null;
+        const selectedMediaType =
+            messageType === 'template'
+                ? templateMediaType
+                : isOutgoingMediaType(messageType)
+                  ? messageType
+                  : null;
         if (selectedMediaType === null) {
             form.setData('media', null);
             return;
@@ -838,33 +891,47 @@ function ConversationThread({
     };
 
     const takeConversation = () => {
-        router.post(take({
-            contact: selected.contact.id,
-            channel: selected.channel.id,
-        }).url, undefined, {
-            preserveScroll: true,
-        });
+        router.post(
+            take({
+                contact: selected.contact.id,
+                channel: selected.channel.id,
+            }).url,
+            undefined,
+            {
+                preserveScroll: true,
+            },
+        );
     };
 
     const returnConversation = () => {
-        router.post(returnMethod({
-            contact: selected.contact.id,
-            channel: selected.channel.id,
-        }).url);
+        router.post(
+            returnMethod({
+                contact: selected.contact.id,
+                channel: selected.channel.id,
+            }).url,
+        );
     };
 
     const pauseAgentConversation = () => {
-        router.post(pauseAgent({
-            contact: selected.contact.id,
-            channel: selected.channel.id,
-        }).url, undefined, { preserveScroll: true });
+        router.post(
+            pauseAgent({
+                contact: selected.contact.id,
+                channel: selected.channel.id,
+            }).url,
+            undefined,
+            { preserveScroll: true },
+        );
     };
 
     const takeOverAgentConversation = () => {
-        router.post(takeOverAgent({
-            contact: selected.contact.id,
-            channel: selected.channel.id,
-        }).url, undefined, { preserveScroll: true });
+        router.post(
+            takeOverAgent({
+                contact: selected.contact.id,
+                channel: selected.channel.id,
+            }).url,
+            undefined,
+            { preserveScroll: true },
+        );
     };
 
     return (
@@ -965,7 +1032,8 @@ function ConversationThread({
                 <div className="flex justify-center">
                     <span className="border-border/70 bg-background text-muted-foreground flex items-center gap-1.5 rounded-full border px-3 py-1 text-[11px] font-medium">
                         <Bot className="text-signal-attention size-3.5" />
-                        {selected.state === 'flow' && selected.execution !== null
+                        {selected.state === 'flow' &&
+                        selected.execution !== null
                             ? `O Fluxo ${selected.execution.flowName} transferiu esta conversa para atendimento humano`
                             : selected.agentPaused
                               ? 'O Agente está pausado nesta conversa'
@@ -988,263 +1056,306 @@ function ConversationThread({
             </div>
 
             {selected.state === 'flow' || selected.canWrite ? (
-            <div className="border-border/70 bg-background shrink-0 border-t p-4">
-                {!selected.channel.available && (
-                    <div className="border-destructive/40 bg-destructive/10 text-foreground mb-3 rounded-lg border px-3 py-2 text-sm">
-                        Envio bloqueado: Canal {selected.channel.statusLabel.toLowerCase()}.
-                    </div>
-                )}
-                {selected.channel.available && !selected.canWrite && (
-                    <div className="border-signal-attention/40 bg-signal-attention/10 text-foreground mb-3 rounded-lg border px-3 py-2 text-sm">
-                        {selected.assignee === null
-                            ? 'Assuma a conversa antes de escrever.'
-                            : `${selected.assignee.name} está atendendo esta conversa. Você precisa assumir antes de escrever.`}
-                    </div>
-                )}
-                {selected.state === 'agent' && !selected.agentPaused && (
-                    <div className="border-signal-attention/40 bg-signal-attention/10 text-foreground mb-3 rounded-lg border px-3 py-2 text-sm">
-                        Enviar uma Mensagem pausará o Agente e atribuirá a conversa a você.
-                    </div>
-                )}
-                <form onSubmit={sendMessage} className="grid gap-2">
-                    <div className="flex flex-wrap gap-1">
-                        <button
-                            type="button"
-                            onClick={() => selectMessageType('text')}
-                            className={cn(
-                                'rounded px-2 py-1 text-xs font-medium',
-                                messageType === 'text'
-                                    ? 'bg-muted text-foreground'
-                                    : 'text-muted-foreground',
-                            )}
-                        >
-                            Resposta livre
-                        </button>
-                        <button
-                            type="button"
-                            onClick={() => selectMessageType('template')}
-                            className={cn(
-                                'rounded px-2 py-1 text-xs font-medium',
-                                messageType === 'template'
-                                    ? 'bg-muted text-foreground'
-                                    : 'text-muted-foreground',
-                            )}
-                        >
-                            Template
-                        </button>
-                        {(['image', 'document', 'video', 'audio'] as const).map((type) => {
-                            const Icon = {
-                                image: ImagePlus,
-                                document: FileText,
-                                video: Video,
-                                audio: Mic,
-                            }[type];
-
-                            return (
-                                <button
-                                    key={type}
-                                    type="button"
-                                    onClick={() => selectMessageType(type)}
-                                    aria-pressed={messageType === type}
-                                    className={cn(
-                                        'inline-flex items-center gap-1 rounded px-2 py-1 text-xs font-medium',
-                                        messageType === type
-                                            ? 'bg-muted text-foreground'
-                                            : 'text-muted-foreground',
-                                    )}
-                                >
-                                    <Icon className="size-3.5" />
-                                    {outgoingMediaOptions[type].label}
-                                </button>
-                            );
-                        })}
-                    </div>
-                    {messageType === 'template' ? (
-                        <>
-                            <Input
-                                value={form.data.template}
-                                list="approved-whatsapp-templates"
-                                onChange={(event) => {
-                                    form.setData((data) => ({
-                                        ...data,
-                                        template: event.target.value,
-                                        media: null,
-                                    }));
-                                    form.clearErrors('media');
-                                    if (mediaInputRef.current !== null) {
-                                        mediaInputRef.current.value = '';
-                                    }
-                                }}
-                                placeholder="Nome do Template aprovado"
-                                disabled={!selected.canSend || form.processing}
-                            />
-                            <datalist id="approved-whatsapp-templates">
-                                {selected.templates.map((template) => (
-                                    <option key={template.name} value={template.name}>
-                                        {template.language}
-                                    </option>
-                                ))}
-                            </datalist>
-                            {isVideoTemplate && (
-                                <p className="text-signal-attention text-xs" role="status">
-                                    Templates com cabeçalho de vídeo ainda não podem ser enviados por aqui.
-                                </p>
-                            )}
-                            {templateMediaType !== null && (
-                                <div className="grid gap-1.5">
-                                    <label htmlFor="inbox-template-media" className="text-muted-foreground text-xs">
-                                        {outgoingMediaOptions[templateMediaType].label} · até{' '}
-                                        {outgoingMediaOptions[templateMediaType].maxLabel}
-                                    </label>
-                                    <input
-                                        ref={mediaInputRef}
-                                        id="inbox-template-media"
-                                        type="file"
-                                        accept={outgoingMediaOptions[templateMediaType].accept}
-                                        onChange={selectMediaFile}
-                                        required
-                                        disabled={!selected.canSend || form.processing}
-                                        className="border-border/70 file:bg-muted file:text-foreground rounded-lg border px-3 py-2 text-xs file:mr-3 file:rounded file:border-0 file:px-2 file:py-1"
-                                    />
-                                    <span className="text-muted-foreground text-xs">
-                                        {form.data.media?.name ?? 'Selecione o arquivo para este Contato.'}
-                                    </span>
-                                </div>
-                            )}
-                            <textarea
-                                value={form.data.parameters}
-                                onChange={(event) =>
-                                    form.setData(
-                                        'parameters',
-                                        event.target.value,
-                                    )
-                                }
-                                placeholder="Um parâmetro por linha (opcional)"
-                                className="border-border/70 placeholder:text-muted-foreground min-h-[60px] w-full resize-y rounded-lg border bg-transparent px-3 py-2.5 text-sm outline-none focus-visible:ring-2"
-                                disabled={!selected.canSend || form.processing}
-                            />
-                        </>
-                    ) : messageType === 'text' ? (
-                        <textarea
-                            value={form.data.content}
-                            onChange={(event) =>
-                                form.setData('content', event.target.value)
-                            }
-                            placeholder={
-                                selected.canWrite
-                                    ? 'Escreva uma resposta…'
-                                    : 'Assuma a conversa para responder…'
-                            }
-                            className="border-border/70 placeholder:text-muted-foreground min-h-[60px] w-full resize-y rounded-lg border bg-transparent px-3 py-2.5 text-sm outline-none focus-visible:ring-2 disabled:cursor-not-allowed disabled:opacity-50"
-                            disabled={
-                                !selected.canSend ||
-                                !selected.window.open ||
-                                form.processing
-                            }
-                        />
-                    ) : messageType === 'audio' ? (
-                        <VoiceMessageRecorder
-                            key={`${selected.contact.id}:${selected.channel.id}`}
-                            disabled={
-                                !selected.canSend ||
-                                !selected.window.open ||
-                                form.processing
-                            }
-                            file={form.data.media}
-                            error={form.errors.media}
-                            onFileChange={selectOutgoingAudio}
-                        />
-                    ) : (
-                        <div className="grid gap-1.5">
-                            <label
-                                htmlFor="inbox-media"
-                                className="text-muted-foreground text-xs"
+                <div className="border-border/70 bg-background shrink-0 border-t p-4">
+                    {!selected.channel.available && (
+                        <div className="border-destructive/40 bg-destructive/10 text-foreground mb-3 rounded-lg border px-3 py-2 text-sm">
+                            Envio bloqueado: Canal{' '}
+                            {selected.channel.statusLabel.toLowerCase()}.
+                        </div>
+                    )}
+                    {selected.channel.available && !selected.canWrite && (
+                        <div className="border-signal-attention/40 bg-signal-attention/10 text-foreground mb-3 rounded-lg border px-3 py-2 text-sm">
+                            {selected.assignee === null
+                                ? 'Assuma a conversa antes de escrever.'
+                                : `${selected.assignee.name} está atendendo esta conversa. Você precisa assumir antes de escrever.`}
+                        </div>
+                    )}
+                    {selected.state === 'agent' && !selected.agentPaused && (
+                        <div className="border-signal-attention/40 bg-signal-attention/10 text-foreground mb-3 rounded-lg border px-3 py-2 text-sm">
+                            Enviar uma Mensagem pausará o Agente e atribuirá a
+                            conversa a você.
+                        </div>
+                    )}
+                    <form onSubmit={sendMessage} className="grid gap-2">
+                        <div className="flex flex-wrap gap-1">
+                            <button
+                                type="button"
+                                onClick={() => selectMessageType('text')}
+                                className={cn(
+                                    'rounded px-2 py-1 text-xs font-medium',
+                                    messageType === 'text'
+                                        ? 'bg-muted text-foreground'
+                                        : 'text-muted-foreground',
+                                )}
                             >
-                                {outgoingMediaOptions[messageType].label} · até{' '}
-                                {outgoingMediaOptions[messageType].maxLabel}
-                            </label>
-                            <input
-                                ref={mediaInputRef}
-                                id="inbox-media"
-                                type="file"
-                                accept={outgoingMediaOptions[messageType].accept}
-                                onChange={selectMediaFile}
+                                Resposta livre
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => selectMessageType('template')}
+                                className={cn(
+                                    'rounded px-2 py-1 text-xs font-medium',
+                                    messageType === 'template'
+                                        ? 'bg-muted text-foreground'
+                                        : 'text-muted-foreground',
+                                )}
+                            >
+                                Template
+                            </button>
+                            {(
+                                ['image', 'document', 'video', 'audio'] as const
+                            ).map((type) => {
+                                const Icon = {
+                                    image: ImagePlus,
+                                    document: FileText,
+                                    video: Video,
+                                    audio: Mic,
+                                }[type];
+
+                                return (
+                                    <button
+                                        key={type}
+                                        type="button"
+                                        onClick={() => selectMessageType(type)}
+                                        aria-pressed={messageType === type}
+                                        className={cn(
+                                            'inline-flex items-center gap-1 rounded px-2 py-1 text-xs font-medium',
+                                            messageType === type
+                                                ? 'bg-muted text-foreground'
+                                                : 'text-muted-foreground',
+                                        )}
+                                    >
+                                        <Icon className="size-3.5" />
+                                        {outgoingMediaOptions[type].label}
+                                    </button>
+                                );
+                            })}
+                        </div>
+                        {messageType === 'template' ? (
+                            <>
+                                <Input
+                                    value={form.data.template}
+                                    list="approved-whatsapp-templates"
+                                    onChange={(event) => {
+                                        form.setData((data) => ({
+                                            ...data,
+                                            template: event.target.value,
+                                            media: null,
+                                        }));
+                                        form.clearErrors('media');
+                                        if (mediaInputRef.current !== null) {
+                                            mediaInputRef.current.value = '';
+                                        }
+                                    }}
+                                    placeholder="Nome do Template aprovado"
+                                    disabled={
+                                        !selected.canSend || form.processing
+                                    }
+                                />
+                                <datalist id="approved-whatsapp-templates">
+                                    {selected.templates.map((template) => (
+                                        <option
+                                            key={template.name}
+                                            value={template.name}
+                                        >
+                                            {template.language}
+                                        </option>
+                                    ))}
+                                </datalist>
+                                {isVideoTemplate && (
+                                    <p
+                                        className="text-signal-attention text-xs"
+                                        role="status"
+                                    >
+                                        Templates com cabeçalho de vídeo ainda
+                                        não podem ser enviados por aqui.
+                                    </p>
+                                )}
+                                {templateMediaType !== null && (
+                                    <div className="grid gap-1.5">
+                                        <label
+                                            htmlFor="inbox-template-media"
+                                            className="text-muted-foreground text-xs"
+                                        >
+                                            {
+                                                outgoingMediaOptions[
+                                                    templateMediaType
+                                                ].label
+                                            }{' '}
+                                            · até{' '}
+                                            {
+                                                outgoingMediaOptions[
+                                                    templateMediaType
+                                                ].maxLabel
+                                            }
+                                        </label>
+                                        <input
+                                            ref={mediaInputRef}
+                                            id="inbox-template-media"
+                                            type="file"
+                                            accept={
+                                                outgoingMediaOptions[
+                                                    templateMediaType
+                                                ].accept
+                                            }
+                                            onChange={selectMediaFile}
+                                            required
+                                            disabled={
+                                                !selected.canSend ||
+                                                form.processing
+                                            }
+                                            className="border-border/70 file:bg-muted file:text-foreground rounded-lg border px-3 py-2 text-xs file:mr-3 file:rounded file:border-0 file:px-2 file:py-1"
+                                        />
+                                        <span className="text-muted-foreground text-xs">
+                                            {form.data.media?.name ??
+                                                'Selecione o arquivo para este Contato.'}
+                                        </span>
+                                    </div>
+                                )}
+                                <textarea
+                                    value={form.data.parameters}
+                                    onChange={(event) =>
+                                        form.setData(
+                                            'parameters',
+                                            event.target.value,
+                                        )
+                                    }
+                                    placeholder="Um parâmetro por linha (opcional)"
+                                    className="border-border/70 placeholder:text-muted-foreground min-h-[60px] w-full resize-y rounded-lg border bg-transparent px-3 py-2.5 text-sm outline-none focus-visible:ring-2"
+                                    disabled={
+                                        !selected.canSend || form.processing
+                                    }
+                                />
+                            </>
+                        ) : messageType === 'text' ? (
+                            <textarea
+                                value={form.data.content}
+                                onChange={(event) =>
+                                    form.setData('content', event.target.value)
+                                }
+                                placeholder={
+                                    selected.canWrite
+                                        ? 'Escreva uma resposta…'
+                                        : 'Assuma a conversa para responder…'
+                                }
+                                className="border-border/70 placeholder:text-muted-foreground min-h-[60px] w-full resize-y rounded-lg border bg-transparent px-3 py-2.5 text-sm outline-none focus-visible:ring-2 disabled:cursor-not-allowed disabled:opacity-50"
                                 disabled={
                                     !selected.canSend ||
                                     !selected.window.open ||
                                     form.processing
                                 }
-                                className="border-border/70 file:bg-muted file:text-foreground rounded-lg border px-3 py-2 text-xs file:mr-3 file:rounded file:border-0 file:px-2 file:py-1"
                             />
-                            <span className="text-muted-foreground text-xs">
-                                {form.data.media?.name ?? 'Selecione um arquivo para anexar.'}
-                            </span>
-                        </div>
-                    )}
-                    {form.errors.content && (
-                        <p className="text-destructive text-xs">
-                            {form.errors.content}
-                        </p>
-                    )}
-                    {form.errors.media && (
-                        <p className="text-destructive text-xs" role="alert">
-                            {form.errors.media}
-                        </p>
-                    )}
-                    <div className="flex flex-wrap items-center gap-3">
-                        {selected.window.open ? (
-                            <span className="text-muted-foreground flex items-center gap-1.5 text-[11px]">
-                                <Clock3 className="text-signal-live size-3.5" />
-                                Janela de 24 h aberta ·{' '}
-                                {formatRemaining(
-                                    selected.window.remainingSeconds,
-                                )}
-                            </span>
+                        ) : messageType === 'audio' ? (
+                            <VoiceMessageRecorder
+                                key={`${selected.contact.id}:${selected.channel.id}`}
+                                disabled={
+                                    !selected.canSend ||
+                                    !selected.window.open ||
+                                    form.processing
+                                }
+                                file={form.data.media}
+                                error={form.errors.media}
+                                onFileChange={selectOutgoingAudio}
+                            />
                         ) : (
-                            <span className="text-destructive flex items-center gap-1.5 text-[11px] font-medium">
-                                <Clock3 className="size-3.5" />
-                                Janela de 24 h encerrada · somente Template
-                            </span>
+                            <div className="grid gap-1.5">
+                                <label
+                                    htmlFor="inbox-media"
+                                    className="text-muted-foreground text-xs"
+                                >
+                                    {outgoingMediaOptions[messageType].label} ·
+                                    até{' '}
+                                    {outgoingMediaOptions[messageType].maxLabel}
+                                </label>
+                                <input
+                                    ref={mediaInputRef}
+                                    id="inbox-media"
+                                    type="file"
+                                    accept={
+                                        outgoingMediaOptions[messageType].accept
+                                    }
+                                    onChange={selectMediaFile}
+                                    disabled={
+                                        !selected.canSend ||
+                                        !selected.window.open ||
+                                        form.processing
+                                    }
+                                    className="border-border/70 file:bg-muted file:text-foreground rounded-lg border px-3 py-2 text-xs file:mr-3 file:rounded file:border-0 file:px-2 file:py-1"
+                                />
+                                <span className="text-muted-foreground text-xs">
+                                    {form.data.media?.name ??
+                                        'Selecione um arquivo para anexar.'}
+                                </span>
+                            </div>
                         )}
-                        <span className="flex-1" />
-                        {selected.state === 'flow' && (
-                            <Button
-                                type="button"
-                                variant="outline"
-                                size="sm"
-                                onClick={returnConversation}
+                        {form.errors.content && (
+                            <p className="text-destructive text-xs">
+                                {form.errors.content}
+                            </p>
+                        )}
+                        {form.errors.media && (
+                            <p
+                                className="text-destructive text-xs"
+                                role="alert"
                             >
-                                Devolver ao bot
-                            </Button>
+                                {form.errors.media}
+                            </p>
                         )}
-                        {selected.canReturn && (
+                        <div className="flex flex-wrap items-center gap-3">
+                            {selected.window.open ? (
+                                <span className="text-muted-foreground flex items-center gap-1.5 text-[11px]">
+                                    <Clock3 className="text-signal-live size-3.5" />
+                                    Janela de 24 h aberta ·{' '}
+                                    {formatRemaining(
+                                        selected.window.remainingSeconds,
+                                    )}
+                                </span>
+                            ) : (
+                                <span className="text-destructive flex items-center gap-1.5 text-[11px] font-medium">
+                                    <Clock3 className="size-3.5" />
+                                    Janela de 24 h encerrada · somente Template
+                                </span>
+                            )}
+                            <span className="flex-1" />
+                            {selected.state === 'flow' && (
+                                <Button
+                                    type="button"
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={returnConversation}
+                                >
+                                    Devolver ao bot
+                                </Button>
+                            )}
+                            {selected.canReturn && (
+                                <Button
+                                    type="button"
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={returnConversation}
+                                >
+                                    Devolver ao Agente
+                                </Button>
+                            )}
                             <Button
-                                type="button"
-                                variant="outline"
+                                type="submit"
                                 size="sm"
-                                onClick={returnConversation}
+                                disabled={
+                                    !selected.canSend ||
+                                    form.processing ||
+                                    isVideoTemplate ||
+                                    (templateMediaType !== null &&
+                                        form.data.media === null) ||
+                                    (messageType !== 'template' &&
+                                        !selected.window.open)
+                                }
                             >
-                                Devolver ao Agente
+                                <Send />
+                                Enviar
                             </Button>
-                        )}
-                        <Button
-                            type="submit"
-                            size="sm"
-                            disabled={
-                                !selected.canSend ||
-                                form.processing ||
-                                isVideoTemplate ||
-                                (templateMediaType !== null && form.data.media === null) ||
-                                (messageType !== 'template' &&
-                                    !selected.window.open)
-                            }
-                        >
-                            <Send />
-                            Enviar
-                        </Button>
-                    </div>
-                </form>
-            </div>
+                        </div>
+                    </form>
+                </div>
             ) : (
                 <div className="border-border/70 bg-background text-muted-foreground shrink-0 border-t px-4 py-3 text-center text-xs">
                     {selected.agentPaused
@@ -1264,7 +1375,9 @@ function MessageBubble({ message }: { message: Message }) {
     if (message.payloadType === 'template' && content !== null) {
         try {
             const template = JSON.parse(content) as { template?: string };
-            content = template.template ? `Template aprovado: ${template.template}` : 'Template aprovado';
+            content = template.template
+                ? `Template aprovado: ${template.template}`
+                : 'Template aprovado';
         } catch {
             content = 'Template aprovado';
         }
@@ -1299,13 +1412,22 @@ function MessageBubble({ message }: { message: Message }) {
                         {message.reactionEmoji}
                     </span>
                 )}
-                {mediaType !== null && message.mediaUrl !== null && !mediaUnavailable ? (
+                {mediaType !== null &&
+                message.mediaUrl !== null &&
+                !mediaUnavailable ? (
                     <div className="mb-2.5">
                         {mediaType === 'image' && (
-                            <a href={message.mediaUrl} target="_blank" rel="noreferrer">
+                            <a
+                                href={message.mediaUrl}
+                                target="_blank"
+                                rel="noreferrer"
+                            >
                                 <img
                                     src={message.mediaUrl}
-                                    alt={message.mediaFilename ?? 'Imagem da mensagem'}
+                                    alt={
+                                        message.mediaFilename ??
+                                        'Imagem da mensagem'
+                                    }
                                     className="max-h-72 max-w-full rounded-lg object-contain"
                                     onError={() => setMediaUnavailable(true)}
                                 />
@@ -1318,8 +1440,12 @@ function MessageBubble({ message }: { message: Message }) {
                                 className="max-w-full"
                                 onError={() => setMediaUnavailable(true)}
                             >
-                                <source src={message.mediaUrl} type={message.mediaMimeType ?? undefined} />
-                                Seu navegador não conseguiu reproduzir este áudio.
+                                <source
+                                    src={message.mediaUrl}
+                                    type={message.mediaMimeType ?? undefined}
+                                />
+                                Seu navegador não conseguiu reproduzir este
+                                áudio.
                             </audio>
                         )}
                         {mediaType === 'video' && (
@@ -1329,8 +1455,12 @@ function MessageBubble({ message }: { message: Message }) {
                                 className="max-h-80 max-w-full rounded-lg"
                                 onError={() => setMediaUnavailable(true)}
                             >
-                                <source src={message.mediaUrl} type={message.mediaMimeType ?? undefined} />
-                                Seu navegador não conseguiu reproduzir este vídeo.
+                                <source
+                                    src={message.mediaUrl}
+                                    type={message.mediaMimeType ?? undefined}
+                                />
+                                Seu navegador não conseguiu reproduzir este
+                                vídeo.
                             </video>
                         )}
                         {mediaType === 'document' && (
@@ -1351,14 +1481,14 @@ function MessageBubble({ message }: { message: Message }) {
                     (!message.mediaAvailable ||
                         message.mediaUrl === null ||
                         mediaUnavailable) && (
-                    <p className="text-muted-foreground mb-2 text-xs italic">
-                        Mídia original indisponível
-                    </p>
-                )}
+                        <p className="text-muted-foreground mb-2 text-xs italic">
+                            Mídia original indisponível
+                        </p>
+                    )}
                 <p className="break-words whitespace-pre-wrap">
                     {unsupported
                         ? 'Tipo de mensagem não suportado'
-                        : content ?? `[${message.payloadType}]`}
+                        : (content ?? `[${message.payloadType}]`)}
                 </p>
                 {message.deliveryStatus === 'failed' && (
                     <span className="text-destructive mt-1 block text-[10px] font-semibold">
@@ -1375,7 +1505,12 @@ function MessageBubble({ message }: { message: Message }) {
                 >
                     {message.sender} · {formatDate(message.createdAt)}
                     {outgoing && message.deliveryStatus !== null && (
-                        <> · {deliveryStatusLabels[message.deliveryStatus] ?? 'Enviada'}</>
+                        <>
+                            {' '}
+                            ·{' '}
+                            {deliveryStatusLabels[message.deliveryStatus] ??
+                                'Enviada'}
+                        </>
                     )}
                 </span>
             </div>
@@ -1399,7 +1534,8 @@ function HistoryPanel({ history }: { history: MessagePage }) {
                             <strong>{message.sender}</strong> ·{' '}
                             {isUnsupportedMessage(message)
                                 ? 'Tipo de mensagem não suportado'
-                                : message.content ?? `[${message.payloadType}]`}
+                                : (message.content ??
+                                  `[${message.payloadType}]`)}
                         </span>
                         <span className="text-muted-foreground shrink-0">
                             {message.channel}
@@ -1500,14 +1636,16 @@ function ContactPanel({ selected }: { selected: SelectedConversation }) {
                             {selected.execution.flowName}
                         </div>
                         <div className="text-muted-foreground mt-0.5 text-[11px]">
-                            #{selected.execution.id} · v{selected.execution.version}
+                            #{selected.execution.id} · v
+                            {selected.execution.version}
                             {' · '}
                             {selected.execution.nodeName}
                         </div>
                         <div className="bg-muted mt-2 flex items-center gap-1.5 rounded-md px-2.5 py-1.5">
                             <span className="bg-signal-attention size-1.5 shrink-0 rounded-full" />
                             <span className="text-[11.5px] font-medium">
-                                {selected.reason?.label ?? 'Atendimento transferido'}
+                                {selected.reason?.label ??
+                                    'Atendimento transferido'}
                             </span>
                         </div>
                         <Link

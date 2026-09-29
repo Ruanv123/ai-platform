@@ -16,6 +16,9 @@ use Tests\TestCase;
 
 pest()->extend(TestCase::class)
     ->use(RefreshDatabase::class)
+    ->beforeEach(function (): void {
+        config(['inertia.ssr.enabled' => false]);
+    })
     ->in('Feature');
 
 /*

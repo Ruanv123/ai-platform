@@ -16,6 +16,7 @@ use App\Models\WhatsAppAccount;
 use App\Models\WhatsAppPhoneNumber;
 use App\Models\WhatsAppTemplate;
 use App\Models\WhatsAppTestConnection;
+use App\WhatsApp\E164PhoneNumber;
 use Illuminate\Http\Client\Request;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Http;
@@ -62,6 +63,15 @@ function mediaSendingExecution(User $user, ChannelType $channelType): FlowExecut
             'human_transfer_reason' => 'contact_requested',
             'wake_at' => now()->addDay(),
         ]);
+}
+
+/** @return array{contact: int, channel: string} */
+function mediaSendingConversationParams(FlowExecution $execution): array
+{
+    return [
+        'contact' => $execution->contact_id,
+        'channel' => $execution->channel_id,
+    ];
 }
 
 function validOutgoingMedia(string $type): UploadedFile
@@ -157,7 +167,7 @@ it('sends an outgoing media message through the conversation route', function (C
             && collect($request->data())->firstWhere('name', 'messaging_product')['contents'] === 'whatsapp');
         Http::assertSent(fn (Request $request): bool => $request->url() === $graphMessagesUrl
             && $request->data()['messaging_product'] === 'whatsapp'
-            && $request->data()['to'] === $execution->contact->phone
+            && $request->data()['to'] === E164PhoneNumber::recipient($execution->contact->phone)
             && $request->data()['type'] === $type
             && $request->data()[$type]['id'] === 'meta-uploaded-media-id'
             && ($type !== 'audio' || $request->data()['audio']['voice'] === true));
@@ -166,24 +176,24 @@ it('sends an outgoing media message through the conversation route', function (C
         Http::assertSent(fn (Request $request): bool => $request->url() === 'https://evolution.test/send/media'
             && $request->isMultipart()
             && $request->hasFile('file', null, $file->getClientOriginalName())
-            && collect($request->data())->firstWhere('name', 'number')['contents'] === $execution->contact->phone
+            && collect($request->data())->firstWhere('name', 'number')['contents'] === E164PhoneNumber::recipient($execution->contact->phone)
             && collect($request->data())->firstWhere('name', 'type')['contents'] === $type
             && collect($request->data())->firstWhere('name', 'filename')['contents'] === $file->getClientOriginalName()
             && $request->hasHeader('apikey', 'media-sending-token'));
         Http::assertSentCount(1);
     }
 
-    $this->actingAs($user)
-        ->get(route('inbox.show', [$execution->contact, $execution->channel]))
-        ->assertInertia(fn ($page) => $page
-            ->where('selected.messages.data.1.payloadType', $type)
-            ->where('selected.messages.data.1.deliveryStatus', 'sent')
-            ->where('selected.messages.data.1.mediaAvailable', true)
-            ->where('selected.messages.data.1.mediaUrl', route('inbox.messages.media', [
-                $execution->contact,
-                $execution->channel,
-                $outgoingMessage,
-            ])));
+    $inboxResponse = $this->actingAs($user)
+        ->get(route('inbox.show', [$execution->contact, $execution->channel]));
+    $inboxResponse->assertInertia(fn ($page) => $page
+        ->where('selected.messages.data.1.payloadType', $type)
+        ->where('selected.messages.data.1.deliveryStatus', 'sent')
+        ->where('selected.messages.data.1.mediaAvailable', true)
+        ->where('selected.messages.data.1.mediaUrl', route('inbox.messages.media', [
+            $execution->contact,
+            $execution->channel,
+            $outgoingMessage,
+        ])));
 })->with('outgoing media by WhatsApp channel');
 
 it('accepts supported audio attachment formats through the conversation route', function (UploadedFile $file, bool $isVoiceNote) {
@@ -255,17 +265,17 @@ it('uploads a recipient file and sends it in an approved media header template',
     $file = UploadedFile::fake()->create('exame.png', 1, 'image/png');
 
     $this->actingAs($user)
-        ->post(route('inbox.take', inboxConversationParams($execution)))
-        ->assertRedirect(route('inbox.show', inboxConversationParams($execution)));
+        ->post(route('inbox.take', mediaSendingConversationParams($execution)))
+        ->assertRedirect(route('inbox.show', mediaSendingConversationParams($execution)));
 
     $this->actingAs($user)
-        ->post(route('inbox.messages.store', inboxConversationParams($execution)), [
+        ->post(route('inbox.messages.store', mediaSendingConversationParams($execution)), [
             'type' => 'template',
             'template' => $template->name,
             'parameters' => ['Ana'],
             'media' => $file,
         ])
-        ->assertRedirect(route('inbox.show', inboxConversationParams($execution)));
+        ->assertRedirect(route('inbox.show', mediaSendingConversationParams($execution)));
 
     $message = Message::query()
         ->where('provider_message_id', 'media-header-template-message-id')
@@ -366,16 +376,16 @@ it('shows synchronized video header templates and blocks sending them', function
     ]);
 
     $this->actingAs($user)
-        ->get(route('inbox.show', inboxConversationParams($execution)))
+        ->get(route('inbox.show', mediaSendingConversationParams($execution)))
         ->assertInertia(fn ($page) => $page
             ->where('selected.templates.0.name', 'video_apresentacao')
             ->where('selected.templates.0.headerType', 'VIDEO'));
 
     $this->actingAs($user)
-        ->post(route('inbox.take', inboxConversationParams($execution)))
-        ->assertRedirect(route('inbox.show', inboxConversationParams($execution)));
+        ->post(route('inbox.take', mediaSendingConversationParams($execution)))
+        ->assertRedirect(route('inbox.show', mediaSendingConversationParams($execution)));
     $this->actingAs($user)
-        ->post(route('inbox.messages.store', inboxConversationParams($execution)), [
+        ->post(route('inbox.messages.store', mediaSendingConversationParams($execution)), [
             'type' => 'template',
             'template' => $template->name,
         ])
