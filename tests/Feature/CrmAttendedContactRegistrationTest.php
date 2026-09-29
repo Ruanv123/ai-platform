@@ -3,6 +3,7 @@
 use App\Ai\Agents\PlaygroundAgent;
 use App\Ai\Agents\WhatsAppAgent;
 use App\Crm\Contracts\CrmProviderAdapter;
+use App\Crm\CrmFieldMappingService;
 use App\Crm\CrmOperationProcessor;
 use App\Enums\AgentObjective;
 use App\Enums\AgentResponseLength;
@@ -122,7 +123,7 @@ it('registers and links an attended WhatsApp contact once the message threshold 
 
     if ($operation->fresh()->status === CrmOperationStatus::Pending) {
         (new ProcessCrmOperation((int) $operation->getKey()))
-            ->handle(new CrmOperationProcessor($adapter), $adapter);
+            ->handle(new CrmOperationProcessor($adapter, app(CrmFieldMappingService::class)), $adapter);
     }
 
     expect($operation->fresh()->status)->toBe(CrmOperationStatus::Completed)
@@ -152,7 +153,7 @@ it('links to the newest existing person with the matching phone without creating
     postAttendedContactOfficialMessage();
     $operation = CrmOperation::query()->where('contact_id', $scenario['contact']->getKey())->firstOrFail();
     (new ProcessCrmOperation((int) $operation->getKey()))
-        ->handle(new CrmOperationProcessor($adapter), $adapter);
+        ->handle(new CrmOperationProcessor($adapter, app(CrmFieldMappingService::class)), $adapter);
 
     expect(CrmContactLink::query()->where('contact_id', $scenario['contact']->getKey())->value('external_person_id'))->toBe('existing-person')
         ->and($adapter->createPersonCalls)->toBe([]);

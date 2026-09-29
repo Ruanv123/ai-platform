@@ -18,7 +18,10 @@ use Illuminate\Support\Facades\Cache;
  */
 class CrmOperationProcessor
 {
-    public function __construct(private CrmProviderAdapter $adapter) {}
+    public function __construct(
+        private CrmProviderAdapter $adapter,
+        private CrmFieldMappingService $fieldMappings,
+    ) {}
 
     public function process(CrmOperation $operation): ?CrmLinkedDeal
     {
@@ -28,7 +31,7 @@ class CrmOperationProcessor
             throw new CrmProviderException(CrmErrorCategory::Definitive, 'O Contato ou a Integração do CRM não está mais disponível.');
         }
 
-        if (! in_array($operation->type, ['ensure_person', 'guarantee_deal', 'move_deal', 'register_note'], true)) {
+        if (! in_array($operation->type, ['ensure_person', 'guarantee_deal', 'move_deal', 'register_note', 'update_person_fields'], true)) {
             throw new CrmProviderException(CrmErrorCategory::Definitive, 'O tipo desta Operação do CRM não é compatível.');
         }
 
@@ -37,6 +40,11 @@ class CrmOperationProcessor
                 ->block(30, function () use ($operation, $integration, $contact): ?CrmLinkedDeal {
                     if ($operation->type === 'ensure_person') {
                         $this->ensurePerson($operation, $integration, $contact);
+
+                        return null;
+                    }
+                    if ($operation->type === 'update_person_fields') {
+                        $this->updatePersonFields($operation, $integration, $contact);
 
                         return null;
                     }
@@ -199,7 +207,12 @@ class CrmOperationProcessor
             return $existingLink;
         }
 
+        $mappedFields = $this->fieldMappings->fieldsForContact($integration, $contact);
         if ($preferredPersonId !== null && $preferredPersonId !== '') {
+            if ($mappedFields !== []) {
+                $this->adapter->updatePerson($integration, $preferredPersonId, ['fields' => $mappedFields]);
+            }
+
             return CrmContactLink::query()->create([
                 'team_id' => $contact->team_id,
                 'contact_id' => $contact->getKey(),
@@ -229,8 +242,11 @@ class CrmOperationProcessor
                 'name' => $contact->name,
                 'phone' => $phone,
                 'owner_id' => is_string($payload['default_owner_id'] ?? null) ? $payload['default_owner_id'] : null,
+                'fields' => $mappedFields,
             ];
             $person = $this->adapter->createPerson($integration, $personAttributes);
+        } elseif ($mappedFields !== []) {
+            $person = $this->adapter->updatePerson($integration, $person['id'], ['fields' => $mappedFields]);
         }
 
         return CrmContactLink::query()->create([
@@ -239,6 +255,27 @@ class CrmOperationProcessor
             'integration_id' => $integration->getKey(),
             'external_person_id' => $person['id'],
         ]);
+    }
+
+    private function updatePersonFields(CrmOperation $operation, Integration $integration, Contact $contact): void
+    {
+        $personId = $operation->payload['external_person_id'] ?? null;
+        $fields = $operation->payload['fields'] ?? null;
+        if (! is_string($personId) || $personId === '' || ! is_array($fields) || $fields === []) {
+            throw new CrmProviderException(CrmErrorCategory::Definitive, 'A Operação não contém os Campos necessários para atualizar a Pessoa do CRM.');
+        }
+
+        $isLinked = CrmContactLink::query()
+            ->where('team_id', $contact->team_id)
+            ->where('contact_id', $contact->getKey())
+            ->where('integration_id', $integration->getKey())
+            ->where('external_person_id', $personId)
+            ->exists();
+        if (! $isLinked) {
+            throw new CrmProviderException(CrmErrorCategory::Definitive, 'O Vínculo com a Pessoa do CRM não está mais disponível.');
+        }
+
+        $this->adapter->updatePerson($integration, $personId, ['fields' => $fields]);
     }
 
     /** @return list<CrmPerson> */

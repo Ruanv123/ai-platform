@@ -14,7 +14,9 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\Integrations\SaveIntegrationRequest;
 use App\Integrations\GoogleCalendarClient;
 use App\Integrations\IntegrationConnectionTester;
+use App\Models\ContactField;
 use App\Models\CrmContactLink;
+use App\Models\CrmFieldMapping;
 use App\Models\Flow;
 use App\Models\Integration;
 use App\Models\Product;
@@ -140,6 +142,9 @@ class IntegrationController extends Controller
             'crmError' => $crmError,
             'crmSuccess' => session('crm_success'),
             'crmFields' => $type === 'crm' ? $this->crmFieldOptions($integration) : [],
+            'crmContactFields' => $type === 'crm' ? $this->crmContactFieldOptions($integration) : [],
+            'contactFields' => $type === 'crm' ? $this->contactFieldOptions($team->getKey()) : [],
+            'crmFieldMappings' => $type === 'crm' ? $this->crmFieldMappings($integration, $team->getKey()) : [],
             'crmOwners' => $type === 'crm' ? $this->crmOwnerOptions($integration) : [],
             'crmPipelines' => $type === 'crm' ? $this->crmPipelineOptions($integration) : [],
             'commercialCrmStageIds' => data_get($integration?->crm_settings, 'commercial_stage_ids', []),
@@ -538,6 +543,58 @@ class IntegrationController extends Controller
             ])
             ->filter(fn (array $field): bool => $field['id'] !== '')
             ->values()
+            ->all();
+    }
+
+    private function crmContactFieldOptions(?Integration $integration): array
+    {
+        return collect($integration?->crm_metadata['fields'] ?? [])
+            ->filter(fn (array $field): bool => ($field['entity'] ?? null) === 'contact')
+            ->map(fn (array $field): array => [
+                'id' => (string) ($field['id'] ?? ''),
+                'name' => (string) ($field['name'] ?? $field['id'] ?? ''),
+                'type' => (string) ($field['type'] ?? ''),
+                'options' => array_values(array_map('strval', is_array($field['options'] ?? null) ? $field['options'] : [])),
+            ])
+            ->filter(fn (array $field): bool => $field['id'] !== '')
+            ->values()
+            ->all();
+    }
+
+    private function contactFieldOptions(int $teamId): array
+    {
+        return ContactField::query()
+            ->where('team_id', $teamId)
+            ->orderBy('name')
+            ->get()
+            ->map(fn (ContactField $field): array => [
+                'id' => (string) $field->getKey(),
+                'name' => $field->name,
+                'type' => $field->type,
+                'options' => array_values(array_map('strval', $field->options ?? [])),
+                'sensitive' => $field->is_sensitive,
+            ])
+            ->all();
+    }
+
+    private function crmFieldMappings(?Integration $integration, int $teamId): array
+    {
+        if ($integration === null) {
+            return [];
+        }
+
+        return CrmFieldMapping::query()
+            ->where('team_id', $teamId)
+            ->where('integration_id', $integration->getKey())
+            ->orderBy('created_at')
+            ->get()
+            ->map(fn (CrmFieldMapping $mapping): array => [
+                'id' => (string) $mapping->getKey(),
+                'contactFieldId' => (string) $mapping->contact_field_id,
+                'crmFieldId' => (string) $mapping->crm_field_id,
+                'direction' => $mapping->direction,
+                'optionMappings' => $mapping->option_mappings ?? [],
+            ])
             ->all();
     }
 

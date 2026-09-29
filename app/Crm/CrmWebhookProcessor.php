@@ -18,7 +18,10 @@ use Illuminate\Support\Facades\Cache;
  */
 class CrmWebhookProcessor
 {
-    public function __construct(private CrmProviderAdapter $adapter) {}
+    public function __construct(
+        private CrmProviderAdapter $adapter,
+        private CrmFieldMappingService $fieldMappings,
+    ) {}
 
     public function process(string $integrationId, int $teamId, string $resource, string $externalId, bool $deleted): void
     {
@@ -63,7 +66,11 @@ class CrmWebhookProcessor
         }
 
         try {
-            $this->adapter->findPerson($integration, $personId);
+            $person = $this->adapter->findPerson($integration, $personId);
+            $contact = $link->contact;
+            if ($contact instanceof Contact && is_array($person['fields'] ?? null)) {
+                $this->fieldMappings->applyProviderFields($integration, $contact, $person['fields']);
+            }
         } catch (CrmProviderException $exception) {
             if ($exception->category !== CrmErrorCategory::MissingReference) {
                 throw $exception;
@@ -160,7 +167,7 @@ class CrmWebhookProcessor
         }
 
         try {
-            return Cache::lock('crm:contact-link:'.$teamId.':'.$contact->getKey(), 120)
+            $link = Cache::lock('crm:contact-link:'.$teamId.':'.$contact->getKey(), 120)
                 ->block(10, function () use ($contact, $integration, $personId, $teamId): ?CrmContactLink {
                     $personLink = $this->findPersonLink($integration, $teamId, $personId);
                     if ($personLink !== null) {
@@ -183,6 +190,11 @@ class CrmWebhookProcessor
                         'external_person_id' => $personId,
                     ]);
                 });
+            if ($link?->wasRecentlyCreated === true) {
+                $this->fieldMappings->queueInitialFieldsForLink($link);
+            }
+
+            return $link;
         } catch (LockTimeoutException) {
             throw new CrmProviderException(CrmErrorCategory::Temporary, 'O Vínculo do Contato ainda está sendo atualizado.', 5);
         }

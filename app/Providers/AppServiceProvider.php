@@ -8,6 +8,8 @@ use App\Ecommerce\EcommerceAdapter;
 use App\Ecommerce\ShopifyAdapter;
 use App\Http\Controllers\Channels\WhatsAppController;
 use App\Http\Controllers\Channels\WhatsAppTestController;
+use App\Models\ContactFieldValue;
+use App\Observers\CrmContactFieldValueObserver;
 use App\WhatsApp\Oficial\MetaWhatsAppProfileProvider;
 use App\WhatsApp\Profiles\WhatsAppProfileProvider;
 use App\WhatsApp\Testes\EvolutionGoWhatsAppProfileProvider;
@@ -45,6 +47,8 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
+        ContactFieldValue::observe(CrmContactFieldValueObserver::class);
+
         $this->configureDefaults();
 
         RateLimiter::for('playground', function (Request $request): Limit {

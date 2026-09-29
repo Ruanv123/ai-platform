@@ -174,6 +174,9 @@ class ProcessCrmOperation implements ShouldQueue
         if ($operation->type === 'ensure_person') {
             $summary['person_linked'] = true;
         }
+        if ($operation->type === 'update_person_fields') {
+            $summary['fields_updated'] = true;
+        }
 
         $operation->forceFill([
             'status' => CrmOperationStatus::Completed,

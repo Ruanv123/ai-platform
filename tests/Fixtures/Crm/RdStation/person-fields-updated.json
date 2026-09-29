@@ -1,0 +1,10 @@
+{
+  "data": {
+    "id": "person-linked",
+    "name": "Ana Silva",
+    "phones": [{"phone": "+5511999998888", "type": "mobile"}],
+    "emails": [],
+    "custom_fields": {"internal_name": "segredo-456"},
+    "updated_at": "2026-09-29T10:00:00Z"
+  }
+}

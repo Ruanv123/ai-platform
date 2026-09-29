@@ -7,6 +7,7 @@ use App\Crm\Adapters\RdStationCrmAdapter;
 use App\Crm\Contracts\CrmProviderAdapter;
 use App\Crm\CrmCardLookup;
 use App\Crm\CrmErrorCategory;
+use App\Crm\CrmFieldMappingService;
 use App\Crm\CrmOperationDispatcher;
 use App\Crm\CrmOperationProcessor;
 use App\Crm\CrmProviderException;
@@ -83,7 +84,7 @@ function crmDealToolResult(GuaranteeCrmDeal $tool, array $arguments = []): array
 
 function processCrmDealOperation(CrmOperation $operation, CrmProviderAdapter $adapter): void
 {
-    (new ProcessCrmOperation($operation->getKey()))->handle(new CrmOperationProcessor($adapter), $adapter);
+    (new ProcessCrmOperation($operation->getKey()))->handle(new CrmOperationProcessor($adapter, app(CrmFieldMappingService::class)), $adapter);
 }
 
 /** @return array<string, mixed> */

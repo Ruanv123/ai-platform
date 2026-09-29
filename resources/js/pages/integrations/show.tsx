@@ -87,6 +87,9 @@ type Props = {
     crmError: string | null;
     crmSuccess: string | null;
     crmFields: { id: string; name: string }[];
+    crmContactFields: { id: string; name: string; type: string; options: string[] }[];
+    contactFields: { id: string; name: string; type: string; options: string[]; sensitive: boolean }[];
+    crmFieldMappings: { id: string; contactFieldId: string; crmFieldId: string; direction: 'to_crm' | 'from_crm'; optionMappings: Record<string, string> }[];
     crmOwners: { id: string; name: string }[];
     crmPipelines: { id: string; name: string; stages: { id: string; name: string }[] }[];
     commercialCrmStageIds: string[];
@@ -138,6 +141,9 @@ export default function IntegrationShowPage(props: Props) {
                 crmError={props.crmError}
                 crmSuccess={props.crmSuccess}
                 crmFields={props.crmFields}
+                crmContactFields={props.crmContactFields}
+                contactFields={props.contactFields}
+                crmFieldMappings={props.crmFieldMappings}
                 crmOwners={props.crmOwners}
                 crmPipelines={props.crmPipelines}
                 commercialCrmStageIds={props.commercialCrmStageIds}
