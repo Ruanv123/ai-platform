@@ -114,6 +114,34 @@ it('registers the tool request as a pending queued operation without calling the
     Queue::assertPushedOn('crm-operations', ProcessCrmOperation::class);
 });
 
+it('returns safe messages for dispatcher errors and hides unexpected exception details', function () {
+    $scenario = crmDealScenario();
+    $dispatcher = Mockery::mock(CrmOperationDispatcher::class);
+    $dispatcher->shouldReceive('queueGuaranteeDeal')
+        ->once()
+        ->andThrow(new RuntimeException('database password: private-value'));
+    $tool = new GuaranteeCrmDeal(
+        $scenario['team'],
+        $scenario['agent'],
+        $scenario['contact'],
+        $dispatcher,
+        'pipeline-1',
+        'stage-1',
+    );
+
+    $unexpectedResult = crmDealToolResult($tool, ['title' => 'Plano anual']);
+    $scenario['integration']->forceFill(['status' => 'error'])->save();
+    $domainResult = crmDealToolResult($scenario['tool'], ['title' => 'Plano anual']);
+
+    expect($unexpectedResult)->toBe([
+        'ok' => false,
+        'message' => 'Não foi possível registrar a Operação no CRM agora.',
+    ])->and($domainResult)->toBe([
+        'ok' => false,
+        'message' => 'O CRM não está conectado.',
+    ]);
+});
+
 it('creates a missing CRM person and deal with inherited and default ownership, then saves the canonical link', function () {
     $scenario = crmDealScenario();
     $adapter = new FakeCrmProviderAdapter;
@@ -149,6 +177,41 @@ it('creates a missing CRM person and deal with inherited and default ownership, 
         ->and($deal->status)->toBe('open')
         ->and($deal->value)->toBe(1499.5)
         ->and($deal->owner_id)->toBe('owner-default');
+});
+
+it('selects the newest phone match and records the duplicate match count in the operation summary', function () {
+    $scenario = crmDealScenario();
+    $adapter = new FakeCrmProviderAdapter;
+    $adapter->people = [[
+        'id' => 'person-oldest',
+        'name' => 'Ficha antiga',
+        'phone' => '+5511999998888',
+        'email' => null,
+        'organization_id' => null,
+        'owner_id' => 'owner-old',
+        'fields' => [],
+        'updated_at' => '2025-01-01T00:00:00Z',
+    ], [
+        'id' => 'person-newest',
+        'name' => 'Ficha mais recente',
+        'phone' => '+5511999998888',
+        'email' => null,
+        'organization_id' => null,
+        'owner_id' => 'owner-new',
+        'fields' => [],
+        'updated_at' => '2025-02-01T00:00:00Z',
+    ]];
+    $result = crmDealToolResult($scenario['tool'], ['title' => 'Plano anual']);
+    $operation = CrmOperation::query()->findOrFail($result['operation_id']);
+
+    processCrmDealOperation($operation, $adapter);
+
+    expect(CrmContactLink::query()->where('contact_id', $scenario['contact']->getKey())->value('external_person_id'))->toBe('person-newest')
+        ->and($operation->fresh()->summary)->toMatchArray([
+            'crm_person_phone_match_count' => 2,
+            'crm_person_phone_match_duplicates' => true,
+        ])
+        ->and($adapter->createPersonCalls)->toBe([]);
 });
 
 it('reuses the existing contact link and open deal in the configured pipeline', function () {
@@ -276,29 +339,62 @@ it('processes repeated operations for the same contact through one CRM person li
         ->and($adapter->updateDealCalls)->toHaveCount(1);
 });
 
-it('defers a competing operation when the contact lock is held', function () {
+it('defers and then reuses CRM writes across an interleaved same-contact operation', function () {
     $scenario = crmDealScenario();
     $adapter = new FakeCrmProviderAdapter;
-    $result = crmDealToolResult($scenario['tool'], ['title' => 'Plano anual']);
-    $operation = CrmOperation::query()->findOrFail($result['operation_id']);
+    $firstResult = crmDealToolResult($scenario['tool'], ['title' => 'Plano anual']);
+    $secondResult = crmDealToolResult($scenario['tool'], ['title' => 'Renovação']);
+    $firstOperation = CrmOperation::query()->findOrFail($firstResult['operation_id']);
+    $secondOperation = CrmOperation::query()->findOrFail($secondResult['operation_id']);
+    $lockHeld = false;
     $lock = Mockery::mock(Lock::class);
     $lock->shouldReceive('block')
-        ->once()
+        ->times(3)
         ->with(30, Mockery::type(Closure::class))
-        ->andThrow(new LockTimeoutException('Lock timeout.'));
+        ->andReturnUsing(function (int $seconds, Closure $callback) use (&$lockHeld): mixed {
+            if ($lockHeld) {
+                throw new LockTimeoutException('Lock timeout.');
+            }
+
+            $lockHeld = true;
+            try {
+                return $callback();
+            } finally {
+                $lockHeld = false;
+            }
+        });
     Cache::shouldReceive('lock')
-        ->once()
+        ->times(3)
         ->with('crm:contact-link:'.$scenario['team']->getKey().':'.$scenario['contact']->getKey(), 120)
         ->andReturn($lock);
+    $adapter->beforeCreatePerson = fn (): mixed => Fiber::suspend();
+    $firstWorker = new Fiber(fn (): mixed => processCrmDealOperation($firstOperation, $adapter));
+    $firstWorker->start();
 
-    processCrmDealOperation($operation, $adapter);
-
-    expect($operation->fresh()->status)->toBe(CrmOperationStatus::Pending)
-        ->and($operation->fresh()->attempts)->toBe(1)
-        ->and($operation->fresh()->failure_message)->toContain('Outra gravação do CRM')
+    expect($firstWorker->isSuspended())->toBeTrue()
         ->and(CrmContactLink::query()->count())->toBe(0)
         ->and($adapter->createPersonCalls)->toBe([]);
-    Queue::assertPushed(ProcessCrmOperation::class, fn (ProcessCrmOperation $job): bool => $job->delay !== null);
+
+    processCrmDealOperation($secondOperation, $adapter);
+
+    expect($secondOperation->fresh()->status)->toBe(CrmOperationStatus::Pending)
+        ->and($secondOperation->fresh()->attempts)->toBe(1)
+        ->and($secondOperation->fresh()->failure_message)->toContain('Outra gravação do CRM')
+        ->and(CrmContactLink::query()->count())->toBe(0)
+        ->and($adapter->createPersonCalls)->toBe([]);
+
+    $firstWorker->resume();
+    processCrmDealOperation($secondOperation->fresh(), $adapter);
+
+    expect($firstWorker->isTerminated())->toBeTrue()
+        ->and($firstOperation->fresh()->status)->toBe(CrmOperationStatus::Completed)
+        ->and($secondOperation->fresh()->status)->toBe(CrmOperationStatus::Completed)
+        ->and($secondOperation->fresh()->attempts)->toBe(2)
+        ->and(CrmContactLink::query()->where('contact_id', $scenario['contact']->getKey())->count())->toBe(1)
+        ->and(CrmLinkedDeal::query()->count())->toBe(1)
+        ->and($adapter->createPersonCalls)->toHaveCount(1)
+        ->and($adapter->createDealCalls)->toHaveCount(1)
+        ->and($adapter->updateDealCalls)->toHaveCount(1);
 });
 
 it('keeps transient failures within five CRM attempts with exponential delayed retries', function () {
@@ -349,7 +445,7 @@ it('renews access once after provider refusal and retries the CRM operation', fu
         ->and($adapter->renewalCount)->toBe(1);
 });
 
-it('marks a CRM integration unavailable when its one token renewal is refused', function () {
+it('keeps a CRM operation pending when its one token renewal is refused', function () {
     $scenario = crmDealScenario();
     $adapter = new FakeCrmProviderAdapter;
     $adapter->personSearchFailures = [new CrmProviderException(CrmErrorCategory::AccessDenied, 'Token recusado.')];
@@ -358,9 +454,30 @@ it('marks a CRM integration unavailable when its one token renewal is refused', 
 
     processCrmDealOperation(CrmOperation::query()->findOrFail($result['operation_id']), $adapter);
 
-    expect(CrmOperation::query()->findOrFail($result['operation_id'])->status)->toBe(CrmOperationStatus::Failed)
+    $operation = CrmOperation::query()->findOrFail($result['operation_id']);
+    expect($operation->status)->toBe(CrmOperationStatus::Pending)
+        ->and($operation->attempts)->toBe(1)
+        ->and($operation->token_refresh_attempts)->toBe(1)
+        ->and($operation->failure_message)->toContain('Reconecte a conta')
         ->and($scenario['integration']->fresh()->status)->toBe('error')
         ->and($adapter->renewalCount)->toBe(1);
+    Queue::assertPushed(ProcessCrmOperation::class, 1);
+});
+
+it('keeps an operation pending with a readable message while the integration is unavailable', function () {
+    $scenario = crmDealScenario();
+    $adapter = new FakeCrmProviderAdapter;
+    $result = crmDealToolResult($scenario['tool'], ['title' => 'Plano anual']);
+    $scenario['integration']->forceFill(['status' => 'error'])->save();
+
+    processCrmDealOperation(CrmOperation::query()->findOrFail($result['operation_id']), $adapter);
+
+    $operation = CrmOperation::query()->findOrFail($result['operation_id']);
+    expect($operation->status)->toBe(CrmOperationStatus::Pending)
+        ->and($operation->attempts)->toBe(0)
+        ->and($operation->failure_message)->toContain('aguarda a reconexão')
+        ->and($adapter->phoneSearches)->toBe([]);
+    Queue::assertPushed(ProcessCrmOperation::class, 1);
 });
 
 it('fails immediately for a definitive CRM error with a readable reason', function () {

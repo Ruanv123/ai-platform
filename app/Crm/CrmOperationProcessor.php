@@ -42,7 +42,7 @@ class CrmOperationProcessor
 
     private function ensureDeal(CrmOperation $operation, Integration $integration, Contact $contact): CrmLinkedDeal
     {
-        $personLink = $this->ensurePersonLink($integration, $contact, $operation->payload);
+        $personLink = $this->ensurePersonLink($operation, $integration, $contact, $operation->payload);
         $person = $this->adapter->findPerson($integration, $personLink->external_person_id);
         $missingPersonAttributes = [];
         if ((! is_string($person['name'] ?? null) || trim($person['name']) === '')
@@ -92,8 +92,12 @@ class CrmOperationProcessor
     }
 
     /** @param array<string, mixed> $payload */
-    private function ensurePersonLink(Integration $integration, Contact $contact, array $payload): CrmContactLink
-    {
+    private function ensurePersonLink(
+        CrmOperation $operation,
+        Integration $integration,
+        Contact $contact,
+        array $payload,
+    ): CrmContactLink {
         $existingLink = CrmContactLink::query()
             ->where('team_id', $contact->team_id)
             ->where('contact_id', $contact->getKey())
@@ -108,7 +112,17 @@ class CrmOperationProcessor
             throw new CrmProviderException(CrmErrorCategory::Definitive, 'O Contato precisa ter um telefone válido para ser vinculado ao CRM.');
         }
 
-        $person = $this->newestMatchingPerson($integration, $phone);
+        $matchingPeople = $this->matchingPeople($integration, $phone);
+        $matchCount = count($matchingPeople);
+        $operation->forceFill([
+            'summary' => [
+                ...$operation->summary,
+                'crm_person_phone_match_count' => $matchCount,
+                'crm_person_phone_match_duplicates' => $matchCount > 1,
+            ],
+        ])->save();
+
+        $person = $matchingPeople[0] ?? null;
         if ($person === null) {
             $personAttributes = [
                 'name' => $contact->name,
@@ -126,8 +140,8 @@ class CrmOperationProcessor
         ]);
     }
 
-    /** @return CrmPerson|null */
-    private function newestMatchingPerson(Integration $integration, string $phone): ?array
+    /** @return list<CrmPerson> */
+    private function matchingPeople(Integration $integration, string $phone): array
     {
         $people = array_values(array_filter(
             $this->adapter->findPeopleByPhone($integration, $phone),
@@ -138,7 +152,7 @@ class CrmOperationProcessor
             (string) ($left['updated_at'] ?? ''),
         ));
 
-        return $people[0] ?? null;
+        return $people;
     }
 
     /** @return CrmDeal|null */

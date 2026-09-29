@@ -4,6 +4,7 @@ namespace Tests\Support\Crm\Fakes;
 
 use App\Crm\AbstractCrmProviderAdapter;
 use App\Models\Integration;
+use Closure;
 use Throwable;
 
 /**
@@ -48,6 +49,8 @@ class FakeCrmProviderAdapter extends AbstractCrmProviderAdapter
     public int $renewalCount = 0;
 
     public array $createPersonCalls = [];
+
+    public ?Closure $beforeCreatePerson = null;
 
     public array $updatePersonCalls = [];
 
@@ -158,6 +161,10 @@ class FakeCrmProviderAdapter extends AbstractCrmProviderAdapter
     {
         if ($this->createPersonFailures !== []) {
             throw array_shift($this->createPersonFailures);
+        }
+
+        if ($this->beforeCreatePerson !== null) {
+            ($this->beforeCreatePerson)();
         }
 
         $this->createPersonCalls[] = $attributes;

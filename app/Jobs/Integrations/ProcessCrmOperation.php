@@ -41,7 +41,10 @@ class ProcessCrmOperation implements ShouldQueue
 
         $integration = $operation->integration;
         if (! $integration instanceof Integration || $integration->status !== 'connected') {
-            $operation->forceFill(['status' => CrmOperationStatus::Pending])->save();
+            $operation->forceFill([
+                'status' => CrmOperationStatus::Pending,
+                'failure_message' => 'A Operação aguarda a reconexão do CRM para continuar.',
+            ])->save();
 
             return;
         }
@@ -130,7 +133,11 @@ class ProcessCrmOperation implements ShouldQueue
                 }
 
                 $this->markIntegrationUnavailable($integration);
-                $this->failOperation($operation, $refreshException->getMessage(), $attempt);
+                if ($refreshException->category === CrmErrorCategory::AccessDenied) {
+                    $this->waitForReconnect($operation, $attempt);
+                } else {
+                    $this->failOperation($operation, $refreshException->getMessage(), $attempt);
+                }
             } catch (Throwable $refreshException) {
                 report($refreshException);
                 $this->retryOrFail($operation, $attempt, 'Não foi possível renovar o acesso ao CRM.');
@@ -147,6 +154,9 @@ class ProcessCrmOperation implements ShouldQueue
 
         if ($exception->category === CrmErrorCategory::AccessDenied) {
             $this->markIntegrationUnavailable($integration);
+            $this->waitForReconnect($operation, $attempt);
+
+            return;
         }
 
         $this->failOperation($operation, $exception->getMessage(), $attempt);
@@ -166,6 +176,16 @@ class ProcessCrmOperation implements ShouldQueue
             'failure_message' => $message,
         ])->save();
         $this->dispatchAgain(min(300, 5 * (2 ** $attempt)));
+    }
+
+    private function waitForReconnect(CrmOperation $operation, int $attempt): void
+    {
+        $operation->forceFill([
+            'status' => CrmOperationStatus::Pending,
+            'attempts' => $attempt,
+            'token_refresh_attempts' => 1,
+            'failure_message' => 'O acesso ao CRM foi recusado após a renovação. Reconecte a conta para retomar esta Operação.',
+        ])->save();
     }
 
     private function failOperation(CrmOperation $operation, string $message, ?int $attempt = null): void

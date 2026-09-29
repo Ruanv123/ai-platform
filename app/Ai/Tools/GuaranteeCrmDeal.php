@@ -3,6 +3,7 @@
 namespace App\Ai\Tools;
 
 use App\Crm\CrmOperationDispatcher;
+use App\Crm\CrmOperationException;
 use App\Models\Agent;
 use App\Models\Contact;
 use App\Models\Team;
@@ -90,12 +91,17 @@ class GuaranteeCrmDeal implements Tool
                 'operation_id' => $operation->getKey(),
                 'message' => 'Pedido registrado. A negociação será atualizada no CRM em segundo plano.',
             ]);
+        } catch (CrmOperationException $exception) {
+            return $this->json([
+                'ok' => false,
+                'message' => $exception->getMessage(),
+            ]);
         } catch (Throwable $exception) {
             report($exception);
 
             return $this->json([
                 'ok' => false,
-                'message' => $exception->getMessage(),
+                'message' => 'Não foi possível registrar a Operação no CRM agora.',
             ]);
         }
     }

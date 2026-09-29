@@ -9,7 +9,6 @@ use App\Models\Contact;
 use App\Models\CrmOperation;
 use App\Models\Integration;
 use App\Models\Team;
-use RuntimeException;
 
 class CrmOperationDispatcher
 {
@@ -23,7 +22,7 @@ class CrmOperationDispatcher
         string $initialStageId,
     ): CrmOperation {
         if ($agent->team_id !== $team->getKey() || $contact->team_id !== $team->getKey()) {
-            throw new RuntimeException('Este Contato não pertence à Empresa do Agente.');
+            throw new CrmOperationException('Este Contato não pertence à Empresa do Agente.');
         }
 
         $integration = $team->integrations()
@@ -31,11 +30,11 @@ class CrmOperationDispatcher
             ->where('status', 'connected')
             ->first();
         if (! $integration instanceof Integration) {
-            throw new RuntimeException('O CRM não está conectado.');
+            throw new CrmOperationException('O CRM não está conectado.');
         }
 
         if (! $this->isConfiguredStage($integration, $pipelineId, $initialStageId)) {
-            throw new RuntimeException('O Funil de vendas ou a Etapa inicial não está mais disponível no CRM.');
+            throw new CrmOperationException('O Funil de vendas ou a Etapa inicial não está mais disponível no CRM.');
         }
 
         $defaultOwnerId = data_get($integration->crm_settings, 'default_owner_id');
