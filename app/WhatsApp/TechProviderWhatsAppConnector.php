@@ -161,26 +161,8 @@ final class TechProviderWhatsAppConnector
                 $attempt,
             );
             $attempt->delete();
-        } catch (WhatsAppConnectionException $exception) {
-            $this->markConnectionAsFailed($channel, $exception->getMessage());
-
-            throw $exception;
-        } catch (ConnectionException) {
-            $message = 'Não foi possível conectar à Meta. Verifique sua conexão e tente novamente.';
-            $this->markConnectionAsFailed($channel, $message);
-
-            throw new WhatsAppConnectionException($message);
-        } catch (RequestException $exception) {
-            $message = $this->translatedMetaError($exception->response);
-            $this->markConnectionAsFailed($channel, $message);
-
-            throw new WhatsAppConnectionException($message, previous: $exception);
         } catch (Throwable $exception) {
-            report($exception);
-            $message = 'Não foi possível concluir a conexão com a Meta. Tente novamente.';
-            $this->markConnectionAsFailed($channel, $message);
-
-            throw new WhatsAppConnectionException($message, previous: $exception);
+            $this->handleConnectionFailure($channel, $exception);
         }
 
         return $this->completeConnection($channel, $account, $phoneNumber);
@@ -216,26 +198,8 @@ final class TechProviderWhatsAppConnector
             ]);
 
             return $channel->refresh();
-        } catch (WhatsAppConnectionException $exception) {
-            $this->markConnectionAsFailed($channel, $exception->getMessage());
-
-            throw $exception;
-        } catch (ConnectionException) {
-            $message = 'Não foi possível conectar à Meta. Verifique sua conexão e tente novamente.';
-            $this->markConnectionAsFailed($channel, $message);
-
-            throw new WhatsAppConnectionException($message);
-        } catch (RequestException $exception) {
-            $message = $this->translatedMetaError($exception->response);
-            $this->markConnectionAsFailed($channel, $message);
-
-            throw new WhatsAppConnectionException($message, previous: $exception);
         } catch (Throwable $exception) {
-            report($exception);
-            $message = 'Não foi possível concluir a conexão com a Meta. Tente novamente.';
-            $this->markConnectionAsFailed($channel, $message);
-
-            throw new WhatsAppConnectionException($message, previous: $exception);
+            $this->handleConnectionFailure($channel, $exception);
         }
     }
 
@@ -257,6 +221,9 @@ final class TechProviderWhatsAppConnector
         return $accessToken;
     }
 
+    /**
+     * @return array{0: string, 1: string}
+     */
     private function discoverAssets(
         string $accessToken,
         string $appId,
@@ -367,6 +334,9 @@ final class TechProviderWhatsAppConnector
         return array_values(array_unique($targetIds));
     }
 
+    /**
+     * @return array{0: Channel, 1: WhatsAppAccount, 2: WhatsAppPhoneNumber}
+     */
     private function connectionRecords(
         Team $team,
         string $wabaId,
@@ -531,6 +501,32 @@ final class TechProviderWhatsAppConnector
             'status' => ChannelStatus::Error,
             'last_error' => $message,
         ]);
+    }
+
+    private function handleConnectionFailure(Channel $channel, Throwable $exception): never
+    {
+        if ($exception instanceof WhatsAppConnectionException) {
+            $connectionException = $exception;
+        } elseif ($exception instanceof ConnectionException) {
+            $connectionException = new WhatsAppConnectionException(
+                'Não foi possível conectar à Meta. Verifique sua conexão e tente novamente.',
+            );
+        } elseif ($exception instanceof RequestException) {
+            $connectionException = new WhatsAppConnectionException(
+                $this->translatedMetaError($exception->response),
+                previous: $exception,
+            );
+        } else {
+            report($exception);
+            $connectionException = new WhatsAppConnectionException(
+                'Não foi possível concluir a conexão com a Meta. Tente novamente.',
+                previous: $exception,
+            );
+        }
+
+        $this->markConnectionAsFailed($channel, $connectionException->getMessage());
+
+        throw $connectionException;
     }
 
     private function graphRequest(?string $accessToken = null): PendingRequest
