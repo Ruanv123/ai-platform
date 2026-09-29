@@ -61,6 +61,10 @@ function crmCardIntegration(Team $team, array $overrides = []): Integration
     ], $overrides));
 }
 
+/**
+ * @param  array{fields?: array<string, mixed>}  $overrides
+ * @return array{id: string, name: string, phone: string, email: null, organization_id: null, owner_id: string, fields: array<string, mixed>, updated_at: string}
+ */
 function crmCardFakePerson(string $id, string $updatedAt, array $overrides = []): array
 {
     return array_merge([
@@ -75,11 +79,48 @@ function crmCardFakePerson(string $id, string $updatedAt, array $overrides = [])
     ], $overrides);
 }
 
+/**
+ * @return array{ok: false, message: string}|array{ok: true, found: false, message: string}|array{ok: true, found: true, fields: list<array{name: string, value: mixed}>, open_deals: list<array{pipeline: string|null, stage: string|null, value: float|null, owner_name: string|null}>, owner_name: string|null}
+ */
 function crmCardToolResult(ConsultCrmCard $tool): array
 {
     return json_decode($tool->handle(new ToolRequest([])), true, flags: JSON_THROW_ON_ERROR);
 }
 
+/**
+ * @param array{
+ *     name?: string,
+ *     objective?: string,
+ *     crm_lookup_enabled?: bool|null,
+ *     crm_lookup_phone?: string|null,
+ *     tone?: string,
+ *     uses_emojis?: bool,
+ *     response_length?: string,
+ *     welcome_message?: string,
+ *     instructions?: list<mixed>,
+ *     rules?: list<mixed>,
+ *     collection_ids?: list<int|string>,
+ *     schedulable_calendar_ids?: list<int|string>,
+ *     history?: list<mixed>,
+ *     message?: string
+ * } $overrides
+ * @return array{
+ *     name: string,
+ *     objective: string,
+ *     crm_lookup_enabled: bool|null,
+ *     crm_lookup_phone: string|null,
+ *     tone: string,
+ *     uses_emojis: bool,
+ *     response_length: string,
+ *     welcome_message: string,
+ *     instructions: list<mixed>,
+ *     rules: list<mixed>,
+ *     collection_ids: list<int|string>,
+ *     schedulable_calendar_ids: list<int|string>,
+ *     history: list<mixed>,
+ *     message: string
+ * }
+ */
 function crmCardPlaygroundPayload(array $overrides = []): array
 {
     return array_merge([
