@@ -6,14 +6,10 @@ use App\Crm\CrmProviderException;
 use App\Enums\TeamRole;
 use App\Models\Integration;
 use App\Models\User;
-use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;
 use Inertia\Testing\AssertableInertia as Assert;
-use Tests\TestCase;
-
-uses(TestCase::class, RefreshDatabase::class);
 
 function rdStationFixture(string $name): array
 {
