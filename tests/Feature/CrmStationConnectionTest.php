@@ -34,6 +34,7 @@ function fakeRdStationServer(): void
             '/crm/v2/custom_fields' => 'fields',
             '/crm/v2/users' => 'users',
             '/crm/v2/lost_reasons' => 'lost-reasons',
+            '/crm/v2/teams' => 'teams',
             default => null,
         };
 
@@ -117,6 +118,7 @@ it('connects RD Station, loads metadata, and reconnects the same company CRM', f
         ->and($integration->crm_metadata['fields'][0]['options'])->toBe(['Site', 'Indicação'])
         ->and($integration->crm_metadata['owners'][0]['id'])->toBe('user-1')
         ->and($integration->crm_metadata['lost_reasons'][0]['id'])->toBe('reason-1')
+        ->and($integration->crm_metadata['account']['teams'][0])->toBe(['id' => 'team-1', 'name' => 'Empresa RD'])
         ->and($integration->crm_metadata_loaded_at)->not->toBeNull()
         ->and($integration->getRawOriginal('credentials'))->not->toContain('rd-access-token');
 });
@@ -140,11 +142,55 @@ it('reloads CRM metadata when the connection page opens', function () {
         ->assertOk()
         ->assertInertia(fn (Assert $page) => $page
             ->where('integration.id', $integration->getKey())
+            ->where('integration.crmAccount.teams.0.id', 'team-1')
+            ->where('integration.crmAccount.teams.0.name', 'Empresa RD')
             ->where('integration.crmMetadataLoadedAt', fn ($value) => is_string($value))
         );
 
     expect($integration->fresh()->crm_metadata['pipelines'][0]['id'])->toBe('pipeline-1');
 });
+
+it('conforms to the canonical metadata shape from provider fixtures', function (string $adapterClass) {
+    fakeRdStationServer();
+    $user = User::factory()->withTeam()->create();
+    $integration = Integration::factory()->for($user->company())->create([
+        'type' => 'crm',
+        'provider' => 'rd_station',
+        'credentials' => [
+            'access_token' => 'rd-access-token',
+            'refresh_token' => 'rd-refresh-token',
+            'expires_at' => now()->addHour()->timestamp,
+        ],
+    ]);
+
+    $metadata = app($adapterClass)->loadMetadata($integration);
+
+    expect(array_keys($metadata))->toBe(['account', 'pipelines', 'fields', 'owners', 'lost_reasons'])
+        ->and($metadata['account']['teams'][0])->toBe(['id' => 'team-1', 'name' => 'Empresa RD'])
+        ->and($metadata['pipelines'][0]['stages'][0])->toMatchArray([
+            'id' => 'stage-1',
+            'name' => 'Qualificação',
+            'status' => null,
+            'position' => 1,
+        ])
+        ->and($metadata['fields'][0])->toMatchArray([
+            'id' => 'field-1',
+            'name' => 'Origem',
+            'type' => 'select',
+            'options' => ['Site', 'Indicação'],
+        ])
+        ->and(array_keys(app($adapterClass)->capabilities()))->toBe([
+            'metadata',
+            'loss_reason_required',
+            'won_and_lost_stages',
+            'webhooks',
+            'operations',
+        ])
+        ->and(app($adapterClass)->capabilities()['operations'])->toBe([])
+        ->and(app($adapterClass)->rateLimit())->toBe(['requests' => 120, 'window_seconds' => 60]);
+})->with([
+    'RD Station CRM' => [RdStationCrmAdapter::class],
+]);
 
 it('skips metadata refresh when it was loaded within the last five minutes', function () {
     Http::preventStrayRequests();

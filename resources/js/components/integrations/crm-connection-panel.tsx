@@ -15,6 +15,7 @@ type Integration = {
     statusLabel: string;
     statusMessage: string | null;
     accountEmail?: string | null;
+    crmAccount?: { teams: { id: string; name: string }[] } | null;
     crmMetadataLoadedAt?: string | null;
 };
 
@@ -27,6 +28,7 @@ type Props = {
 
 export default function CrmConnectionPanel({ integration, crmError, crmSuccess, permissions }: Props) {
     const connected = integration?.status === 'connected';
+    const teamAccountNames = integration?.crmAccount?.teams.map((team) => `${team.name} (ID ${team.id})`) ?? [];
 
     return (
         <div className="flex flex-1 flex-col gap-8 p-4 md:p-6">
@@ -51,7 +53,7 @@ export default function CrmConnectionPanel({ integration, crmError, crmSuccess, 
                     <CardHeader className="flex-row items-start justify-between gap-4">
                         <div>
                             <CardTitle className="flex items-center gap-2">CRM conectado <Badge variant={connected ? 'success' : integration.status === 'error' ? 'destructive' : 'secondary'}>{connected && <Check className="size-3" />}{integration.statusLabel}</Badge></CardTitle>
-                            <CardDescription className="mt-2">{integration.accountEmail ? `Conectado como ${integration.accountEmail}` : 'Conta do RD Station CRM conectada'}</CardDescription>
+                            <CardDescription className="mt-2">{teamAccountNames.length > 0 ? `Conta: ${teamAccountNames.join(', ')}` : integration.accountEmail ? `Conectado como ${integration.accountEmail}` : 'Conta do RD Station CRM conectada'}</CardDescription>
                             {integration.statusMessage && <p className="text-destructive mt-2 text-sm">{integration.statusMessage}</p>}
                             {integration.crmMetadataLoadedAt && <p className="text-muted-foreground mt-2 text-xs">Metadados atualizados em {new Date(integration.crmMetadataLoadedAt).toLocaleString('pt-BR')}</p>}
                         </div>

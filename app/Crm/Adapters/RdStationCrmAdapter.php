@@ -13,6 +13,12 @@ use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 use RuntimeException;
 
+/**
+ * @phpstan-import-type CrmCapabilities from \App\Crm\Contracts\CrmProviderAdapter
+ * @phpstan-import-type CrmMetadata from \App\Crm\Contracts\CrmProviderAdapter
+ * @phpstan-import-type CrmOAuthTokens from \App\Crm\Contracts\CrmProviderAdapter
+ * @phpstan-import-type CrmRateLimit from \App\Crm\Contracts\CrmProviderAdapter
+ */
 class RdStationCrmAdapter extends AbstractCrmProviderAdapter
 {
     private const AUTHORIZATION_URL = 'https://accounts.rdstation.com/oauth/authorize';
@@ -44,6 +50,7 @@ class RdStationCrmAdapter extends AbstractCrmProviderAdapter
         ]);
     }
 
+    /** @return CrmOAuthTokens */
     public function exchangeAuthorizationCode(string $code): array
     {
         $response = Http::asForm()->connectTimeout(3)->timeout(15)->post(self::TOKEN_URL, [
@@ -56,13 +63,22 @@ class RdStationCrmAdapter extends AbstractCrmProviderAdapter
 
         $this->throwIfFailed($response);
         $tokens = $response->json();
-        if (! is_array($tokens) || ! is_string($tokens['access_token'] ?? null) || ! is_string($tokens['refresh_token'] ?? null)) {
+        if (! is_string($tokens['access_token'] ?? null) || ! is_string($tokens['refresh_token'] ?? null)) {
             throw new CrmProviderException(CrmErrorCategory::Definitive, 'O RD Station CRM não retornou as credenciais esperadas.');
         }
 
-        $tokens['expires_at'] = now()->addSeconds((int) ($tokens['expires_in'] ?? 7200))->timestamp;
+        $expiresIn = is_numeric($tokens['expires_in'] ?? null) ? (int) $tokens['expires_in'] : 7200;
+        $normalizedTokens = [
+            'access_token' => $tokens['access_token'],
+            'refresh_token' => $tokens['refresh_token'],
+            'expires_at' => now()->addSeconds($expiresIn)->getTimestamp(),
+            'expires_in' => $expiresIn,
+        ];
+        if (is_string($tokens['token_type'] ?? null)) {
+            $normalizedTokens['token_type'] = $tokens['token_type'];
+        }
 
-        return $tokens;
+        return $normalizedTokens;
     }
 
     public function freshIntegration(Integration $integration): Integration
@@ -127,6 +143,7 @@ class RdStationCrmAdapter extends AbstractCrmProviderAdapter
         return $integration;
     }
 
+    /** @return CrmMetadata */
     public function loadMetadata(Integration $integration): array
     {
         $integration = $this->freshIntegration($integration);
@@ -141,8 +158,8 @@ class RdStationCrmAdapter extends AbstractCrmProviderAdapter
                 'stages' => array_map(fn (array $stage): array => [
                     'id' => (string) ($stage['id'] ?? ''),
                     'name' => (string) ($stage['name'] ?? ''),
-                    'status' => $stage['status'] ?? null,
-                    'position' => $stage['position'] ?? null,
+                    'status' => isset($stage['status']) ? (string) $stage['status'] : null,
+                    'position' => is_numeric($stage['position'] ?? null) ? (int) $stage['position'] : null,
                 ], $stages),
             ];
         }
@@ -150,19 +167,26 @@ class RdStationCrmAdapter extends AbstractCrmProviderAdapter
         $fields = $this->allPages($integration, '/custom_fields');
         $owners = $this->allPages($integration, '/users');
         $lostReasons = $this->allPages($integration, '/lost_reasons');
+        $teams = $this->allPages($integration, '/teams');
 
         return [
+            'account' => [
+                'teams' => array_map(fn (array $team): array => [
+                    'id' => (string) ($team['id'] ?? ''),
+                    'name' => (string) ($team['name'] ?? ''),
+                ], $teams),
+            ],
             'pipelines' => $normalizedPipelines,
             'fields' => array_map(fn (array $field): array => [
                 'id' => (string) ($field['id'] ?? ''),
                 'name' => (string) ($field['label'] ?? $field['name'] ?? ''),
                 'type' => (string) ($field['type'] ?? 'text'),
-                'options' => $field['options'] ?? [],
+                'options' => is_array($field['options'] ?? null) ? array_values($field['options']) : [],
             ], $fields),
             'owners' => array_map(fn (array $owner): array => [
                 'id' => (string) ($owner['id'] ?? ''),
                 'name' => (string) ($owner['name'] ?? $owner['email'] ?? ''),
-                'email' => $owner['email'] ?? null,
+                'email' => is_string($owner['email'] ?? null) ? $owner['email'] : null,
             ], $owners),
             'lost_reasons' => array_map(fn (array $reason): array => [
                 'id' => (string) ($reason['id'] ?? ''),
@@ -171,21 +195,25 @@ class RdStationCrmAdapter extends AbstractCrmProviderAdapter
         ];
     }
 
+    /** @return CrmCapabilities */
     public function capabilities(): array
     {
         return [
+            'metadata' => true,
             'loss_reason_required' => true,
             'won_and_lost_stages' => false,
             'webhooks' => false,
-            'operations' => ['lookup', 'person_create', 'person_update', 'deal_create', 'deal_update', 'deal_move', 'note'],
+            'operations' => [],
         ];
     }
 
+    /** @return CrmRateLimit */
     public function rateLimit(): array
     {
         return ['requests' => 120, 'window_seconds' => 60];
     }
 
+    /** @return list<array<string, mixed>> */
     private function allPages(Integration $integration, string $path): array
     {
         $page = 1;
@@ -210,12 +238,12 @@ class RdStationCrmAdapter extends AbstractCrmProviderAdapter
                     $results[] = $item;
                 }
             }
-            $nextLink = is_array($payload) ? data_get($payload, 'links.next') : null;
+            $nextLink = data_get($payload, 'links.next');
             if (is_string($nextLink) && $nextLink !== '') {
                 $nextUrl = $this->nextPagePath($nextLink, $path, $nextParameters);
                 $page++;
             } else {
-                $pagination = is_array($payload) ? ($payload['pagination'] ?? $payload['meta']['pagination'] ?? []) : [];
+                $pagination = $payload['pagination'] ?? $payload['meta']['pagination'] ?? [];
                 $totalPages = (int) ($pagination['total_pages'] ?? $pagination['totalPages'] ?? 1);
                 $hasNextPage = (bool) ($pagination['has_next_page'] ?? $page < $totalPages);
                 $nextUrl = null;
@@ -230,6 +258,7 @@ class RdStationCrmAdapter extends AbstractCrmProviderAdapter
         return $results;
     }
 
+    /** @param array<array-key, mixed> $parameters */
     private function nextPagePath(string $nextLink, string $currentPath, array &$parameters): string
     {
         $parts = parse_url($nextLink);

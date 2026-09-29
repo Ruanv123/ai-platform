@@ -462,6 +462,7 @@ class IntegrationController extends Controller
             'provider' => $integration->provider,
             'baseUrl' => $integration->baseUrl(),
             'accountEmail' => $integration->credential('email'),
+            'crmAccount' => data_get($integration->crm_metadata, 'account'),
             'crmMetadataLoadedAt' => $integration->crm_metadata_loaded_at?->toIso8601String(),
             'status' => $integration->status,
             'statusLabel' => match ($integration->status) {
