@@ -7,6 +7,7 @@ use App\Crm\CrmErrorCategory;
 use App\Crm\CrmOperationProcessor;
 use App\Crm\CrmProviderException;
 use App\Enums\CrmOperationStatus;
+use App\Models\CrmLinkedDeal;
 use App\Models\CrmOperation;
 use App\Models\Integration;
 use Illuminate\Bus\Queueable;
@@ -57,22 +58,7 @@ class ProcessCrmOperation implements ShouldQueue
 
         try {
             $linkedDeal = $processor->process($operation);
-            $operation->forceFill([
-                'status' => CrmOperationStatus::Completed,
-                'attempts' => $attempt,
-                'failure_message' => null,
-                'completed_at' => now(),
-                'summary' => [
-                    ...$operation->summary,
-                    'linked_deal' => [
-                        'pipeline_id' => $linkedDeal->pipeline_id,
-                        'stage_id' => $linkedDeal->stage_id,
-                        'status' => $linkedDeal->status,
-                        'value' => $linkedDeal->value,
-                        'owner_id' => $linkedDeal->owner_id,
-                    ],
-                ],
-            ])->save();
+            $this->completeOperation($operation, $attempt, $linkedDeal);
         } catch (CrmProviderException $exception) {
             $this->handleProviderException($operation, $integration, $adapter, $processor, $attempt, $exception);
         } catch (Throwable $exception) {
@@ -101,46 +87,25 @@ class ProcessCrmOperation implements ShouldQueue
                 $integration = $adapter->renewIntegration($integration);
                 $operation->setRelation('integration', $integration);
                 $operation->forceFill(['token_refresh_attempts' => 1])->save();
-                $linkedDeal = $processor->process($operation);
-                $operation->forceFill([
-                    'status' => CrmOperationStatus::Completed,
-                    'attempts' => $attempt,
-                    'failure_message' => null,
-                    'completed_at' => now(),
-                    'summary' => [
-                        ...$operation->summary,
-                        'linked_deal' => [
-                            'pipeline_id' => $linkedDeal->pipeline_id,
-                            'stage_id' => $linkedDeal->stage_id,
-                            'status' => $linkedDeal->status,
-                            'value' => $linkedDeal->value,
-                            'owner_id' => $linkedDeal->owner_id,
-                        ],
-                    ],
-                ])->save();
             } catch (CrmProviderException $refreshException) {
-                if ($refreshException->category === CrmErrorCategory::RateLimit) {
-                    $operation->forceFill(['status' => CrmOperationStatus::Pending])->save();
-                    $this->dispatchAgain(max(1, $refreshException->retryAfterSeconds ?? 1));
+                $this->handleRefreshFailure($operation, $integration, $attempt, $refreshException);
 
-                    return;
-                }
+                return;
+            } catch (Throwable $retryException) {
+                report($retryException);
+                $this->retryOrFail($operation, $attempt, 'Não foi possível renovar o acesso ao CRM.');
 
-                if ($refreshException->category === CrmErrorCategory::Temporary) {
-                    $this->retryOrFail($operation, $attempt, $refreshException->getMessage());
+                return;
+            }
 
-                    return;
-                }
-
-                $this->markIntegrationUnavailable($integration);
-                if ($refreshException->category === CrmErrorCategory::AccessDenied) {
-                    $this->waitForReconnect($operation, $attempt);
-                } else {
-                    $this->failOperation($operation, $refreshException->getMessage(), $attempt);
-                }
+            try {
+                $linkedDeal = $processor->process($operation);
+                $this->completeOperation($operation, $attempt, $linkedDeal);
+            } catch (CrmProviderException $retryException) {
+                $this->handleProviderException($operation, $integration, $adapter, $processor, $attempt, $retryException);
             } catch (Throwable $refreshException) {
                 report($refreshException);
-                $this->retryOrFail($operation, $attempt, 'Não foi possível renovar o acesso ao CRM.');
+                $this->retryOrFail($operation, $attempt, 'Não foi possível concluir a Operação no CRM.');
             }
 
             return;
@@ -160,6 +125,55 @@ class ProcessCrmOperation implements ShouldQueue
         }
 
         $this->failOperation($operation, $exception->getMessage(), $attempt);
+    }
+
+    private function handleRefreshFailure(
+        CrmOperation $operation,
+        Integration $integration,
+        int $attempt,
+        CrmProviderException $exception,
+    ): void {
+        if ($exception->category === CrmErrorCategory::RateLimit) {
+            $operation->forceFill(['status' => CrmOperationStatus::Pending])->save();
+            $this->dispatchAgain(max(1, $exception->retryAfterSeconds ?? 1));
+
+            return;
+        }
+
+        if ($exception->category === CrmErrorCategory::Temporary) {
+            $this->retryOrFail($operation, $attempt, $exception->getMessage());
+
+            return;
+        }
+
+        if ($exception->category === CrmErrorCategory::AccessDenied) {
+            $this->markIntegrationUnavailable($integration);
+            $this->waitForReconnect($operation, $attempt);
+
+            return;
+        }
+
+        $this->failOperation($operation, $exception->getMessage(), $attempt);
+    }
+
+    private function completeOperation(CrmOperation $operation, int $attempt, CrmLinkedDeal $linkedDeal): void
+    {
+        $operation->forceFill([
+            'status' => CrmOperationStatus::Completed,
+            'attempts' => $attempt,
+            'failure_message' => null,
+            'completed_at' => now(),
+            'summary' => [
+                ...$operation->summary,
+                'linked_deal' => [
+                    'pipeline_id' => $linkedDeal->pipeline_id,
+                    'stage_id' => $linkedDeal->stage_id,
+                    'status' => $linkedDeal->status,
+                    'value' => $linkedDeal->value,
+                    'owner_id' => $linkedDeal->owner_id,
+                ],
+            ],
+        ])->save();
     }
 
     private function retryOrFail(CrmOperation $operation, int $attempt, string $message): void

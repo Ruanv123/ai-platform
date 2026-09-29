@@ -445,6 +445,26 @@ it('renews access once after provider refusal and retries the CRM operation', fu
         ->and($adapter->renewalCount)->toBe(1);
 });
 
+it('keeps a successfully renewed integration connected when the retried operation fails definitively', function () {
+    $scenario = crmDealScenario();
+    $adapter = new FakeCrmProviderAdapter;
+    $adapter->personSearchFailures = [
+        new CrmProviderException(CrmErrorCategory::AccessDenied, 'Token recusado.'),
+        new CrmProviderException(CrmErrorCategory::Definitive, 'A operação não é permitida pelo CRM.'),
+    ];
+    $result = crmDealToolResult($scenario['tool'], ['title' => 'Plano anual']);
+
+    processCrmDealOperation(CrmOperation::query()->findOrFail($result['operation_id']), $adapter);
+
+    $operation = CrmOperation::query()->findOrFail($result['operation_id']);
+    expect($operation->status)->toBe(CrmOperationStatus::Failed)
+        ->and($operation->attempts)->toBe(1)
+        ->and($operation->token_refresh_attempts)->toBe(1)
+        ->and($operation->failure_message)->toBe('A operação não é permitida pelo CRM.')
+        ->and($scenario['integration']->fresh()->status)->toBe('connected')
+        ->and($adapter->renewalCount)->toBe(1);
+});
+
 it('keeps a CRM operation pending when its one token renewal is refused', function () {
     $scenario = crmDealScenario();
     $adapter = new FakeCrmProviderAdapter;
