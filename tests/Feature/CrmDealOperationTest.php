@@ -26,7 +26,6 @@ use App\Models\Team;
 use App\Models\User;
 use Illuminate\Contracts\Cache\Lock;
 use Illuminate\Contracts\Cache\LockTimeoutException;
-use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request as HttpRequest;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
@@ -34,9 +33,6 @@ use Illuminate\Support\Facades\Queue;
 use Inertia\Testing\AssertableInertia as Assert;
 use Laravel\Ai\Tools\Request as ToolRequest;
 use Tests\Support\Crm\Fakes\FakeCrmProviderAdapter;
-use Tests\TestCase;
-
-uses(TestCase::class, RefreshDatabase::class);
 
 beforeEach(function (): void {
     config(['app.key' => 'base64:'.base64_encode(str_repeat('x', 32))]);

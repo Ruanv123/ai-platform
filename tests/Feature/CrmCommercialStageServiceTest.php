@@ -8,11 +8,7 @@ use App\Models\CrmContactLink;
 use App\Models\CrmLinkedDeal;
 use App\Models\Integration;
 use App\Models\Team;
-use Illuminate\Foundation\Testing\DatabaseMigrations;
 use Illuminate\Support\Facades\Event;
-use Tests\TestCase;
-
-uses(TestCase::class, DatabaseMigrations::class);
 
 it('broadcasts the pause notification to the team inbox after the CRM transition commits', function () {
     $team = Team::factory()->create();
