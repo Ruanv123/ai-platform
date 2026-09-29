@@ -97,6 +97,16 @@ class Agent extends Model
         return $this->hasMany(Channel::class);
     }
 
+    public function versions(): HasMany
+    {
+        return $this->hasMany(AgentVersion::class);
+    }
+
+    public function publishedVersion(): ?AgentVersion
+    {
+        return $this->versions()->latest('number')->first();
+    }
+
     /**
      * Get the attributes that should be cast.
      *
