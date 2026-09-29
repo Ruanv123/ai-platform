@@ -90,6 +90,8 @@ type Props = {
     crmOwners: { id: string; name: string }[];
     defaultCrmOwnerId: string | null;
     visibleCrmFieldIds: string[];
+    registerAttendedContacts: boolean;
+    minimumAttendedContactMessages: number;
     permissions: TeamPermissions;
 };
 
@@ -137,6 +139,8 @@ export default function IntegrationShowPage(props: Props) {
                 crmOwners={props.crmOwners}
                 defaultCrmOwnerId={props.defaultCrmOwnerId}
                 visibleCrmFieldIds={props.visibleCrmFieldIds}
+                registerAttendedContacts={props.registerAttendedContacts}
+                minimumAttendedContactMessages={props.minimumAttendedContactMessages}
                 permissions={permissions}
             />
         </>;

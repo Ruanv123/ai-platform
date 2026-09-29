@@ -17,6 +17,7 @@ import { connect } from '@/routes/integrations/crm/rd-station';
 import type { TeamPermissions } from '@/types';
 import defaultOwner from '@/routes/integrations/crm/default-owner';
 import crmOperations from '@/routes/integrations/crm/operations';
+import CrmAttendedContactSettings from '@/components/integrations/crm-attended-contact-settings';
 import {
     Select,
     SelectContent,
@@ -44,6 +45,8 @@ type Props = {
     crmOwners: { id: string; name: string }[];
     defaultCrmOwnerId: string | null;
     visibleCrmFieldIds: string[];
+    registerAttendedContacts: boolean;
+    minimumAttendedContactMessages: number;
     permissions: TeamPermissions;
 };
 
@@ -55,6 +58,8 @@ export default function CrmConnectionPanel({
     crmOwners,
     defaultCrmOwnerId,
     visibleCrmFieldIds,
+    registerAttendedContacts,
+    minimumAttendedContactMessages,
     permissions,
 }: Props) {
     const [selectedFieldIds, setSelectedFieldIds] = useState(visibleCrmFieldIds);
@@ -239,6 +244,12 @@ export default function CrmConnectionPanel({
                         </Button>
                     </CardContent>
                 </Card>
+            )}
+            {connected && permissions.canManageIntegrations && (
+                <CrmAttendedContactSettings
+                    enabled={registerAttendedContacts}
+                    minimumMessages={minimumAttendedContactMessages}
+                />
             )}
             {connected && permissions.canManageIntegrations && (
                 <Card className="max-w-2xl">

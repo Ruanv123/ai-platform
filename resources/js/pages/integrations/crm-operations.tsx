@@ -39,6 +39,7 @@ const originLabels: Record<string, string> = {
 
 const typeLabels: Record<string, string> = {
     guarantee_crm_deal: 'Garantir Negócio',
+    ensure_person: 'Garantir Pessoa',
     update_person: 'Atualizar Pessoa',
     move_deal_stage: 'Mover Negócio',
     add_deal_note: 'Registrar nota',

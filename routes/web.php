@@ -21,6 +21,7 @@ use App\Http\Controllers\Flows\FlowWebhookController;
 use App\Http\Controllers\InboxController;
 use App\Http\Controllers\InboxMediaController;
 use App\Http\Controllers\Integrations\AgendaCalendarController;
+use App\Http\Controllers\Integrations\CrmAttendedContactSettingsController;
 use App\Http\Controllers\Integrations\CrmConnectionController;
 use App\Http\Controllers\Integrations\CrmDefaultOwnerController;
 use App\Http\Controllers\Integrations\CrmFieldVisibilityController;
@@ -203,6 +204,8 @@ Route::middleware(['auth', EnsureUserHasTeam::class])->group(function () {
         ->name('integrations.crm.fields.visible-to-agent.update');
     Route::put('integrations/crm/default-owner', [CrmDefaultOwnerController::class, 'update'])
         ->name('integrations.crm.default-owner.update');
+    Route::put('integrations/crm/attended-contact-registration', [CrmAttendedContactSettingsController::class, 'update'])
+        ->name('integrations.crm.attended-contact-registration.update');
     Route::get('integrations/crm/operations', [CrmOperationController::class, 'index'])
         ->name('integrations.crm.operations.index');
     Route::post('integrations/crm/operations/{operation}/retry', [CrmOperationController::class, 'retry'])
