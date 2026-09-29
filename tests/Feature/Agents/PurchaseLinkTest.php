@@ -96,6 +96,8 @@ it('builds a multi-variant cart permalink in the Playground without attribution'
     $user = User::factory()->withTeam()->create();
     $team = $user->company();
     $shop = purchaseLinkShop($team);
+    $shop->forceFill(['sync_status' => 'error'])->save();
+    $shop->integration->forceFill(['status' => 'error'])->save();
     $product = purchaseLinkProduct($team, $shop);
     $firstVariant = ProductVariant::factory()->for($team)->for($shop)->for($product)->create([
         'external_id' => 'gid://shopify/ProductVariant/1001',

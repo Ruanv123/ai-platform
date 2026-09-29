@@ -123,6 +123,16 @@ it('completes Shopify OAuth, persists encrypted credentials and reuses the same 
             ->where('shop.currencyCode', 'BRL'),
         );
 
+    $integration->forceFill([
+        'status' => 'error',
+        'status_message' => 'A autorização expirou.',
+    ])->save();
+    $shop->forceFill([
+        'sync_status' => 'error',
+        'sync_error' => 'A autorização expirou.',
+        'suggested_action' => 'Reconecte a Loja pela tela de Integrações.',
+    ])->save();
+
     $secondState = startShopifyAuthorization($this, 'alpha.myshopify.com');
     $this->get(route('integrations.shopify.callback', shopifySignedCallback($secondState)))
         ->assertRedirect(route('integrations.show', ['type' => 'ecommerce', 'provider' => 'shopify']));
@@ -130,7 +140,12 @@ it('completes Shopify OAuth, persists encrypted credentials and reuses the same 
     expect(Integration::query()->where('team_id', $user->company()->getKey())->count())->toBe(1)
         ->and(Shop::query()->where('team_id', $user->company()->getKey())->count())->toBe(1)
         ->and(Integration::query()->where('team_id', $user->company()->getKey())->value('id'))->toBe($integration->getKey())
-        ->and(Shop::query()->where('team_id', $user->company()->getKey())->value('id'))->toBe($shop->getKey());
+        ->and(Shop::query()->where('team_id', $user->company()->getKey())->value('id'))->toBe($shop->getKey())
+        ->and($integration->fresh()->status)->toBe('connected')
+        ->and($integration->fresh()->status_message)->toBeNull()
+        ->and($shop->fresh()->sync_status)->toBe('importing')
+        ->and($shop->fresh()->sync_error)->toBeNull()
+        ->and($shop->fresh()->suggested_action)->toBeNull();
 
     Queue::assertPushed(StartShopifyCatalogImport::class, 1);
     Queue::assertPushed(RegisterShopifyCatalogWebhooks::class, fn (RegisterShopifyCatalogWebhooks $job): bool => $job->shopId === $shop->getKey());
