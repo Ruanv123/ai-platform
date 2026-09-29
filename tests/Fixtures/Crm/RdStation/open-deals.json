@@ -1,25 +1,51 @@
 {
   "data": [
     {
-      "id": "deal-open",
-      "contact_ids": ["contact-new"],
-      "status": "open",
-      "pipeline_id": "pipeline-1",
-      "stage_id": "stage-1",
+      "id": "65b000000000000000000001",
+      "contact_ids": ["67c000000000000000000002"],
+      "status": "ongoing",
+      "pipeline_id": "65a000000000000000000001",
+      "stage_id": "65a000000000000000000002",
       "total_price": 1999.9,
-      "owner_id": "user-2",
+      "owner_id": "65a000000000000000000003",
       "updated_at": "2025-02-01T11:00:00Z"
     },
     {
-      "id": "deal-lost",
-      "contact_ids": ["contact-new"],
-      "status": "lost",
-      "pipeline_id": "pipeline-1",
-      "stage_id": "stage-1",
-      "total_price": 500,
-      "owner_id": "user-2",
+      "id": "65b000000000000000000002",
+      "contact_ids": ["67c000000000000000000002"],
+      "status": "paused",
+      "pipeline_id": "65a000000000000000000001",
+      "stage_id": "65a000000000000000000002",
+      "total_price": 1199.9,
+      "owner_id": "65a000000000000000000003",
       "updated_at": "2025-02-01T09:00:00Z"
+    },
+    {
+      "id": "65b000000000000000000003",
+      "contact_ids": ["67c000000000000000000002"],
+      "status": "won",
+      "pipeline_id": "65a000000000000000000001",
+      "stage_id": "65a000000000000000000002",
+      "total_price": 2400,
+      "owner_id": "65a000000000000000000004",
+      "updated_at": "2025-02-01T08:00:00Z"
+    },
+    {
+      "id": "65b000000000000000000004",
+      "contact_ids": ["67c000000000000000000002"],
+      "status": "lost",
+      "pipeline_id": "65a000000000000000000001",
+      "stage_id": "65a000000000000000000002",
+      "total_price": 500,
+      "owner_id": "65a000000000000000000004",
+      "updated_at": "2025-02-01T07:00:00Z"
     }
   ],
-  "pagination": {"total_pages": 1}
+  "links": {
+    "first": "https://api.rd.services/crm/v2/deals?page[number]=1&page[size]=100",
+    "prev": null,
+    "self": "https://api.rd.services/crm/v2/deals?page[number]=1&page[size]=100",
+    "next": null,
+    "last": "https://api.rd.services/crm/v2/deals?page[number]=1&page[size]=100"
+  }
 }

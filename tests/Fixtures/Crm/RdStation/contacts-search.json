@@ -1,23 +1,29 @@
 {
   "data": [
     {
-      "id": "contact-old",
+      "id": "67c000000000000000000001",
       "name": "Pessoa antiga",
       "phones": [{"phone": "(11) 99999-8888"}],
       "emails": [],
-      "owner_id": "user-1",
+      "owner_id": "65a000000000000000000003",
       "custom_fields": {"origin": "Site", "internal_note": "não exibir"},
       "updated_at": "2025-01-01T10:00:00Z"
     },
     {
-      "id": "contact-new",
+      "id": "67c000000000000000000002",
       "name": "Pessoa atualizada",
       "phones": [{"phone": "11 99999-8888"}],
       "emails": [],
-      "owner_id": "user-1",
+      "owner_id": "65a000000000000000000003",
       "custom_fields": {"origin": "Indicação", "internal_note": "confidencial"},
       "updated_at": "2025-02-01T10:00:00Z"
     }
   ],
-  "pagination": {"total_pages": 1}
+  "links": {
+    "first": "https://api.rd.services/crm/v2/contacts?page[number]=1&page[size]=100",
+    "prev": null,
+    "self": "https://api.rd.services/crm/v2/contacts?page[number]=1&page[size]=100",
+    "next": null,
+    "last": "https://api.rd.services/crm/v2/contacts?page[number]=1&page[size]=100"
+  }
 }

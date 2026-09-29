@@ -42,9 +42,9 @@ function crmCardIntegration(Team $team, array $overrides = []): Integration
         ],
         'crm_metadata' => [
             'pipelines' => [[
-                'id' => 'pipeline-1',
+                'id' => '65a000000000000000000001',
                 'name' => 'Novos negócios',
-                'stages' => [['id' => 'stage-1', 'name' => 'Qualificação', 'status' => null, 'position' => 1]],
+                'stages' => [['id' => '65a000000000000000000002', 'name' => 'Qualificação', 'status' => null, 'position' => 1]],
             ]],
             'fields' => [
                 ['id' => 'field-visible', 'name' => 'Interesse', 'slug' => 'interest', 'entity' => 'contact', 'type' => 'text', 'options' => []],
@@ -52,8 +52,8 @@ function crmCardIntegration(Team $team, array $overrides = []): Integration
                 ['id' => 'field-deal', 'name' => 'Observação do negócio', 'slug' => 'deal_note', 'entity' => 'deal', 'type' => 'text', 'options' => []],
             ],
             'owners' => [
-                ['id' => 'owner-person', 'name' => 'Maria Vendedora', 'email' => null],
-                ['id' => 'owner-deal', 'name' => 'João Vendedor', 'email' => null],
+                ['id' => '65a000000000000000000003', 'name' => 'Maria Vendedora', 'email' => null],
+                ['id' => '65a000000000000000000004', 'name' => 'João Vendedor', 'email' => null],
             ],
         ],
         'crm_settings' => ['agent_visible_field_ids' => ['field-visible']],
@@ -69,7 +69,7 @@ function crmCardFakePerson(string $id, string $updatedAt, array $overrides = [])
         'phone' => '+5511999998888',
         'email' => null,
         'organization_id' => null,
-        'owner_id' => 'owner-person',
+        'owner_id' => '65a000000000000000000003',
         'fields' => ['interest' => 'Interesse '.$id, 'internal_note' => 'Dado privado'],
         'updated_at' => $updatedAt,
     ], $overrides);
@@ -106,8 +106,8 @@ it('normalizes the search phone, chooses the newest CRM duplicate, and creates o
     $contact = Contact::factory()->for($team)->create(['phone' => '+5511999998888']);
     $adapter = new FakeCrmProviderAdapter;
     $adapter->people = [
-        crmCardFakePerson('person-old', '2025-01-01T10:00:00Z'),
-        crmCardFakePerson('person-new', '2025-02-01T10:00:00Z', ['fields' => ['interest' => 'Consulta recente', 'internal_note' => 'não mostrar']]),
+        crmCardFakePerson('67c000000000000000000001', '2025-01-01T10:00:00Z'),
+        crmCardFakePerson('67c000000000000000000002', '2025-02-01T10:00:00Z', ['fields' => ['interest' => 'Consulta recente', 'internal_note' => 'não mostrar']]),
     ];
 
     $result = crmCardToolResult(new ConsultCrmCard($team, $contact, new CrmCardLookup($adapter)));
@@ -116,7 +116,7 @@ it('normalizes the search phone, chooses the newest CRM duplicate, and creates o
         ->and($result['fields'])->toBe([['name' => 'Interesse', 'value' => 'Consulta recente']])
         ->and($adapter->phoneSearches)->toBe(['+5511999998888'])
         ->and($adapter->lookupBudgets[0])->toBeLessThanOrEqual(5)
-        ->and(CrmContactLink::query()->where('contact_id', $contact->id)->value('external_person_id'))->toBe('person-new')
+        ->and(CrmContactLink::query()->where('contact_id', $contact->id)->value('external_person_id'))->toBe('67c000000000000000000002')
         ->and(CrmContactLink::query()->count())->toBe(1);
 });
 
@@ -138,19 +138,19 @@ it('returns only visible contact fields, open deals, and owner names without act
     crmCardIntegration($team);
     $contact = Contact::factory()->for($team)->create(['phone' => '+5511999998888']);
     $adapter = new FakeCrmProviderAdapter;
-    $adapter->people = [crmCardFakePerson('person-new', '2025-02-01T10:00:00Z', [
+    $adapter->people = [crmCardFakePerson('67c000000000000000000002', '2025-02-01T10:00:00Z', [
         'fields' => ['interest' => 'Avalia o plano premium', 'internal_note' => 'Nunca enviar', 'deal_note' => 'interno'],
     ])];
     $adapter->openDeals = [[
-        'id' => 'deal-open',
-        'person_id' => 'person-new',
+        'id' => '65b000000000000000000001',
+        'person_id' => '67c000000000000000000002',
         'organization_id' => null,
-        'pipeline_id' => 'pipeline-1',
-        'stage_id' => 'stage-1',
+        'pipeline_id' => '65a000000000000000000001',
+        'stage_id' => '65a000000000000000000002',
         'status' => 'open',
         'loss_reason_id' => null,
         'value' => 1499.5,
-        'owner_id' => 'owner-deal',
+        'owner_id' => '65a000000000000000000004',
         'updated_at' => '2025-02-01T11:00:00Z',
     ]];
 
@@ -169,7 +169,7 @@ it('returns only visible contact fields, open deals, and owner names without act
         'owner_name' => 'Maria Vendedora',
     ])
         ->and(array_key_exists('activities', $result))->toBeFalse()
-        ->and($adapter->dealSearches)->toBe(['person-new']);
+        ->and($adapter->dealSearches)->toBe(['67c000000000000000000002']);
 });
 
 it('uses an existing link by external person ID even when the local phone is invalid', function () {
@@ -243,7 +243,7 @@ it('loads contact, owner, and deal metadata from RD and rejects unexpected HTTP 
 
         return match ($path) {
             '/crm/v2/contacts' => Http::response(json_decode(file_get_contents(base_path('tests/Fixtures/Crm/RdStation/contacts-search.json')), true, flags: JSON_THROW_ON_ERROR)),
-            '/crm/v2/contacts/contact-new' => Http::response(json_decode(file_get_contents(base_path('tests/Fixtures/Crm/RdStation/contact.json')), true, flags: JSON_THROW_ON_ERROR)),
+            '/crm/v2/contacts/67c000000000000000000002' => Http::response(json_decode(file_get_contents(base_path('tests/Fixtures/Crm/RdStation/contact.json')), true, flags: JSON_THROW_ON_ERROR)),
             '/crm/v2/deals' => Http::response(json_decode(file_get_contents(base_path('tests/Fixtures/Crm/RdStation/open-deals.json')), true, flags: JSON_THROW_ON_ERROR)),
             default => throw new RuntimeException('Unexpected RD Station request: '.$request->url()),
         };
@@ -254,15 +254,17 @@ it('loads contact, owner, and deal metadata from RD and rejects unexpected HTTP 
     $adapter = app(RdStationCrmAdapter::class);
 
     $people = $adapter->findPeopleByPhone($integration, '+5511999998888', 5);
-    $person = $adapter->findPerson($integration, 'contact-new', 5);
-    $deals = $adapter->findOpenDeals($integration, 'contact-new', 5);
+    $person = $adapter->findPerson($integration, '67c000000000000000000002', 5);
+    $deals = $adapter->findOpenDeals($integration, '67c000000000000000000002', 5);
 
     expect($people)->toHaveCount(2)
-        ->and($people[0]['id'])->toBe('contact-new')
+        ->and($people[0]['id'])->toBe('67c000000000000000000002')
         ->and($people[0]['phone'])->toBe('+5511999998888')
         ->and($person['fields'])->toBe(['origin' => 'Indicação', 'internal_note' => 'confidencial'])
-        ->and($deals)->toHaveCount(1)
-        ->and($deals[0])->toMatchArray(['person_id' => 'contact-new', 'pipeline_id' => 'pipeline-1', 'stage_id' => 'stage-1', 'value' => 1999.9, 'owner_id' => 'user-2']);
+        ->and($deals)->toHaveCount(2)
+        ->and(array_column($deals, 'status'))->toBe(['open', 'open'])
+        ->and($deals[0])->toMatchArray(['person_id' => '67c000000000000000000002', 'pipeline_id' => '65a000000000000000000001', 'stage_id' => '65a000000000000000000002', 'value' => 1999.9, 'owner_id' => '65a000000000000000000003'])
+        ->and($deals[1])->toMatchArray(['status' => 'open', 'owner_id' => '65a000000000000000000003']);
 
     Http::assertSent(function (HttpRequest $request): bool {
         $query = [];
@@ -277,7 +279,7 @@ it('loads contact, owner, and deal metadata from RD and rejects unexpected HTTP 
         parse_str((string) parse_url($request->url(), PHP_URL_QUERY), $query);
 
         return parse_url($request->url(), PHP_URL_PATH) === '/crm/v2/deals'
-            && ($query['filter'] ?? null) === 'contact_id:"contact-new" status:open';
+            && ($query['filter'] ?? null) === 'contact_id:"67c000000000000000000002" status:(ongoing,paused)';
     });
     Http::assertSentCount(3);
 });

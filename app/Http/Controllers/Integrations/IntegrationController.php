@@ -511,6 +511,7 @@ class IntegrationController extends Controller
         ];
     }
 
+    /** @return array<int, array{id: string, name: string}> */
     private function crmFieldOptions(?Integration $integration): array
     {
         return collect($integration?->crm_metadata['fields'] ?? [])

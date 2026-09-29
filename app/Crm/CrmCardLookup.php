@@ -11,12 +11,23 @@ use App\Support\E164PhoneNumber;
 use Illuminate\Support\Facades\Cache;
 use Throwable;
 
+/**
+ * @phpstan-import-type CrmPerson from \App\Crm\Contracts\CrmProviderAdapter
+ *
+ * @phpstan-type CrmVisibleField array{name: string, value: mixed}
+ * @phpstan-type CrmOpenDealCard array{pipeline: string|null, stage: string|null, value: float|null, owner_name: string|null}
+ * @phpstan-type CrmLookupUnavailable array{ok: false, message: string}
+ * @phpstan-type CrmLookupNotFound array{ok: true, found: false, message: string}
+ * @phpstan-type CrmLookupFound array{ok: true, found: true, fields: list<CrmVisibleField>, open_deals: list<CrmOpenDealCard>, owner_name: string|null}
+ * @phpstan-type CrmLookupResult CrmLookupUnavailable|CrmLookupNotFound|CrmLookupFound
+ */
 class CrmCardLookup
 {
     private const LOOKUP_TIMEOUT_SECONDS = 5.0;
 
     public function __construct(private CrmProviderAdapter $adapter) {}
 
+    /** @return CrmLookupResult */
     public function lookup(Team $team, ?Contact $contact, ?string $phone = null): array
     {
         if ($contact !== null && ($contact->team_id !== $team->getKey() || ! $contact->exists)) {
@@ -48,6 +59,7 @@ class CrmCardLookup
         }
     }
 
+    /** @return CrmLookupUnavailable|CrmLookupNotFound|CrmLookupFound */
     private function lookupCard(Integration $integration, Team $team, ?Contact $contact, ?string $phone, int $deadline): array
     {
         $link = $contact === null ? null : CrmContactLink::query()
@@ -97,6 +109,7 @@ class CrmCardLookup
         ];
     }
 
+    /** @return CrmPerson|null */
     private function newestMatchingPerson(Integration $integration, string $phone, float $timeoutSeconds): ?array
     {
         if ($timeoutSeconds <= 0) {
@@ -126,6 +139,12 @@ class CrmCardLookup
         return $remainingSeconds;
     }
 
+    /**
+     * @param  array<string, mixed>  $personFields
+     * @param  array<string, mixed>  $metadata
+     * @param  array<array-key, mixed>  $visibleFieldIds
+     * @return list<CrmVisibleField>
+     */
     private function visibleFields(array $personFields, array $metadata, array $visibleFieldIds): array
     {
         if ($visibleFieldIds === []) {
@@ -158,6 +177,7 @@ class CrmCardLookup
         return $fields;
     }
 
+    /** @param array<string, mixed> $metadata */
     private function ownerName(mixed $ownerId, array $metadata): ?string
     {
         if (! is_string($ownerId) || $ownerId === '') {
@@ -173,6 +193,7 @@ class CrmCardLookup
         return null;
     }
 
+    /** @param array<string, mixed> $metadata */
     private function metadataName(array $metadata, string $collection, mixed $id): ?string
     {
         if (! is_string($id)) {
@@ -188,6 +209,7 @@ class CrmCardLookup
         return null;
     }
 
+    /** @param array<string, mixed> $metadata */
     private function stageName(array $metadata, mixed $pipelineId, mixed $stageId): ?string
     {
         if (! is_string($pipelineId) || ! is_string($stageId)) {
@@ -209,6 +231,7 @@ class CrmCardLookup
         return null;
     }
 
+    /** @return CrmLookupUnavailable */
     private function unavailable(): array
     {
         return ['ok' => false, 'message' => 'Ficha indisponível'];

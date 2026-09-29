@@ -16,8 +16,10 @@ use RuntimeException;
 
 /**
  * @phpstan-import-type CrmCapabilities from \App\Crm\Contracts\CrmProviderAdapter
+ * @phpstan-import-type CrmDeal from \App\Crm\Contracts\CrmProviderAdapter
  * @phpstan-import-type CrmMetadata from \App\Crm\Contracts\CrmProviderAdapter
  * @phpstan-import-type CrmOAuthTokens from \App\Crm\Contracts\CrmProviderAdapter
+ * @phpstan-import-type CrmPerson from \App\Crm\Contracts\CrmProviderAdapter
  * @phpstan-import-type CrmRateLimit from \App\Crm\Contracts\CrmProviderAdapter
  */
 class RdStationCrmAdapter extends AbstractCrmProviderAdapter
@@ -278,7 +280,7 @@ class RdStationCrmAdapter extends AbstractCrmProviderAdapter
         $records = $this->allPages(
             $integration,
             '/deals',
-            ['filter' => 'contact_id:"'.$personId.'" status:open'],
+            ['filter' => 'contact_id:"'.$personId.'" status:(ongoing,paused)'],
             $timeoutSeconds,
         );
 
@@ -295,7 +297,10 @@ class RdStationCrmAdapter extends AbstractCrmProviderAdapter
         return ['requests' => 120, 'window_seconds' => 60];
     }
 
-    /** @return list<array<string, mixed>> */
+    /**
+     * @param  array<string, mixed>  $parameters
+     * @return list<array<string, mixed>>
+     */
     private function allPages(Integration $integration, string $path, array $parameters = [], float $timeoutSeconds = 15.0): array
     {
         $deadline = hrtime(true) + (int) ($timeoutSeconds * 1_000_000_000);
@@ -392,6 +397,9 @@ class RdStationCrmAdapter extends AbstractCrmProviderAdapter
         return max(0, ($deadline - hrtime(true)) / 1_000_000_000);
     }
 
+    /** @param array<string, mixed> $record
+     * @return CrmPerson|null
+     */
     private function normalizePerson(array $record, ?string $expectedPhone = null): ?array
     {
         $phones = is_array($record['phones'] ?? null) ? $record['phones'] : [];
@@ -426,6 +434,9 @@ class RdStationCrmAdapter extends AbstractCrmProviderAdapter
         ];
     }
 
+    /** @param array<string, mixed> $record
+     * @return CrmDeal
+     */
     private function normalizeDeal(array $record, ?string $personId = null): array
     {
         $contactIds = is_array($record['contact_ids'] ?? null) ? $record['contact_ids'] : [];
@@ -444,6 +455,7 @@ class RdStationCrmAdapter extends AbstractCrmProviderAdapter
         ];
     }
 
+    /** @param array<string, mixed> $deal */
     private function dealIncludesPerson(array $deal, string $personId): bool
     {
         $contactIds = is_array($deal['contact_ids'] ?? null) ? array_map('strval', $deal['contact_ids']) : [];
@@ -451,6 +463,7 @@ class RdStationCrmAdapter extends AbstractCrmProviderAdapter
         return in_array($personId, $contactIds, true);
     }
 
+    /** @return 'open'|'won'|'lost' */
     private function dealStatus(mixed $status): string
     {
         return match (strtolower(is_string($status) ? $status : 'open')) {
@@ -460,6 +473,7 @@ class RdStationCrmAdapter extends AbstractCrmProviderAdapter
         };
     }
 
+    /** @return list<string> */
     private function phoneVariants(string $normalizedPhone): array
     {
         $digits = ltrim($normalizedPhone, '+');
