@@ -26,6 +26,8 @@ class AgentFactory extends Factory
             'name' => fake()->firstName(),
             'description' => fake()->sentence(),
             'objective' => AgentObjective::Support,
+            'search_products' => null,
+            'send_purchase_link' => null,
             'tone' => AgentTone::Friendly,
             'uses_emojis' => false,
             'response_length' => AgentResponseLength::Short,

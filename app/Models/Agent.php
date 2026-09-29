@@ -42,6 +42,7 @@ use Illuminate\Support\Carbon;
     'description',
     'objective',
     'search_products',
+    'send_purchase_link',
     'tone',
     'uses_emojis',
     'response_length',
@@ -59,6 +60,11 @@ class Agent extends Model
     public function shouldSearchProducts(bool $shopConnected): bool
     {
         return $shopConnected && ($this->search_products ?? $this->objective === AgentObjective::Sales);
+    }
+
+    public function shouldSendPurchaseLink(bool $shopConnected): bool
+    {
+        return $shopConnected && ($this->send_purchase_link ?? $this->objective === AgentObjective::Sales);
     }
 
     /**
@@ -117,6 +123,7 @@ class Agent extends Model
         return [
             'objective' => AgentObjective::class,
             'search_products' => 'boolean',
+            'send_purchase_link' => 'boolean',
             'tone' => AgentTone::class,
             'uses_emojis' => 'boolean',
             'response_length' => AgentResponseLength::class,

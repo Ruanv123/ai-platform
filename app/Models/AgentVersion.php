@@ -33,6 +33,16 @@ class AgentVersion extends Model
         return $shopConnected && (bool) $searchProducts;
     }
 
+    public function shouldSendPurchaseLink(bool $shopConnected): bool
+    {
+        $toolSettings = $this->getAttribute('ecommerce_tools');
+        $sendPurchaseLink = is_array($toolSettings)
+            ? ($toolSettings['send_purchase_link'] ?? $this->objectiveValue() === AgentObjective::Sales)
+            : $this->objectiveValue() === AgentObjective::Sales;
+
+        return $shopConnected && (bool) $sendPurchaseLink;
+    }
+
     public function objectiveValue(): AgentObjective
     {
         $objective = $this->getAttribute('objective');

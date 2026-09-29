@@ -163,6 +163,8 @@ class RespondToWhatsAppMessage implements ShouldQueue
             $productCatalogSearch,
             null,
             $contact,
+            null,
+            $channel,
         );
         $response = $agent->prompt(
             $this->promptFor($lastPendingMessage),

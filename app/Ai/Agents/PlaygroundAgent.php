@@ -8,6 +8,7 @@ use App\Ai\Tools\ConsultAvailableTimes;
 use App\Ai\Tools\ListAppointments;
 use App\Ai\Tools\SearchKnowledgeBase;
 use App\Ai\Tools\SearchProducts;
+use App\Ai\Tools\SendPurchaseLink;
 use App\Ecommerce\ProductCatalogSearch;
 use App\Knowledge\AgentInstructionTemplate;
 use App\Knowledge\KnowledgeBaseSearch;
@@ -83,6 +84,9 @@ class PlaygroundAgent implements Agent, Conversational, HasTools
         $team = $this->configuredAgent->team;
         if ($this->configuredAgent->shouldSearchProducts($team->shops()->exists())) {
             $tools[] = new SearchProducts($team, $this->productCatalogSearch);
+        }
+        if ($this->configuredAgent->shouldSendPurchaseLink($team->shops()->exists())) {
+            $tools[] = new SendPurchaseLink($team, $this->configuredAgent, null, null);
         }
 
         $calendars = $this->configuredAgent->schedulableCalendars;

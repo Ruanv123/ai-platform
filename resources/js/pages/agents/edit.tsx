@@ -54,6 +54,7 @@ type Props = {
     agendaConnected: boolean;
     shopConnected: boolean;
     productSearchConfigured: boolean;
+    purchaseLinkConfigured: boolean;
     publishedVersion: {
         number: number;
     } | null;
@@ -257,6 +258,7 @@ function AgentForm({
     agendaConnected,
     shopConnected,
     productSearchConfigured,
+    purchaseLinkConfigured,
     publishedVersion,
 }: Props) {
     const [name, setName] = useState(agent.name);
@@ -267,6 +269,12 @@ function AgentForm({
     const [searchProducts, setSearchProducts] = useState(agent.searchProducts);
     const [isProductSearchConfigured, setIsProductSearchConfigured] = useState(
         productSearchConfigured,
+    );
+    const [sendPurchaseLink, setSendPurchaseLink] = useState(
+        agent.sendPurchaseLink,
+    );
+    const [isPurchaseLinkConfigured, setIsPurchaseLinkConfigured] = useState(
+        purchaseLinkConfigured,
     );
     const [tone, setTone] = useState(agent.tone || tones[0]?.value || '');
     const [responseLength, setResponseLength] = useState(
@@ -297,6 +305,7 @@ function AgentForm({
         collectionIds: selectedCollectionIds,
         schedulableCalendarIds: selectedSchedulableCalendarIds,
         searchProducts,
+        sendPurchaseLink,
     };
 
     const updateObjective = (nextObjective: string) => {
@@ -304,6 +313,10 @@ function AgentForm({
 
         if (!isProductSearchConfigured) {
             setSearchProducts(nextObjective === 'sales' && shopConnected);
+        }
+
+        if (!isPurchaseLinkConfigured) {
+            setSendPurchaseLink(nextObjective === 'sales' && shopConnected);
         }
     };
 
@@ -316,6 +329,9 @@ function AgentForm({
                 objective,
                 ...(isProductSearchConfigured
                     ? { search_products: searchProducts }
+                    : {}),
+                ...(isPurchaseLinkConfigured
+                    ? { send_purchase_link: sendPurchaseLink }
                     : {}),
                 tone,
                 uses_emojis: usesEmojis,
@@ -405,6 +421,16 @@ function AgentForm({
                                                 name="search_products"
                                                 value={
                                                     searchProducts ? '1' : '0'
+                                                }
+                                            />
+                                        )}
+                                    {shopConnected &&
+                                        isPurchaseLinkConfigured && (
+                                            <input
+                                                type="hidden"
+                                                name="send_purchase_link"
+                                                value={
+                                                    sendPurchaseLink ? '1' : '0'
                                                 }
                                             />
                                         )}
@@ -586,6 +612,34 @@ function AgentForm({
                                                 <span>
                                                     O Agente pode buscar
                                                     produtos da Loja
+                                                </span>
+                                            </label>
+                                            <div className="grid gap-1 pt-2">
+                                                <Label>Mandar Link de compra</Label>
+                                                <p className="text-muted-foreground text-sm">
+                                                    Permita que o Agente gere um
+                                                    link de checkout com as
+                                                    Variantes e quantidades
+                                                    escolhidas pelo Contato.
+                                                </p>
+                                            </div>
+                                            <label className="border-input hover:bg-muted/50 flex cursor-pointer items-start gap-3 rounded-md border px-3 py-3 text-sm">
+                                                <input
+                                                    type="checkbox"
+                                                    checked={sendPurchaseLink}
+                                                    onChange={(event) => {
+                                                        setSendPurchaseLink(
+                                                            event.target.checked,
+                                                        );
+                                                        setIsPurchaseLinkConfigured(
+                                                            true,
+                                                        );
+                                                    }}
+                                                    className="accent-primary mt-0.5 size-4"
+                                                />
+                                                <span>
+                                                    O Agente pode mandar Links
+                                                    de compra da Loja
                                                 </span>
                                             </label>
                                         </section>
