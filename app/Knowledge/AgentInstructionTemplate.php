@@ -17,6 +17,7 @@ class AgentInstructionTemplate
         $team = $agent->team;
         $instructions = $this->list($agent->instructions);
         $rules = $this->list($agent->rules);
+        $crmStageRules = $this->crmStageRules($agent);
 
         return <<<PROMPT
 Você é {$agent->name}, um Agente da Empresa {$team->name}.
@@ -46,6 +47,8 @@ Responda com tamanho {$agent->response_length->label()}.
 
 ## Regras do cliente
 {$rules}
+
+{$crmStageRules}
 
 ## Guardrails da plataforma
 - Não invente informações, números, políticas, disponibilidade ou prazos.
@@ -115,5 +118,40 @@ PROMPT;
         return $usesEmojis
             ? 'Emojis são permitidos quando combinarem com o contexto, sem exagero.'
             : 'Não use emojis.';
+    }
+
+    private function crmStageRules(Agent $agent): string
+    {
+        if ($agent->crm_move_deal_enabled === false || blank($agent->crm_allowed_stages)) {
+            return '';
+        }
+
+        $integration = $agent->team->integrations()
+            ->where('type', 'crm')
+            ->where('status', 'connected')
+            ->first();
+        if ($integration === null) {
+            return '';
+        }
+
+        $pipelineId = $agent->crm_pipeline_id;
+        $stages = collect($integration->crm_metadata['pipelines'] ?? [])
+            ->first(fn (array $pipeline): bool => (string) ($pipeline['id'] ?? '') === (string) $pipelineId)['stages'] ?? [];
+        $stageInstructions = collect($agent->crm_allowed_stages)
+            ->filter(fn (array $allowedStage): bool => trim((string) ($allowedStage['description'] ?? '')) !== '')
+            ->map(function (array $allowedStage) use ($stages): string {
+                $stage = collect($stages)->firstWhere('id', $allowedStage['stage_id'] ?? null);
+                if (! is_array($stage) || in_array(strtolower((string) ($stage['status'] ?? '')), ['won', 'lost'], true)) {
+                    return '';
+                }
+
+                return '- '.(string) ($stage['name'] ?? 'Etapa liberada').': '.trim((string) $allowedStage['description']);
+            })
+            ->filter()
+            ->implode("\n");
+
+        return $stageInstructions === ''
+            ? ''
+            : "## Etapas liberadas no CRM\nMova um Negócio apenas quando o critério da etapa estiver atendido.\n{$stageInstructions}";
     }
 }

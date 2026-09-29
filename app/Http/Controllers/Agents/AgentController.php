@@ -177,8 +177,11 @@ class AgentController extends Controller
                 ],
                 'crm_tools' => [
                     'ensure_deal_enabled' => $lockedAgent->crm_ensure_deal_enabled ?? in_array($lockedAgent->objective, [AgentObjective::Sales, AgentObjective::Qualification], true),
+                    'move_deal_enabled' => $lockedAgent->crm_move_deal_enabled ?? in_array($lockedAgent->objective, [AgentObjective::Sales, AgentObjective::Qualification], true),
+                    'register_note_enabled' => $lockedAgent->crm_register_note_enabled ?? in_array($lockedAgent->objective, [AgentObjective::Sales, AgentObjective::Qualification], true),
                     'pipeline_id' => $lockedAgent->crm_pipeline_id,
                     'initial_stage_id' => $lockedAgent->crm_initial_stage_id,
+                    'allowed_stages' => $lockedAgent->crm_allowed_stages ?? [],
                 ],
                 'published_at' => now(),
             ]);
@@ -251,6 +254,14 @@ class AgentController extends Controller
         if (! collect($selectedPipeline['stages'] ?? [])->contains('id', $crmInitialStageId)) {
             $crmInitialStageId = $selectedPipeline['stages'][0]['id'] ?? '';
         }
+        $crmAllowedStages = collect($agent->crm_allowed_stages ?? [])
+            ->filter(fn (array $allowedStage): bool => collect($selectedPipeline['stages'] ?? [])->contains(
+                fn (array $stage): bool => $stage['id'] === ($allowedStage['stage_id'] ?? null)
+                    && ! in_array(strtolower((string) ($stage['status'] ?? '')), ['won', 'lost'], true),
+            ))
+            ->values()
+            ->all();
+        $crmActionsDefaultEnabled = $crmConnected && in_array($agent->objective, [AgentObjective::Sales, AgentObjective::Qualification], true);
         $publishedVersion = $agent->publishedVersion();
 
         return [
@@ -273,6 +284,11 @@ class AgentController extends Controller
                 'crmLookupConfigured' => $agent->crm_lookup_enabled !== null,
                 'crmEnsureDealEnabled' => $agent->crm_ensure_deal_enabled ?? ($crmConnected && in_array($agent->objective, [AgentObjective::Sales, AgentObjective::Qualification], true)),
                 'crmEnsureDealConfigured' => $agent->crm_ensure_deal_enabled !== null,
+                'crmMoveDealEnabled' => $agent->crm_move_deal_enabled ?? $crmActionsDefaultEnabled,
+                'crmMoveDealConfigured' => $agent->crm_move_deal_enabled !== null,
+                'crmRegisterNoteEnabled' => $agent->crm_register_note_enabled ?? $crmActionsDefaultEnabled,
+                'crmRegisterNoteConfigured' => $agent->crm_register_note_enabled !== null,
+                'crmAllowedStages' => $crmAllowedStages,
                 'crmPipelineId' => $crmPipelineId,
                 'crmInitialStageId' => $crmInitialStageId,
             ],
@@ -318,14 +334,42 @@ class AgentController extends Controller
         $calendarIds = $validated['schedulable_calendar_ids'] ?? [];
         unset($validated['collection_ids'], $validated['schedulable_calendar_ids']);
 
+        if (array_key_exists('crm_pipeline_id', $validated)) {
+            $validated['crm_allowed_stages'] ??= [];
+        }
+
+        $objective = $validated['objective'] ?? $agent->objective->value;
+        $crmIntegration = $agent->team->integrations()
+            ->where('type', 'crm')
+            ->where('status', 'connected')
+            ->first();
+        if ($crmIntegration !== null && in_array($objective, [AgentObjective::Sales->value, AgentObjective::Qualification->value], true)) {
+            $pipelines = $crmIntegration->crm_metadata['pipelines'] ?? [];
+            $firstPipeline = $pipelines[0] ?? null;
+            $pipelineId = $validated['crm_pipeline_id'] ?? $agent->crm_pipeline_id ?? ($firstPipeline['id'] ?? null);
+            $selectedPipeline = collect($pipelines)->first(fn (array $pipeline): bool => (string) ($pipeline['id'] ?? '') === (string) $pipelineId);
+            $firstStageId = collect($selectedPipeline['stages'] ?? [])
+                ->first(fn (array $stage): bool => ! in_array(strtolower((string) ($stage['status'] ?? '')), ['won', 'lost'], true))['id'] ?? null;
+
+            foreach (['crm_lookup_enabled', 'crm_ensure_deal_enabled', 'crm_move_deal_enabled', 'crm_register_note_enabled'] as $action) {
+                if (! array_key_exists($action, $validated) && $agent->{$action} === null) {
+                    $validated[$action] = true;
+                }
+            }
+
+            if (! array_key_exists('crm_pipeline_id', $validated) && $agent->crm_pipeline_id === null) {
+                $validated['crm_pipeline_id'] = is_string($pipelineId) ? $pipelineId : null;
+            }
+            if (! array_key_exists('crm_initial_stage_id', $validated) && $agent->crm_initial_stage_id === null) {
+                $validated['crm_initial_stage_id'] = is_string($firstStageId) ? $firstStageId : null;
+            }
+        }
+
         $agent->update($validated);
         $agent->collections()->sync($collectionIds);
         $agent->schedulableCalendars()->sync($calendarIds);
     }
 
-    /**
-     * @return list<array{id: string, name: string, stages: list<array{id: string, name: string}>}>
-     */
     private function crmPipelineOptions(?Integration $integration): array
     {
         return collect($integration?->crm_metadata['pipelines'] ?? [])
@@ -338,6 +382,7 @@ class AgentController extends Controller
                     ->map(fn (array $stage): array => [
                         'id' => $stage['id'],
                         'name' => (string) ($stage['name'] ?? $stage['id']),
+                        'status' => is_string($stage['status'] ?? null) ? $stage['status'] : null,
                     ])
                     ->values()
                     ->all(),
