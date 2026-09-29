@@ -45,6 +45,7 @@ type SchedulableCalendarOption = {
 type Agent = AgentDraft & {
     id: string;
     description: string | null;
+    crmLookupConfigured: boolean;
 };
 
 type Props = {
@@ -52,6 +53,7 @@ type Props = {
     collections: CollectionOption[];
     schedulableCalendars: SchedulableCalendarOption[];
     agendaConnected: boolean;
+    crmConnected: boolean;
     shopConnected: boolean;
     productSearchConfigured: boolean;
     purchaseLinkConfigured: boolean;
@@ -256,6 +258,7 @@ function AgentForm({
     permissions,
     schedulableCalendars,
     agendaConnected,
+    crmConnected,
     shopConnected,
     productSearchConfigured,
     purchaseLinkConfigured,
@@ -288,6 +291,12 @@ function AgentForm({
     );
     const [selectedSchedulableCalendarIds, setSelectedSchedulableCalendarIds] =
         useState(agent.schedulableCalendarIds);
+    const [crmLookupEnabled, setCrmLookupEnabled] = useState(
+        agent.crmLookupEnabled,
+    );
+    const [crmLookupConfigured, setCrmLookupConfigured] = useState(
+        agent.crmLookupConfigured,
+    );
     const [welcomeMessage, setWelcomeMessage] = useState(agent.welcomeMessage);
     const [activePanel, setActivePanel] = useState<'config' | 'playground'>(
         'config',
@@ -304,6 +313,7 @@ function AgentForm({
         rules,
         collectionIds: selectedCollectionIds,
         schedulableCalendarIds: selectedSchedulableCalendarIds,
+        crmLookupEnabled,
         searchProducts,
         sendPurchaseLink,
     };
@@ -317,6 +327,13 @@ function AgentForm({
 
         if (!isPurchaseLinkConfigured) {
             setSendPurchaseLink(nextObjective === 'sales' && shopConnected);
+        }
+
+        if (!crmLookupConfigured) {
+            setCrmLookupEnabled(
+                crmConnected &&
+                    ['sales', 'qualification'].includes(nextObjective),
+            );
         }
     };
 
@@ -341,6 +358,7 @@ function AgentForm({
                 rules,
                 collection_ids: selectedCollectionIds,
                 schedulable_calendar_ids: selectedSchedulableCalendarIds,
+                ...(crmConnected ? { crm_lookup_enabled: crmLookupEnabled } : {}),
             },
             {
                 preserveScroll: true,
@@ -449,6 +467,13 @@ function AgentForm({
                                         name="uses_emojis"
                                         value={usesEmojis ? '1' : '0'}
                                     />
+                                    {crmConnected && (
+                                        <input
+                                            type="hidden"
+                                            name="crm_lookup_enabled"
+                                            value={crmLookupEnabled ? '1' : '0'}
+                                        />
+                                    )}
                                     {selectedCollectionIds.map(
                                         (collectionId) => (
                                             <input
@@ -809,6 +834,29 @@ function AgentForm({
                                             )}
                                         />
                                     </section>
+
+                                    {crmConnected && (
+                                        <section className="grid gap-3">
+                                            <div className="grid gap-1">
+                                                <Label>RD Station CRM</Label>
+                                                <p className="text-muted-foreground text-sm">
+                                                    Permita que este Agente consulte a ficha comercial do Contato durante o atendimento.
+                                                </p>
+                                            </div>
+                                            <label className="border-input hover:bg-muted/50 flex cursor-pointer items-start gap-3 rounded-md border px-3 py-2 text-sm">
+                                            <input
+                                                type="checkbox"
+                                                checked={crmLookupEnabled}
+                                                onChange={(event) => {
+                                                    setCrmLookupConfigured(true);
+                                                    setCrmLookupEnabled(event.target.checked)
+                                                }}
+                                                    className="accent-primary mt-0.5 size-4"
+                                                />
+                                                <span>Consultar ficha no CRM</span>
+                                            </label>
+                                        </section>
+                                    )}
 
                                     {permissions.canManageAgents && (
                                         <div className="flex flex-col-reverse gap-3 border-t pt-6 sm:flex-row sm:justify-end">

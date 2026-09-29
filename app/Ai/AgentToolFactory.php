@@ -5,13 +5,16 @@ namespace App\Ai;
 use App\Ai\Tools\BookAppointment;
 use App\Ai\Tools\CancelAppointment;
 use App\Ai\Tools\ConsultAvailableTimes;
+use App\Ai\Tools\ConsultCrmCard;
 use App\Ai\Tools\ListAppointments;
 use App\Ai\Tools\ReturnToFlow;
 use App\Ai\Tools\SearchKnowledgeBase;
 use App\Ai\Tools\SearchProducts;
 use App\Ai\Tools\SendPurchaseLink;
+use App\Crm\CrmCardLookup;
 use App\Ecommerce\ProductCatalogSearch;
 use App\Ecommerce\ProductCatalogTriage;
+use App\Enums\AgentObjective;
 use App\Knowledge\KnowledgeBaseSearch;
 use App\Models\Agent as ConfiguredAgent;
 use App\Models\AgentVersion;
@@ -26,6 +29,7 @@ class AgentToolFactory
         private KnowledgeBaseSearch $knowledgeBaseSearch,
         private ProductCatalogSearch $productCatalogSearch,
         private ?SchedulingService $scheduling = null,
+        private ?CrmCardLookup $crmCardLookup = null,
     ) {}
 
     public function make(
@@ -35,6 +39,7 @@ class AgentToolFactory
         array|Collection $conversationMessages,
         ?Channel $channel = null,
         ?ReturnToFlow $returnToFlow = null,
+        ?string $crmLookupPhone = null,
     ): array {
         $tools = [];
         $collections = $agent->collections;
@@ -75,6 +80,20 @@ class AgentToolFactory
             $tools[] = new BookAppointment($contact, $calendars, $scheduling, $simulate);
             $tools[] = new ListAppointments($contact, $scheduling, $simulate);
             $tools[] = new CancelAppointment($contact, $scheduling, $simulate);
+        }
+
+        $crmConnected = $team->integrations()->where('type', 'crm')->where('status', 'connected')->exists();
+        $crmLookupEnabled = $agent->crm_lookup_enabled ?? (
+            $crmConnected && in_array($agent->objective, [AgentObjective::Sales, AgentObjective::Qualification], true)
+        );
+
+        if ($crmLookupEnabled && $crmConnected) {
+            $tools[] = new ConsultCrmCard(
+                $team,
+                $contact,
+                $this->crmCardLookup ?? app(CrmCardLookup::class),
+                $mode === AgentToolMode::Simulated ? $crmLookupPhone : null,
+            );
         }
 
         if ($mode === AgentToolMode::Real && $returnToFlow !== null) {

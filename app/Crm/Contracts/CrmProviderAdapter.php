@@ -7,12 +7,12 @@ use App\Models\Integration;
 /**
  * @phpstan-type CrmStage array{id: string, name: string, status: string|null, position: int|string|null}
  * @phpstan-type CrmPipeline array{id: string, name: string, stages: list<CrmStage>}
- * @phpstan-type CrmFieldDefinition array{id: string, name: string, type: string, options: list<mixed>}
+ * @phpstan-type CrmFieldDefinition array{id: string, name: string, type: string, options: list<mixed>, slug: string, entity: string}
  * @phpstan-type CrmOwner array{id: string, name: string, email: string|null}
  * @phpstan-type CrmLostReason array{id: string, name: string}
  * @phpstan-type CrmAccountContext array{teams: list<array{id: string, name: string}>}
  * @phpstan-type CrmMetadata array{account: CrmAccountContext, pipelines: list<CrmPipeline>, fields: list<CrmFieldDefinition>, owners: list<CrmOwner>, lost_reasons: list<CrmLostReason>}
- * @phpstan-type CrmPerson array{id: string, name: string|null, phone: string|null, email: string|null, organization_id: string|null, owner_id: string|null, fields: array<string, mixed>}
+ * @phpstan-type CrmPerson array{id: string, name: string|null, phone: string|null, email: string|null, organization_id: string|null, owner_id: string|null, fields: array<string, mixed>, updated_at: string|null}
  * @phpstan-type CrmOrganization array{id: string, name: string|null, fields: array<string, mixed>}
  * @phpstan-type CrmDeal array{id: string, person_id: string|null, organization_id: string|null, pipeline_id: string, stage_id: string, status: 'open'|'won'|'lost', loss_reason_id: string|null, value: float|null, owner_id: string|null, updated_at: string|null}
  * @phpstan-type CrmActivity array{id: string, person_id: string, deal_id: string|null, type: 'note', body: string, created_at: string|null}
@@ -34,7 +34,7 @@ interface CrmProviderAdapter
     /** @return CrmOAuthTokens */
     public function exchangeAuthorizationCode(string $code): array;
 
-    public function freshIntegration(Integration $integration): Integration;
+    public function freshIntegration(Integration $integration, float $timeoutSeconds = 15.0): Integration;
 
     /** @return CrmMetadata */
     public function loadMetadata(Integration $integration): array;
@@ -59,16 +59,16 @@ interface CrmProviderAdapter
     public function translateWebhook(array $payload): ?array;
 
     /** @return list<CrmPerson> */
-    public function findPeopleByPhone(Integration $integration, string $phone): array;
+    public function findPeopleByPhone(Integration $integration, string $phone, float $timeoutSeconds = 15.0): array;
 
     /** @return CrmPerson */
-    public function findPerson(Integration $integration, string $personId): array;
+    public function findPerson(Integration $integration, string $personId, float $timeoutSeconds = 15.0): array;
 
     /** @return CrmDeal */
     public function findDeal(Integration $integration, string $dealId): array;
 
     /** @return list<CrmDeal> */
-    public function findOpenDeals(Integration $integration, string $personId): array;
+    public function findOpenDeals(Integration $integration, string $personId, float $timeoutSeconds = 15.0): array;
 
     /** @param CrmPersonAttributes $attributes
      * @return CrmPerson

@@ -37,6 +37,7 @@ class PlaygroundController extends Controller
             'message',
             'collection_ids',
             'schedulable_calendar_ids',
+            'crm_lookup_phone',
         ]));
         $draftAgent->setRelation('team', $team);
         $draftAgent->setRelation(
@@ -48,12 +49,15 @@ class PlaygroundController extends Controller
             $team->schedulableCalendars()->whereKey($validated['schedulable_calendar_ids'] ?? [])->with('integration')->get(),
         );
 
+        $crmLookupPhone = $validated['crm_lookup_phone'] ?? null;
+
         return response()->stream(function () use (
             $draftAgent,
             $validated,
             $instructionTemplate,
             $knowledgeBaseSearch,
             $productCatalogSearch,
+            $crmLookupPhone,
         ): void {
             $invocationId = (string) Str::uuid7();
 
@@ -64,6 +68,7 @@ class PlaygroundController extends Controller
                     $instructionTemplate,
                     $knowledgeBaseSearch,
                     $productCatalogSearch,
+                    crmLookupPhone: $crmLookupPhone,
                 );
                 $stream = $playgroundAgent->stream(
                     $validated['message'],

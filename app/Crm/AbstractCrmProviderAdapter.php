@@ -37,12 +37,12 @@ abstract class AbstractCrmProviderAdapter implements CrmProviderAdapter
         return $this->unsupported();
     }
 
-    public function findPeopleByPhone(Integration $integration, string $phone): array
+    public function findPeopleByPhone(Integration $integration, string $phone, float $timeoutSeconds = 15.0): array
     {
         return $this->unsupported();
     }
 
-    public function findPerson(Integration $integration, string $personId): array
+    public function findPerson(Integration $integration, string $personId, float $timeoutSeconds = 15.0): array
     {
         return $this->unsupported();
     }
@@ -52,7 +52,7 @@ abstract class AbstractCrmProviderAdapter implements CrmProviderAdapter
         return $this->unsupported();
     }
 
-    public function findOpenDeals(Integration $integration, string $personId): array
+    public function findOpenDeals(Integration $integration, string $personId, float $timeoutSeconds = 15.0): array
     {
         return $this->unsupported();
     }

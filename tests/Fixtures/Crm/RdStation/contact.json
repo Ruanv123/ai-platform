@@ -1,0 +1,11 @@
+{
+  "data": {
+    "id": "contact-new",
+    "name": "Pessoa atualizada",
+    "phones": [{"phone": "+55 (11) 99999-8888"}],
+    "emails": [{"email": "pessoa@example.test"}],
+    "owner_id": "user-1",
+    "custom_fields": {"origin": "Indicação", "internal_note": "confidencial"},
+    "updated_at": "2025-02-01T10:00:00Z"
+  }
+}

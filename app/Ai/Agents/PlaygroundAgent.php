@@ -35,6 +35,7 @@ class PlaygroundAgent implements Agent, Conversational, HasTools
         private KnowledgeBaseSearch $knowledgeBaseSearch,
         private ProductCatalogSearch $productCatalogSearch,
         private ?SchedulingService $scheduling = null,
+        private ?string $crmLookupPhone = null,
     ) {}
 
     /**
@@ -75,6 +76,7 @@ class PlaygroundAgent implements Agent, Conversational, HasTools
             null,
             AgentToolMode::Simulated,
             $this->conversationMessages,
+            crmLookupPhone: $this->crmLookupPhone,
         );
     }
 }

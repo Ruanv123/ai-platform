@@ -86,6 +86,8 @@ type Props = {
     shopifySuccess: string | null;
     crmError: string | null;
     crmSuccess: string | null;
+    crmFields: { id: string; name: string }[];
+    visibleCrmFieldIds: string[];
     permissions: TeamPermissions;
 };
 
@@ -124,7 +126,15 @@ export default function IntegrationShowPage(props: Props) {
     if (type === 'crm') {
         return <>
             <Head title="RD Station CRM" />
-            <CrmConnectionPanel integration={integration} crmError={props.crmError} crmSuccess={props.crmSuccess} permissions={permissions} />
+            <CrmConnectionPanel
+                key={integration?.id ?? 'crm-disconnected'}
+                integration={integration}
+                crmError={props.crmError}
+                crmSuccess={props.crmSuccess}
+                crmFields={props.crmFields}
+                visibleCrmFieldIds={props.visibleCrmFieldIds}
+                permissions={permissions}
+            />
         </>;
     }
 

@@ -1,0 +1,23 @@
+{
+  "data": [
+    {
+      "id": "contact-old",
+      "name": "Pessoa antiga",
+      "phones": [{"phone": "(11) 99999-8888"}],
+      "emails": [],
+      "owner_id": "user-1",
+      "custom_fields": {"origin": "Site", "internal_note": "não exibir"},
+      "updated_at": "2025-01-01T10:00:00Z"
+    },
+    {
+      "id": "contact-new",
+      "name": "Pessoa atualizada",
+      "phones": [{"phone": "11 99999-8888"}],
+      "emails": [],
+      "owner_id": "user-1",
+      "custom_fields": {"origin": "Indicação", "internal_note": "confidencial"},
+      "updated_at": "2025-02-01T10:00:00Z"
+    }
+  ],
+  "pagination": {"total_pages": 1}
+}

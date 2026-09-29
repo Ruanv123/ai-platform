@@ -1,0 +1,25 @@
+{
+  "data": [
+    {
+      "id": "deal-open",
+      "contact_ids": ["contact-new"],
+      "status": "open",
+      "pipeline_id": "pipeline-1",
+      "stage_id": "stage-1",
+      "total_price": 1999.9,
+      "owner_id": "user-2",
+      "updated_at": "2025-02-01T11:00:00Z"
+    },
+    {
+      "id": "deal-lost",
+      "contact_ids": ["contact-new"],
+      "status": "lost",
+      "pipeline_id": "pipeline-1",
+      "stage_id": "stage-1",
+      "total_price": 500,
+      "owner_id": "user-2",
+      "updated_at": "2025-02-01T09:00:00Z"
+    }
+  ],
+  "pagination": {"total_pages": 1}
+}
