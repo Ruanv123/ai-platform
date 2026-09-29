@@ -3,6 +3,7 @@
 namespace App\Jobs;
 
 use App\Ecommerce\EcommerceAdapter;
+use App\Enums\ShopifyBulkOperationKind;
 use App\Models\Shop;
 use Illuminate\Contracts\Queue\ShouldBeUnique;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -88,7 +89,12 @@ class StartShopifyCatalogImport implements ShouldBeUnique, ShouldQueue
     {
         $shop = Shop::withoutGlobalScopes()->whereKey($this->shopId)->first();
 
-        if ($shop === null || $shop->sync_status !== 'importing' || $shop->bulk_operation_id !== null) {
+        if (
+            $shop === null
+            || $shop->sync_status !== 'importing'
+            || $shop->bulk_operation_id !== null
+            || ! in_array($shop->bulk_operation_kind, [null, ShopifyBulkOperationKind::Catalog->value], true)
+        ) {
             return;
         }
 
@@ -112,12 +118,18 @@ class StartShopifyCatalogImport implements ShouldBeUnique, ShouldQueue
         $updatedShop = DB::transaction(function () use ($operationId, $totalCount): ?Shop {
             $lockedShop = Shop::withoutGlobalScopes()->lockForUpdate()->whereKey($this->shopId)->first();
 
-            if ($lockedShop === null || $lockedShop->sync_status !== 'importing' || $lockedShop->bulk_operation_id !== null) {
+            if (
+                $lockedShop === null
+                || $lockedShop->sync_status !== 'importing'
+                || $lockedShop->bulk_operation_id !== null
+                || ! in_array($lockedShop->bulk_operation_kind, [null, ShopifyBulkOperationKind::Catalog->value], true)
+            ) {
                 return null;
             }
 
             $lockedShop->forceFill([
                 'bulk_operation_id' => $operationId,
+                'bulk_operation_kind' => ShopifyBulkOperationKind::Catalog->value,
                 'sync_processed_count' => 0,
                 'sync_total_count' => $totalCount > 0 ? $totalCount : null,
                 'sync_progress' => 0,
@@ -137,8 +149,13 @@ class StartShopifyCatalogImport implements ShouldBeUnique, ShouldQueue
         Shop::withoutGlobalScopes()
             ->whereKey($this->shopId)
             ->where('sync_status', 'importing')
+            ->where(function ($query): void {
+                $query->whereNull('bulk_operation_kind')
+                    ->orWhere('bulk_operation_kind', ShopifyBulkOperationKind::Catalog->value);
+            })
             ->update([
                 'sync_status' => 'error',
+                'bulk_operation_kind' => ShopifyBulkOperationKind::Catalog->value,
                 'sync_error' => 'Não foi possível iniciar a importação do catálogo Shopify.',
                 'suggested_action' => 'Tente reconectar a Loja pela tela de Integrações.',
             ]);

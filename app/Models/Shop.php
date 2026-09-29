@@ -21,6 +21,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
     'sync_status',
     'sync_progress',
     'bulk_operation_id',
+    'bulk_operation_kind',
     'sync_processed_count',
     'sync_total_count',
     'last_synced_at',

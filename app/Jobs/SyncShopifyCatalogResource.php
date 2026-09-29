@@ -4,6 +4,7 @@ namespace App\Jobs;
 
 use App\Ecommerce\EcommerceAdapter;
 use App\Ecommerce\ShopifyCatalogSynchronizer;
+use App\Ecommerce\ShopifyCustomerOrderSynchronizer;
 use App\Enums\EcommerceProvider;
 use App\Models\Scopes\TeamScope;
 use App\Models\Shop;
@@ -33,8 +34,11 @@ final class SyncShopifyCatalogResource implements ShouldBeUnique, ShouldQueue
         return implode(':', [$this->shopId, $this->resourceType, $this->externalId]);
     }
 
-    public function handle(EcommerceAdapter $adapter, ShopifyCatalogSynchronizer $synchronizer): void
-    {
+    public function handle(
+        EcommerceAdapter $adapter,
+        ShopifyCatalogSynchronizer $synchronizer,
+        ShopifyCustomerOrderSynchronizer $customerOrderSynchronizer,
+    ): void {
         $shop = Shop::withoutGlobalScope(TeamScope::class)
             ->with('integration')
             ->whereKey($this->shopId)
@@ -45,6 +49,12 @@ final class SyncShopifyCatalogResource implements ShouldBeUnique, ShouldQueue
         }
 
         if (! $this->deleted && $shop->integration->status !== 'connected') {
+            return;
+        }
+
+        if (in_array($this->resourceType, ['customer', 'order'], true)) {
+            $customerOrderSynchronizer->sync($shop, $this->resourceType, $this->externalId, $adapter);
+
             return;
         }
 

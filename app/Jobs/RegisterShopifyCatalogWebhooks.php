@@ -30,6 +30,12 @@ final class RegisterShopifyCatalogWebhooks implements ShouldBeUnique, ShouldQueu
         'COLLECTIONS_CREATE',
         'COLLECTIONS_UPDATE',
         'COLLECTIONS_DELETE',
+        'CUSTOMERS_CREATE',
+        'CUSTOMERS_UPDATE',
+        'CUSTOMERS_DELETE',
+        'ORDERS_CREATE',
+        'ORDERS_UPDATED',
+        'ORDERS_DELETE',
     ];
 
     private const SUBSCRIPTIONS_QUERY = <<<'GRAPHQL'

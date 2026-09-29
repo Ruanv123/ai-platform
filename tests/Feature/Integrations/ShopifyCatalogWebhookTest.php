@@ -2,6 +2,7 @@
 
 use App\Ecommerce\EcommerceAdapter;
 use App\Ecommerce\ShopifyCatalogSynchronizer;
+use App\Ecommerce\ShopifyCustomerOrderSynchronizer;
 use App\Jobs\RegisterShopifyCatalogWebhooks;
 use App\Jobs\SyncShopifyCatalogResource;
 use App\Models\Category;
@@ -25,7 +26,7 @@ beforeEach(function (): void {
     ]);
 });
 
-it('registers catalog and bulk-finish webhook subscriptions once per connected store', function () {
+it('registers catalog, customer, order, and bulk-finish webhook subscriptions once per connected store', function () {
     $shop = createShopifyWebhookShop();
     $graphqlUrl = 'https://alpha.myshopify.com/admin/api/2026-07/graphql.json';
     $webhookUri = route('webhooks.shopify');
@@ -38,6 +39,12 @@ it('registers catalog and bulk-finish webhook subscriptions once per connected s
         'COLLECTIONS_CREATE',
         'COLLECTIONS_UPDATE',
         'COLLECTIONS_DELETE',
+        'CUSTOMERS_CREATE',
+        'CUSTOMERS_UPDATE',
+        'CUSTOMERS_DELETE',
+        'ORDERS_CREATE',
+        'ORDERS_UPDATED',
+        'ORDERS_DELETE',
     ];
     $sequence = Http::sequence()->push(['data' => ['webhookSubscriptions' => ['nodes' => []]]]);
 
@@ -63,7 +70,7 @@ it('registers catalog and bulk-finish webhook subscriptions once per connected s
     (new RegisterShopifyCatalogWebhooks($shop->getKey()))->handle(app(EcommerceAdapter::class));
     (new RegisterShopifyCatalogWebhooks($shop->getKey()))->handle(app(EcommerceAdapter::class));
 
-    Http::assertSentCount(10);
+    Http::assertSentCount(16);
     foreach ($topics as $topic) {
         Http::assertSent(fn (ClientRequest $request): bool => $request->url() === $graphqlUrl
             && ($request->data()['variables']['topic'] ?? null) === $topic
@@ -96,6 +103,10 @@ it('queues only signed resource identifiers from catalog webhook notices', funct
     'product delete' => ['products/delete', 'product-delete.webhook.json', 'product', 'gid://shopify/Product/1001', true],
     'inventory update' => ['inventory_levels/update', 'inventory-level-update.webhook.json', 'inventory_item', 'gid://shopify/InventoryItem/5001', false],
     'collection update' => ['collections/update', 'collection-update.webhook.json', 'collection', 'gid://shopify/Collection/3001', false],
+    'customer update' => ['customers/update', 'customer-update.webhook.json', 'customer', 'gid://shopify/Customer/7001', false],
+    'customer delete' => ['customers/delete', 'customer-update.webhook.json', 'customer', 'gid://shopify/Customer/7001', true],
+    'order update' => ['orders/updated', 'order-update.webhook.json', 'order', 'gid://shopify/Order/9001', false],
+    'order delete' => ['orders/delete', 'order-update.webhook.json', 'order', 'gid://shopify/Order/9001', true],
 ]);
 
 it('coalesces repeated notices for the same resource during the debounce window', function () {
@@ -131,7 +142,7 @@ it('fetches current product data and refreshes embeddings only when searchable t
     Embeddings::fake([[$vector]]);
 
     $job = new SyncShopifyCatalogResource($shop->getKey(), 'product', 'gid://shopify/Product/1001', false);
-    $job->handle(app(EcommerceAdapter::class), app(ShopifyCatalogSynchronizer::class));
+    $job->handle(app(EcommerceAdapter::class), app(ShopifyCatalogSynchronizer::class), app(ShopifyCustomerOrderSynchronizer::class));
 
     $product = Product::withoutGlobalScopes()->where('shop_id', $shop->getKey())->sole();
     $variant = ProductVariant::withoutGlobalScopes()->where('shop_id', $shop->getKey())->sole();
@@ -149,14 +160,14 @@ it('fetches current product data and refreshes embeddings only when searchable t
         && $prompt->contains('Tamanho: 42'));
     Embeddings::fake()->preventStrayEmbeddings();
 
-    $job->handle(app(EcommerceAdapter::class), app(ShopifyCatalogSynchronizer::class));
+    $job->handle(app(EcommerceAdapter::class), app(ShopifyCatalogSynchronizer::class), app(ShopifyCustomerOrderSynchronizer::class));
 
     expect($product->fresh()->source_hash)->toBe($firstSourceHash)
         ->and($variant->fresh()->price)->toBe('359.90')
         ->and($variant->fresh()->inventory_quantity)->toBe(2);
 
     Embeddings::fake([[$vector]]);
-    $job->handle(app(EcommerceAdapter::class), app(ShopifyCatalogSynchronizer::class));
+    $job->handle(app(EcommerceAdapter::class), app(ShopifyCatalogSynchronizer::class), app(ShopifyCustomerOrderSynchronizer::class));
 
     expect($product->fresh()->title)->toBe('Tênis de corrida leve - edição nova')
         ->and($product->fresh()->status)->toBe('DRAFT')
@@ -184,7 +195,7 @@ it('uses the latest summed inventory quantity returned for the inventory item', 
     Embeddings::fake()->preventStrayEmbeddings();
 
     (new SyncShopifyCatalogResource($shop->getKey(), 'inventory_item', 'gid://shopify/InventoryItem/5001', false))
-        ->handle(app(EcommerceAdapter::class), app(ShopifyCatalogSynchronizer::class));
+        ->handle(app(EcommerceAdapter::class), app(ShopifyCatalogSynchronizer::class), app(ShopifyCustomerOrderSynchronizer::class));
 
     expect($variant->fresh()->inventory_quantity)->toBe(9)
         ->and($variant->fresh()->available)->toBeTrue();
@@ -214,7 +225,7 @@ it('reconciles collection membership and queues affected products for current-st
     Queue::fake([SyncShopifyCatalogResource::class]);
 
     (new SyncShopifyCatalogResource($shop->getKey(), 'collection', 'gid://shopify/Collection/3001', false))
-        ->handle(app(EcommerceAdapter::class), app(ShopifyCatalogSynchronizer::class));
+        ->handle(app(EcommerceAdapter::class), app(ShopifyCatalogSynchronizer::class), app(ShopifyCustomerOrderSynchronizer::class));
 
     expect($category->fresh()->title)->toBe('Corrida de trilha')
         ->and(DB::table('category_product')->where('product_id', $previousProduct->getKey())->exists())->toBeFalse();
@@ -242,7 +253,7 @@ it('removes a deleted product and its local variants and category links', functi
     Http::fake([$graphqlUrl => Http::response(shopifyCatalogGraphqlFixture('product-missing.graphql.json'))]);
 
     (new SyncShopifyCatalogResource($shop->getKey(), 'product', 'gid://shopify/Product/1001', true))
-        ->handle(app(EcommerceAdapter::class), app(ShopifyCatalogSynchronizer::class));
+        ->handle(app(EcommerceAdapter::class), app(ShopifyCatalogSynchronizer::class), app(ShopifyCustomerOrderSynchronizer::class));
 
     expect(Product::withoutGlobalScopes()->whereKey($product->getKey())->exists())->toBeFalse()
         ->and(ProductVariant::withoutGlobalScopes()->whereKey($variant->getKey())->exists())->toBeFalse()
@@ -264,7 +275,7 @@ it('keeps a product when a delete notice arrives after it exists again in Shopif
     Embeddings::fake([[array_merge([1.0], array_fill(0, 1535, 0.0))]]);
 
     (new SyncShopifyCatalogResource($shop->getKey(), 'product', 'gid://shopify/Product/1001', true))
-        ->handle(app(EcommerceAdapter::class), app(ShopifyCatalogSynchronizer::class));
+        ->handle(app(EcommerceAdapter::class), app(ShopifyCatalogSynchronizer::class), app(ShopifyCustomerOrderSynchronizer::class));
 
     expect($product->fresh()->title)->toBe('Tênis de corrida leve');
 });
@@ -287,7 +298,7 @@ it('removes a deleted collection and queues its products to refresh searchable c
     Http::fake([$graphqlUrl => Http::response(shopifyCatalogGraphqlFixture('collection-missing.graphql.json'))]);
 
     (new SyncShopifyCatalogResource($shop->getKey(), 'collection', 'gid://shopify/Collection/3001', true))
-        ->handle(app(EcommerceAdapter::class), app(ShopifyCatalogSynchronizer::class));
+        ->handle(app(EcommerceAdapter::class), app(ShopifyCatalogSynchronizer::class), app(ShopifyCustomerOrderSynchronizer::class));
 
     expect(Category::withoutGlobalScopes()->whereKey($category->getKey())->exists())->toBeFalse()
         ->and(DB::table('category_product')->where('product_id', $product->getKey())->exists())->toBeFalse();
@@ -303,7 +314,7 @@ it('removes stale products when a delayed update notice finds that Shopify no lo
     Http::fake([$graphqlUrl => Http::response(shopifyCatalogGraphqlFixture('product-missing.graphql.json'))]);
 
     (new SyncShopifyCatalogResource($shop->getKey(), 'product', 'gid://shopify/Product/1001', false))
-        ->handle(app(EcommerceAdapter::class), app(ShopifyCatalogSynchronizer::class));
+        ->handle(app(EcommerceAdapter::class), app(ShopifyCatalogSynchronizer::class), app(ShopifyCustomerOrderSynchronizer::class));
 
     expect(Product::withoutGlobalScopes()->whereKey($product->getKey())->exists())->toBeFalse();
 });

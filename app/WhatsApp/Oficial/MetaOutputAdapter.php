@@ -7,7 +7,7 @@ use App\Models\Contact;
 use App\Models\Message;
 use App\Models\WhatsAppAccount;
 use App\Models\WhatsAppTemplate;
-use App\WhatsApp\E164PhoneNumber;
+use App\Support\E164PhoneNumber;
 use App\WhatsApp\Output\AbstractWhatsAppOutputAdapter;
 use App\WhatsApp\Output\WhatsAppTemplateMediaOutputAdapter;
 use Illuminate\Http\Client\PendingRequest;

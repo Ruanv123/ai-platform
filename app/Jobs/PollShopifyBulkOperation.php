@@ -3,6 +3,7 @@
 namespace App\Jobs;
 
 use App\Ecommerce\EcommerceAdapter;
+use App\Enums\ShopifyBulkOperationKind;
 use App\Models\Shop;
 use Illuminate\Contracts\Queue\ShouldBeUniqueUntilProcessing;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -54,9 +55,9 @@ class PollShopifyBulkOperation implements ShouldBeUniqueUntilProcessing, ShouldQ
 
         $processedCount = max(0, (int) data_get($operation, 'objectCount', 0));
         $totalCount = $shop->sync_total_count;
-        $progress = $totalCount === null || $totalCount < 1
-            ? 0
-            : min(95, (int) floor(($processedCount / $totalCount) * 95));
+        $kind = ShopifyBulkOperationKind::tryFrom($shop->bulk_operation_kind ?? '')
+            ?? ShopifyBulkOperationKind::Catalog;
+        $progress = $kind->progress($processedCount, $totalCount);
 
         $shop->forceFill([
             'sync_processed_count' => $processedCount,
@@ -77,7 +78,7 @@ class PollShopifyBulkOperation implements ShouldBeUniqueUntilProcessing, ShouldQ
 
         $shop->forceFill([
             'sync_status' => 'error',
-            'sync_error' => 'A Shopify não conseguiu gerar o catálogo para importação.',
+            'sync_error' => 'A Shopify não conseguiu gerar os dados da Loja para importação.',
             'suggested_action' => 'Tente iniciar a sincronização novamente ou reconecte a Loja.',
         ])->save();
     }

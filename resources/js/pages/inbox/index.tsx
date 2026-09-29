@@ -41,6 +41,9 @@ import {
 } from '@/routes/inbox/agent';
 import { store as messagesStore } from '@/routes/inbox/messages';
 import { VoiceMessageRecorder } from '@/components/inbox-voice-recorder';
+import ShopifyStoreCustomerCard, {
+    type StoreCustomerSummary,
+} from '@/components/inbox/shopify-store-customer-card';
 
 type Conversation = {
     contactId: number;
@@ -119,6 +122,7 @@ type SelectedConversation = {
                 at: string | null;
             }
         >;
+        storeCustomer: StoreCustomerSummary | null;
     };
     channel: {
         id: string;
@@ -1601,6 +1605,10 @@ function ContactPanel({ selected }: { selected: SelectedConversation }) {
                     ))}
                 </div>
             </div>
+
+            <ShopifyStoreCustomerCard
+                customer={selected.contact.storeCustomer}
+            />
 
             <div className="border-border/70 border-b px-4.5 py-3.5">
                 <div className="text-muted-foreground mb-2.5 text-[10px] font-bold tracking-[0.07em] uppercase">

@@ -60,7 +60,7 @@ class CompleteShopifyBulkOperation implements ShouldBeUnique, ShouldQueue
 
             $shop->forceFill([
                 'sync_status' => 'error',
-                'sync_error' => 'A Shopify não conseguiu gerar o catálogo para importação.',
+                'sync_error' => 'A Shopify não conseguiu gerar os dados da Loja para importação.',
                 'suggested_action' => 'Tente iniciar a sincronização novamente ou reconecte a Loja.',
             ])->save();
 
@@ -83,7 +83,7 @@ class CompleteShopifyBulkOperation implements ShouldBeUnique, ShouldQueue
             ->where('sync_status', 'importing')
             ->update([
                 'sync_status' => 'error',
-                'sync_error' => 'Não foi possível buscar o catálogo finalizado na Shopify.',
+                'sync_error' => 'Não foi possível buscar o resultado da importação da Shopify.',
                 'suggested_action' => 'Tente reconectar a Loja pela tela de Integrações.',
             ]);
     }
