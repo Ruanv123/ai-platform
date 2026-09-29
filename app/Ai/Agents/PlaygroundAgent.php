@@ -2,15 +2,9 @@
 
 namespace App\Ai\Agents;
 
-use App\Ai\Tools\BookAppointment;
-use App\Ai\Tools\CancelAppointment;
-use App\Ai\Tools\ConsultAvailableTimes;
-use App\Ai\Tools\ListAppointments;
-use App\Ai\Tools\SearchKnowledgeBase;
-use App\Ai\Tools\SearchProducts;
-use App\Ai\Tools\SendPurchaseLink;
+use App\Ai\AgentToolFactory;
+use App\Ai\AgentToolMode;
 use App\Ecommerce\ProductCatalogSearch;
-use App\Ecommerce\ProductCatalogTriage;
 use App\Knowledge\AgentInstructionTemplate;
 use App\Knowledge\KnowledgeBaseSearch;
 use App\Models\Agent as ConfiguredAgent;
@@ -72,43 +66,15 @@ class PlaygroundAgent implements Agent, Conversational, HasTools
      */
     public function tools(): iterable
     {
-        $collections = $this->configuredAgent->collections;
-
-        $tools = [];
-        if ($collections->isNotEmpty()) {
-            $tools[] = new SearchKnowledgeBase(
-                $this->configuredAgent->team,
-                $collections->modelKeys(),
-                $this->knowledgeBaseSearch,
-            );
-        }
-        $team = $this->configuredAgent->team;
-        if ($this->configuredAgent->shouldSearchProducts($team->shops()->exists())) {
-            $tools[] = new SearchProducts(
-                $team,
-                $this->productCatalogSearch,
-                new ProductCatalogTriage,
-                $this->configuredAgent,
-                null,
-                $this->conversationMessages,
-            );
-        }
-        if ($this->configuredAgent->shouldSendPurchaseLink($team->shops()->exists())) {
-            $tools[] = new SendPurchaseLink($team, $this->configuredAgent, null, null);
-        }
-
-        $calendars = $this->configuredAgent->schedulableCalendars;
-        if ($calendars->isNotEmpty()) {
-            $scheduling = $this->scheduling ?? app(SchedulingService::class);
-            $tools = [
-                ...$tools,
-                new ConsultAvailableTimes($this->configuredAgent->team, $calendars, $scheduling),
-                new BookAppointment(null, $calendars, $scheduling, true),
-                new ListAppointments(null, $scheduling, true),
-                new CancelAppointment(null, $scheduling, true),
-            ];
-        }
-
-        return $tools;
+        return (new AgentToolFactory(
+            $this->knowledgeBaseSearch,
+            $this->productCatalogSearch,
+            $this->scheduling,
+        ))->make(
+            $this->configuredAgent,
+            null,
+            AgentToolMode::Simulated,
+            $this->conversationMessages,
+        );
     }
 }
