@@ -20,7 +20,7 @@ class CrmOperationProcessor
 {
     public function __construct(private CrmProviderAdapter $adapter) {}
 
-    public function process(CrmOperation $operation): CrmLinkedDeal
+    public function process(CrmOperation $operation): ?CrmLinkedDeal
     {
         $integration = $operation->integration;
         $contact = $operation->contact;
@@ -28,13 +28,21 @@ class CrmOperationProcessor
             throw new CrmProviderException(CrmErrorCategory::Definitive, 'O Contato ou a Integração do CRM não está mais disponível.');
         }
 
-        if ($operation->type !== 'guarantee_deal') {
+        if (! in_array($operation->type, ['ensure_person', 'guarantee_deal'], true)) {
             throw new CrmProviderException(CrmErrorCategory::Definitive, 'O tipo desta Operação do CRM não é compatível.');
         }
 
         try {
             return Cache::lock('crm:contact-link:'.$contact->team_id.':'.$contact->getKey(), 120)
-                ->block(30, fn (): CrmLinkedDeal => $this->ensureDeal($operation, $integration, $contact));
+                ->block(30, function () use ($operation, $integration, $contact): ?CrmLinkedDeal {
+                    if ($operation->type === 'ensure_person') {
+                        $this->ensurePerson($operation, $integration, $contact);
+
+                        return null;
+                    }
+
+                    return $this->ensureDeal($operation, $integration, $contact);
+                });
         } catch (LockTimeoutException) {
             throw new CrmProviderException(CrmErrorCategory::Temporary, 'Outra gravação do CRM está sendo concluída para este Contato.', 5);
         }
@@ -43,23 +51,7 @@ class CrmOperationProcessor
     private function ensureDeal(CrmOperation $operation, Integration $integration, Contact $contact): CrmLinkedDeal
     {
         $personLink = $this->ensurePersonLink($operation, $integration, $contact, $operation->payload);
-        $person = $this->adapter->findPerson($integration, $personLink->external_person_id);
-        $missingPersonAttributes = [];
-        if ((! is_string($person['name'] ?? null) || trim($person['name']) === '')
-            && is_string($contact->name)
-            && trim($contact->name) !== '') {
-            $missingPersonAttributes['name'] = $contact->name;
-        }
-
-        $phone = E164PhoneNumber::formatForCountry($contact->phone, 'BR');
-        if ((! is_string($person['phone'] ?? null) || trim($person['phone']) === '') && $phone !== null) {
-            $missingPersonAttributes['phone'] = $phone;
-        }
-
-        if ($missingPersonAttributes !== []) {
-            $person = $this->adapter->updatePerson($integration, $personLink->external_person_id, $missingPersonAttributes);
-        }
-
+        $person = $this->updateMissingPersonIdentity($integration, $contact, $personLink);
         $payload = $operation->payload;
         $openDeal = $this->matchingOpenDeal($integration, $personLink->external_person_id, (string) $payload['pipeline_id']);
 
@@ -89,6 +81,37 @@ class CrmOperationProcessor
         }
 
         return $this->saveLinkedDeal($operation, $integration, $personLink, $deal);
+    }
+
+    private function ensurePerson(CrmOperation $operation, Integration $integration, Contact $contact): void
+    {
+        $personLink = $this->ensurePersonLink($operation, $integration, $contact, $operation->payload);
+        $this->updateMissingPersonIdentity($integration, $contact, $personLink);
+    }
+
+    private function updateMissingPersonIdentity(
+        Integration $integration,
+        Contact $contact,
+        CrmContactLink $personLink,
+    ): array {
+        $person = $this->adapter->findPerson($integration, $personLink->external_person_id);
+        $missingPersonAttributes = [];
+        if ((! is_string($person['name'] ?? null) || trim($person['name']) === '')
+            && is_string($contact->name)
+            && trim($contact->name) !== '') {
+            $missingPersonAttributes['name'] = $contact->name;
+        }
+
+        $phone = E164PhoneNumber::formatForCountry($contact->phone, 'BR');
+        if ((! is_string($person['phone'] ?? null) || trim($person['phone']) === '') && $phone !== null) {
+            $missingPersonAttributes['phone'] = $phone;
+        }
+
+        if ($missingPersonAttributes !== []) {
+            $person = $this->adapter->updatePerson($integration, $personLink->external_person_id, $missingPersonAttributes);
+        }
+
+        return $person;
     }
 
     /** @param array<string, mixed> $payload */

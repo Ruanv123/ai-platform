@@ -141,6 +141,8 @@ class IntegrationController extends Controller
             'crmOwners' => $type === 'crm' ? $this->crmOwnerOptions($integration) : [],
             'defaultCrmOwnerId' => $type === 'crm' ? data_get($integration?->crm_settings, 'default_owner_id') : null,
             'visibleCrmFieldIds' => data_get($integration?->crm_settings, 'agent_visible_field_ids', []),
+            'registerAttendedContacts' => (bool) data_get($integration?->crm_settings, 'register_attended_contacts', false),
+            'minimumAttendedContactMessages' => (int) data_get($integration?->crm_settings, 'minimum_attended_contact_messages', 2),
             'permissions' => $request->user()->toTeamPermissions($team),
         ]);
     }

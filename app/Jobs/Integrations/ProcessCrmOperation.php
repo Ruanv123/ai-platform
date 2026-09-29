@@ -156,23 +156,27 @@ class ProcessCrmOperation implements ShouldQueue
         $this->failOperation($operation, $exception->getMessage(), $attempt);
     }
 
-    private function completeOperation(CrmOperation $operation, int $attempt, CrmLinkedDeal $linkedDeal): void
+    private function completeOperation(CrmOperation $operation, int $attempt, ?CrmLinkedDeal $linkedDeal): void
     {
+        $summary = $operation->summary;
+        if ($linkedDeal !== null) {
+            $summary['linked_deal'] = [
+                'pipeline_id' => $linkedDeal->pipeline_id,
+                'stage_id' => $linkedDeal->stage_id,
+                'status' => $linkedDeal->status,
+                'value' => $linkedDeal->value,
+                'owner_id' => $linkedDeal->owner_id,
+            ];
+        } elseif ($operation->type === 'ensure_person') {
+            $summary['person_linked'] = true;
+        }
+
         $operation->forceFill([
             'status' => CrmOperationStatus::Completed,
             'attempts' => $attempt,
             'failure_message' => null,
             'completed_at' => now(),
-            'summary' => [
-                ...$operation->summary,
-                'linked_deal' => [
-                    'pipeline_id' => $linkedDeal->pipeline_id,
-                    'stage_id' => $linkedDeal->stage_id,
-                    'status' => $linkedDeal->status,
-                    'value' => $linkedDeal->value,
-                    'owner_id' => $linkedDeal->owner_id,
-                ],
-            ],
+            'summary' => $summary,
         ])->save();
     }
 

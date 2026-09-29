@@ -3,6 +3,7 @@
 namespace App\Jobs;
 
 use App\Ai\Agents\WhatsAppAgent;
+use App\Crm\CrmAttendedContactRegistrationDispatcher;
 use App\Ecommerce\ProductCatalogSearch;
 use App\Enums\MessageDeliveryStatus;
 use App\Enums\MessageDirection;
@@ -105,6 +106,7 @@ class RespondToWhatsAppMessage implements ShouldQueue
         WhatsAppOutputAdapterFactory $outputAdapterFactory,
         WhatsAppCustomerCareWindow $customerCareWindow,
         AgentConversationService $agentConversations,
+        CrmAttendedContactRegistrationDispatcher $crmAttendedContactRegistration,
     ): void {
         $channel = Channel::query()
             ->with(['agent.collections', 'agent.schedulableCalendars.integration'])
@@ -179,12 +181,15 @@ class RespondToWhatsAppMessage implements ShouldQueue
         }
 
         if ($this->returnFromPause) {
-            $agentConversations->completeReturnResponse($channel, $contact, $lastPendingMessage, $content);
+            if ($agentConversations->completeReturnResponse($channel, $contact, $lastPendingMessage, $content)) {
+                $crmAttendedContactRegistration->afterSuccessfulResponse($channel, $contact);
+            }
 
             return;
         }
 
-        $agentConversations->runIfUnpaused($channel, $contact, function () use (
+        $responseSent = false;
+        $wasUnpaused = $agentConversations->runIfUnpaused($channel, $contact, function () use (
             $channel,
             $contact,
             $content,
@@ -192,6 +197,7 @@ class RespondToWhatsAppMessage implements ShouldQueue
             $lastPendingMessage,
             $customerCareWindow,
             $outputAdapterFactory,
+            &$responseSent,
         ): void {
             if ($customerCareWindow->hasExpired($channel, $lastPendingMessage)) {
                 $this->recordUndeliveredResponse($channel, $contact, $content, $pendingMessages);
@@ -201,7 +207,12 @@ class RespondToWhatsAppMessage implements ShouldQueue
 
             $outputAdapterFactory->make($channel)->sendText($channel, $contact, $content);
             $this->markAsResponded($pendingMessages);
+            $responseSent = true;
         });
+
+        if ($wasUnpaused && $responseSent) {
+            $crmAttendedContactRegistration->afterSuccessfulResponse($channel, $contact);
+        }
     }
 
     /**
