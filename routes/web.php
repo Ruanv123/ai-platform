@@ -24,6 +24,7 @@ use App\Http\Controllers\Integrations\AgendaCalendarController;
 use App\Http\Controllers\Integrations\CrmConnectionController;
 use App\Http\Controllers\Integrations\CrmDefaultOwnerController;
 use App\Http\Controllers\Integrations\CrmFieldVisibilityController;
+use App\Http\Controllers\Integrations\CrmOperationController;
 use App\Http\Controllers\Integrations\IntegrationController;
 use App\Http\Controllers\Integrations\IntegrationWebhookFailureController;
 use App\Http\Controllers\Integrations\ShopifyConnectionController;
@@ -197,6 +198,10 @@ Route::middleware(['auth', EnsureUserHasTeam::class])->group(function () {
         ->name('integrations.crm.fields.visible-to-agent.update');
     Route::put('integrations/crm/default-owner', [CrmDefaultOwnerController::class, 'update'])
         ->name('integrations.crm.default-owner.update');
+    Route::get('integrations/crm/operations', [CrmOperationController::class, 'index'])
+        ->name('integrations.crm.operations.index');
+    Route::post('integrations/crm/operations/{operation}/retry', [CrmOperationController::class, 'retry'])
+        ->name('integrations.crm.operations.retry');
     Route::post('integrations', [IntegrationController::class, 'store'])
         ->name('integrations.store');
     Route::post('integrations/agenda/calendars', [AgendaCalendarController::class, 'store'])

@@ -16,6 +16,7 @@ import visibleToAgent from '@/routes/integrations/crm/fields/visible-to-agent';
 import { connect } from '@/routes/integrations/crm/rd-station';
 import type { TeamPermissions } from '@/types';
 import defaultOwner from '@/routes/integrations/crm/default-owner';
+import crmOperations from '@/routes/integrations/crm/operations';
 import {
     Select,
     SelectContent,
@@ -83,6 +84,13 @@ export default function CrmConnectionPanel({
                     title="RD Station CRM"
                     description="Conecte a conta da Empresa pela autorização oficial do RD Station CRM."
                 />
+                {integration && permissions.canManageIntegrations && (
+                    <Button variant="outline" asChild>
+                        <Link href={crmOperations.index()}>
+                            Operações do CRM
+                        </Link>
+                    </Button>
+                )}
             </div>
             {crmError && (
                 <div
