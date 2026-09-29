@@ -44,7 +44,9 @@ export default function ShopifyStoreCustomerCard({
                         </div>
                     ) : null}
                     <div className="flex items-baseline justify-between gap-3 text-xs">
-                        <span className="text-muted-foreground">Total gasto</span>
+                        <span className="text-muted-foreground">
+                            Total gasto
+                        </span>
                         <span className="font-medium">
                             {formatCurrency(
                                 customer.totalSpent,

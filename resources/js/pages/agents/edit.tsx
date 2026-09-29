@@ -615,7 +615,9 @@ function AgentForm({
                                                 </span>
                                             </label>
                                             <div className="grid gap-1 pt-2">
-                                                <Label>Mandar Link de compra</Label>
+                                                <Label>
+                                                    Mandar Link de compra
+                                                </Label>
                                                 <p className="text-muted-foreground text-sm">
                                                     Permita que o Agente gere um
                                                     link de checkout com as
@@ -629,7 +631,8 @@ function AgentForm({
                                                     checked={sendPurchaseLink}
                                                     onChange={(event) => {
                                                         setSendPurchaseLink(
-                                                            event.target.checked,
+                                                            event.target
+                                                                .checked,
                                                         );
                                                         setIsPurchaseLinkConfigured(
                                                             true,
