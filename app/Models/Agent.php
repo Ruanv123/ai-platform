@@ -108,6 +108,11 @@ class Agent extends Model
         return $this->hasMany(AgentVersion::class);
     }
 
+    public function contactMemories(): HasMany
+    {
+        return $this->hasMany(AgentContactMemory::class);
+    }
+
     public function publishedVersion(): ?AgentVersion
     {
         return $this->versions()->latest('number')->first();

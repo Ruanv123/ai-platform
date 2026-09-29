@@ -107,6 +107,11 @@ class Contact extends Model
         return $this->hasOne(StoreCustomer::class);
     }
 
+    public function agentMemories(): HasMany
+    {
+        return $this->hasMany(AgentContactMemory::class);
+    }
+
     /**
      * Store the phone as E.164 whenever it is a valid phone number.
      *

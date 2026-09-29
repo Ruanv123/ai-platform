@@ -21,4 +21,8 @@ return [
         'top_k' => 5,
         'min_similarity' => 0.35,
     ],
+    'product_search' => [
+        'candidate_limit' => (int) env('PRODUCT_SEARCH_CANDIDATE_LIMIT', 30),
+        'offer_limit' => (int) env('PRODUCT_SEARCH_OFFER_LIMIT', 5),
+    ],
 ];

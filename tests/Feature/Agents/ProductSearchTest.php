@@ -1,20 +1,37 @@
 <?php
 
 use App\Ai\Agents\PlaygroundAgent;
+use App\Ai\Agents\ProductTriageAgent;
+use App\Ai\Agents\WhatsAppAgent;
+use App\Ecommerce\ProductCatalogSearch;
 use App\Enums\AgentObjective;
 use App\Enums\AgentResponseLength;
 use App\Enums\AgentTone;
+use App\Enums\MessageDirection;
+use App\Knowledge\AgentInstructionTemplate;
+use App\Knowledge\KnowledgeBaseSearch;
+use App\Models\Agent;
+use App\Models\AgentContactMemory;
 use App\Models\Category;
+use App\Models\Contact;
 use App\Models\Integration;
+use App\Models\Message;
 use App\Models\Product;
 use App\Models\ProductVariant;
 use App\Models\Shop;
+use App\Models\StoreCustomer;
+use App\Models\StoreOrder;
+use App\Models\StoreOrderItem;
 use App\Models\Team;
 use App\Models\User;
 use Illuminate\Support\Str;
 use Inertia\Testing\AssertableInertia as Assert;
 use Laravel\Ai\Embeddings;
+use Laravel\Ai\Prompts\AgentPrompt;
+use Laravel\Ai\Responses\Data\Meta;
 use Laravel\Ai\Responses\Data\ToolCall;
+use Laravel\Ai\Responses\Data\Usage;
+use Laravel\Ai\Responses\StructuredTextResponse;
 
 beforeEach(function (): void {
     config(['app.key' => 'base64:'.base64_encode(str_repeat('x', 32))]);
@@ -56,6 +73,13 @@ function productSearchShop(Team $team, array $overrides = []): Shop
 
 function productSearchResultsFromStream(string $content): array
 {
+    $payload = productSearchPayloadFromStream($content);
+
+    return is_array($payload['results'] ?? null) ? $payload['results'] : [];
+}
+
+function productSearchPayloadFromStream(string $content): array
+{
     foreach (explode("\n\n", $content) as $block) {
         if (! str_starts_with($block, 'data: {')) {
             continue;
@@ -73,10 +97,30 @@ function productSearchResultsFromStream(string $content): array
 
         $result = json_decode($event['result'], true, flags: JSON_THROW_ON_ERROR);
 
-        return is_array($result['results'] ?? null) ? $result['results'] : [];
+        return is_array($result) ? $result : [];
     }
 
     return [];
+}
+
+function createProductSearchCandidates(Team $team, Shop $shop, int $count, array $embedding): array
+{
+    $variants = [];
+
+    for ($candidateNumber = 1; $candidateNumber <= $count; $candidateNumber++) {
+        $product = Product::factory()->for($team)->for($shop)->create([
+            'title' => "Tênis de corrida {$candidateNumber}",
+            'description' => 'Leve e confortável para corrida.',
+            'embedding' => $embedding,
+        ]);
+        $variants[] = ProductVariant::factory()->for($team)->for($shop)->for($product)->create([
+            'title' => "Azul / {$candidateNumber}",
+            'options' => [['name' => 'Tamanho', 'value' => (string) $candidateNumber]],
+            'price' => '349.90',
+        ]);
+    }
+
+    return $variants;
 }
 
 it('shows the default product search setting for sales agents only when the shop exists', function () {
@@ -282,6 +326,7 @@ it('searches the shop catalog with semantic ranking and SQL filters from the Pla
     ]);
 
     Embeddings::fake([[$embedding]]);
+    ProductTriageAgent::fake()->preventStrayPrompts();
     PlaygroundAgent::fake([
         new ToolCall((string) Str::uuid7(), 'search_products', [
             'query' => 'tênis de corrida leve',
@@ -319,6 +364,7 @@ it('searches the shop catalog with semantic ranking and SQL filters from the Pla
         ->not->toContain('Tênis arquivado')
         ->not->toContain('Tênis não publicado');
     Embeddings::assertGenerated(fn ($prompt): bool => $prompt->contains('tênis de corrida leve'));
+    ProductTriageAgent::assertNeverPrompted();
 });
 
 it('returns variants that allow selling without stock and marks them as such', function () {
@@ -359,4 +405,268 @@ it('returns variants that allow selling without stock and marks them as such', f
         ->and($results[0]['available'])->toBeFalse()
         ->and($results[0]['continues_selling_when_out_of_stock'])->toBeTrue()
         ->and($results[0]['availability'])->toBe('Vendido mesmo sem estoque');
+});
+
+it('triages no more than thirty variants and returns the selected variants in subagent order with reasons', function () {
+    $user = User::factory()->withTeam()->create();
+    $team = $user->company();
+    $shop = productSearchShop($team);
+    $embedding = productSearchVector();
+    createProductSearchCandidates($team, $shop, 35, $embedding);
+    $triageContext = null;
+
+    Embeddings::fake([[$embedding]]);
+    ProductTriageAgent::fake(function (string $prompt) use (&$triageContext): array {
+        $triageContext = json_decode($prompt, true, flags: JSON_THROW_ON_ERROR);
+        $selectedCandidates = array_reverse(array_slice($triageContext['candidates'], 2, 3));
+
+        return [
+            'recommendations' => array_map(fn (array $candidate): array => [
+                'variant_id' => $candidate['variant_id'],
+                'reason' => 'Combina com o que você procura.',
+            ], $selectedCandidates),
+        ];
+    });
+    PlaygroundAgent::fake([
+        new ToolCall((string) Str::uuid7(), 'search_products', ['query' => 'tênis leve para corrida']),
+        'Separei três opções para você.',
+    ]);
+
+    $response = $this->actingAs($user)->postJson(
+        route('agents.playground.stream'),
+        productSearchPlaygroundDetails([
+            'objective' => AgentObjective::Sales->value,
+        ]),
+    );
+
+    $payload = productSearchPayloadFromStream($response->streamedContent());
+
+    expect($triageContext['candidates'])->toHaveCount(30)
+        ->and($payload['results'])->toHaveCount(3)
+        ->and(array_column($payload['results'], 'variant_id'))->toBe(array_column(array_reverse(array_slice($triageContext['candidates'], 2, 3)), 'variant_id'))
+        ->and(array_column($payload['results'], 'recommendation_reason'))->toBe([
+            'Combina com o que você procura.',
+            'Combina com o que você procura.',
+            'Combina com o que você procura.',
+        ])
+        ->and($payload['triage_trace']['used'])->toBeTrue()
+        ->and($payload['triage_trace']['status'])->toBe('completed');
+    ProductTriageAgent::assertPromptedTimes(1);
+});
+
+it('uses conversation orders and the paired agent memory to select product variants', function () {
+    $team = Team::factory()->create();
+    $shop = productSearchShop($team);
+    $agent = Agent::factory()->for($team)->create([
+        'objective' => AgentObjective::Sales,
+        'search_products' => true,
+    ]);
+    $agent->versions()->create([
+        'team_id' => $team->getKey(),
+        'number' => 1,
+        'objective' => AgentObjective::Sales,
+        'ecommerce_tools' => ['search_products' => true],
+        'published_at' => now(),
+    ]);
+    $contact = Contact::factory()->for($team)->create();
+    $storeCustomer = StoreCustomer::factory()->for($team)->for($shop)->for($contact)->create();
+    $embedding = productSearchVector();
+    $variants = createProductSearchCandidates($team, $shop, 6, $embedding);
+    $order = StoreOrder::factory()->for($team)->for($shop)->for($storeCustomer, 'storeCustomer')->create([
+        'order_number' => '#LOJA-81',
+    ]);
+    StoreOrderItem::factory()->for($team)->for($shop)->for($order, 'order')->create([
+        'product_variant_id' => $variants[0]->getKey(),
+        'title' => 'Tênis que Mariana já comprou',
+        'quantity' => 1,
+        'unit_price' => '349.90',
+    ]);
+    AgentContactMemory::factory()->for($team)->for($agent)->for($contact)->create([
+        'content' => 'Prefere tênis azuis, leves e no tamanho 38.',
+    ]);
+    $history = collect([
+        new Message([
+            'direction' => MessageDirection::Incoming,
+            'payload_type' => 'text',
+            'content' => 'Quero algo confortável porque corro todos os dias.',
+        ]),
+    ]);
+    $triageContext = null;
+
+    Embeddings::fake([[$embedding]]);
+    ProductTriageAgent::fake(function (string $prompt) use (&$triageContext): array {
+        $triageContext = json_decode($prompt, true, flags: JSON_THROW_ON_ERROR);
+
+        return [
+            'recommendations' => array_map(fn (array $candidate): array => [
+                'variant_id' => $candidate['variant_id'],
+                'reason' => 'Atende às preferências lembradas.',
+            ], array_slice($triageContext['candidates'], 1, 3)),
+        ];
+    });
+    WhatsAppAgent::fake([
+        new ToolCall((string) Str::uuid7(), 'search_products', ['query' => 'tênis confortável']),
+        '',
+    ]);
+    $channelAgent = new WhatsAppAgent(
+        $agent,
+        $history,
+        app(AgentInstructionTemplate::class),
+        app(KnowledgeBaseSearch::class),
+        app(ProductCatalogSearch::class),
+        null,
+        $contact,
+    );
+
+    $response = $channelAgent->prompt('Quero um tênis confortável.');
+    $toolPayload = json_decode($response->toolResults->first()->result, true, flags: JSON_THROW_ON_ERROR);
+
+    expect($triageContext['recent_conversation'][0]['content'])->toContain('corro todos os dias')
+        ->and($triageContext['store_orders'][0]['order_number'])->toBe('#LOJA-81')
+        ->and($triageContext['store_orders'][0]['items'][0]['title'])->toBe('Tênis que Mariana já comprou')
+        ->and($triageContext['agent_memory'])->toBe('Prefere tênis azuis, leves e no tamanho 38.')
+        ->and($toolPayload['results'])->toHaveCount(3);
+    ProductTriageAgent::assertPrompted(fn (AgentPrompt $prompt): bool => $prompt->contains('Prefere tênis azuis'));
+});
+
+it('triages a contact without store orders using conversation and agent memory', function () {
+    $team = Team::factory()->create();
+    $shop = productSearchShop($team);
+    $agent = Agent::factory()->for($team)->create([
+        'objective' => AgentObjective::Sales,
+        'search_products' => true,
+    ]);
+    $agent->versions()->create([
+        'team_id' => $team->getKey(),
+        'number' => 1,
+        'objective' => AgentObjective::Sales,
+        'ecommerce_tools' => ['search_products' => true],
+        'published_at' => now(),
+    ]);
+    $contact = Contact::factory()->for($team)->create();
+    $embedding = productSearchVector();
+    createProductSearchCandidates($team, $shop, 6, $embedding);
+    AgentContactMemory::factory()->for($team)->for($agent)->for($contact)->create([
+        'content' => 'Prefere roupas de algodão.',
+    ]);
+    $history = collect([
+        new Message([
+            'direction' => MessageDirection::Incoming,
+            'payload_type' => 'text',
+            'content' => 'Procuro uma camiseta para o verão.',
+        ]),
+    ]);
+    $triageContext = null;
+
+    Embeddings::fake([[$embedding]]);
+    ProductTriageAgent::fake(function (string $prompt) use (&$triageContext): array {
+        $triageContext = json_decode($prompt, true, flags: JSON_THROW_ON_ERROR);
+
+        return [
+            'recommendations' => array_map(fn (array $candidate): array => [
+                'variant_id' => $candidate['variant_id'],
+                'reason' => 'Combina com o tecido preferido.',
+            ], array_slice($triageContext['candidates'], 0, 3)),
+        ];
+    });
+    WhatsAppAgent::fake([
+        new ToolCall((string) Str::uuid7(), 'search_products', ['query' => 'camiseta de verão']),
+        '',
+    ]);
+    $channelAgent = new WhatsAppAgent(
+        $agent,
+        $history,
+        app(AgentInstructionTemplate::class),
+        app(KnowledgeBaseSearch::class),
+        app(ProductCatalogSearch::class),
+        null,
+        $contact,
+    );
+
+    $channelAgent->prompt('Procuro uma camiseta para o verão.');
+
+    expect($triageContext['store_orders'])->toBe([])
+        ->and($triageContext['recent_conversation'][0]['content'])->toBe('Procuro uma camiseta para o verão.')
+        ->and($triageContext['agent_memory'])->toBe('Prefere roupas de algodão.');
+    ProductTriageAgent::assertPromptedTimes(1);
+});
+
+it('falls back to the original catalog order when the triage subagent fails', function () {
+    $user = User::factory()->withTeam()->create();
+    $team = $user->company();
+    $shop = productSearchShop($team);
+    $embedding = productSearchVector();
+    createProductSearchCandidates($team, $shop, 6, $embedding);
+
+    Embeddings::fake([[$embedding]]);
+    ProductTriageAgent::fake(function (): never {
+        throw new RuntimeException('Provider unavailable.');
+    });
+    PlaygroundAgent::fake([
+        new ToolCall((string) Str::uuid7(), 'search_products', ['query' => 'tênis leve']),
+        'Encontrei opções para você.',
+    ]);
+
+    $response = $this->actingAs($user)->postJson(
+        route('agents.playground.stream'),
+        productSearchPlaygroundDetails([
+            'objective' => AgentObjective::Sales->value,
+        ]),
+    );
+
+    $payload = productSearchPayloadFromStream($response->streamedContent());
+
+    expect($payload['results'])->toHaveCount(5)
+        ->and($payload['results'][0]['title'])->toBe('Tênis de corrida 1')
+        ->and($payload['results'])->each->not->toHaveKey('recommendation_reason')
+        ->and($payload['triage_trace']['used'])->toBeTrue()
+        ->and($payload['triage_trace']['status'])->toBe('fallback')
+        ->and($payload['triage_trace']['cost_brl'])->toBeNull();
+});
+
+it('records the triage subagent usage and cost in the tool trace metadata', function () {
+    $user = User::factory()->withTeam()->create();
+    $team = $user->company();
+    $shop = productSearchShop($team);
+    $embedding = productSearchVector();
+    createProductSearchCandidates($team, $shop, 6, $embedding);
+    config([
+        'flows.ai_trace_pricing.default_input_per_million_brl' => 2.5,
+        'flows.ai_trace_pricing.default_output_per_million_brl' => 10,
+        'ai.product_triage.model' => 'gpt-5.6-luna',
+    ]);
+
+    Embeddings::fake([[$embedding]]);
+    ProductTriageAgent::fake(function (string $prompt): StructuredTextResponse {
+        $payload = json_decode($prompt, true, flags: JSON_THROW_ON_ERROR);
+        $recommendations = array_map(fn (array $candidate): array => [
+            'variant_id' => $candidate['variant_id'],
+            'reason' => 'Boa opção para você.',
+        ], array_slice($payload['candidates'], 0, 3));
+
+        return new StructuredTextResponse(
+            ['recommendations' => $recommendations],
+            json_encode(['recommendations' => $recommendations], JSON_THROW_ON_ERROR),
+            new Usage(1000, 500),
+            new Meta('openai', 'gpt-5.6-luna'),
+        );
+    });
+    PlaygroundAgent::fake([
+        new ToolCall((string) Str::uuid7(), 'search_products', ['query' => 'tênis leve']),
+        'Encontrei opções para você.',
+    ]);
+
+    $response = $this->actingAs($user)->postJson(
+        route('agents.playground.stream'),
+        productSearchPlaygroundDetails([
+            'objective' => AgentObjective::Sales->value,
+        ]),
+    );
+
+    $payload = productSearchPayloadFromStream($response->streamedContent());
+
+    expect($payload['triage_trace']['model'])->toBe('gpt-5.6-luna')
+        ->and($payload['triage_trace']['input_tokens'])->toBe(1000)
+        ->and($payload['triage_trace']['output_tokens'])->toBe(500)
+        ->and($payload['triage_trace']['cost_brl'])->toBe(0.0075);
 });

@@ -11,6 +11,7 @@ use App\Ai\Tools\SearchKnowledgeBase;
 use App\Ai\Tools\SearchProducts;
 use App\Ai\Tools\SendPurchaseLink;
 use App\Ecommerce\ProductCatalogSearch;
+use App\Ecommerce\ProductCatalogTriage;
 use App\Enums\MessageDirection;
 use App\Knowledge\AgentInstructionTemplate;
 use App\Knowledge\KnowledgeBaseSearch;
@@ -91,7 +92,14 @@ class WhatsAppAgent implements Agent, Conversational, HasTools
         $team = $this->configuredAgent->team;
         $publishedVersion = $this->configuredAgent->publishedVersion();
         if ($publishedVersion?->shouldSearchProducts($team->shops()->exists())) {
-            $tools[] = new SearchProducts($team, $this->productCatalogSearch);
+            $tools[] = new SearchProducts(
+                $team,
+                $this->productCatalogSearch,
+                new ProductCatalogTriage,
+                $this->configuredAgent,
+                $this->contact,
+                $this->conversationMessages,
+            );
         }
         if ($publishedVersion?->shouldSendPurchaseLink($team->shops()->exists())) {
             $tools[] = new SendPurchaseLink($team, $this->configuredAgent, $this->contact, $this->channel);
