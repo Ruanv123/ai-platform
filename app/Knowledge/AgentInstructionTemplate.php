@@ -2,23 +2,27 @@
 
 namespace App\Knowledge;
 
+use App\Crm\CrmDealPromptContext;
 use App\Models\Agent;
+use App\Models\Contact;
 use App\Models\Team;
 
 class AgentInstructionTemplate
 {
     public const VERSION = 'v1';
 
+    public function __construct(private readonly CrmDealPromptContext $crmDealPromptContext) {}
+
     /**
-     * Build the platform-controlled instructions for a saved Agent.
+     * Build the platform-controlled instructions for an Agent.
      */
-    public function render(Agent $agent): string
+    public function render(Agent $agent, ?Contact $contact = null): string
     {
         $team = $agent->team;
         $instructions = $this->list($agent->instructions);
         $rules = $this->list($agent->rules);
 
-        return <<<PROMPT
+        $prompt = <<<PROMPT
 Você é {$agent->name}, um Agente da Empresa {$team->name}.
 
 ## Identidade e objetivo
@@ -60,6 +64,10 @@ Quando a pergunta pedir fatos sobre produtos, preços, políticas ou procediment
 ## Formatação para mensageria
 Responda sempre em português do Brasil. Escreva de forma curta, clara e natural. Use parágrafos curtos e listas simples quando ajudarem. Evite Markdown pesado, tabelas e títulos excessivos.
 PROMPT;
+
+        $crmDealContext = $this->crmDealPromptContext->render($contact);
+
+        return $crmDealContext === '' ? $prompt : $prompt."\n\n{$crmDealContext}";
     }
 
     /**
