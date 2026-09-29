@@ -27,6 +27,7 @@ use App\Http\Controllers\Integrations\CrmFieldVisibilityController;
 use App\Http\Controllers\Integrations\CrmOperationController;
 use App\Http\Controllers\Integrations\IntegrationController;
 use App\Http\Controllers\Integrations\IntegrationWebhookFailureController;
+use App\Http\Controllers\Integrations\RdStationCrmWebhookController;
 use App\Http\Controllers\Integrations\ShopifyConnectionController;
 use App\Http\Controllers\Integrations\ShopifyEmbeddedController;
 use App\Http\Controllers\Integrations\ShopifyInstallationController;
@@ -58,6 +59,10 @@ Route::post('webhooks/whatsapp-test', [WhatsAppTestWebhookController::class, 'ha
 Route::post('webhooks/shopify', [ShopifyWebhookController::class, 'handle'])
     ->middleware('throttle:shopify-webhook')
     ->name('webhooks.shopify');
+
+Route::post('webhooks/crm/rd-station', [RdStationCrmWebhookController::class, 'handle'])
+    ->middleware('throttle:crm-webhook')
+    ->name('webhooks.crm.rd-station');
 
 Route::get('shopify/embedded', [ShopifyEmbeddedController::class, 'bootstrap'])
     ->middleware(SetShopifyEmbeddedSecurityHeaders::class)

@@ -1,0 +1,12 @@
+{
+  "event_name": "crm_contact_updated",
+  "event_timestamp": "2025-01-01T00:00:00.000Z",
+  "transaction_uuid": "00000000-0052-4400-B753-746174696F6E",
+  "document": {
+    "id": "67c000000000000000000002",
+    "name": "Pessoa atualizada",
+    "phones": [{"phone": "+55 (11) 99999-8888", "type": "mobile"}],
+    "emails": [{"email": "pessoa@example.test"}],
+    "updated_at": "2025-02-01T10:00:00Z"
+  }
+}

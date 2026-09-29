@@ -6,23 +6,74 @@ use App\Crm\CrmProviderException;
 use App\Enums\TeamRole;
 use App\Models\Integration;
 use App\Models\User;
+use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Str;
 use Inertia\Testing\AssertableInertia as Assert;
+use Tests\TestCase;
+
+uses(TestCase::class, RefreshDatabase::class);
 
 function rdStationFixture(string $name): array
 {
     return json_decode(file_get_contents(base_path('tests/Fixtures/Crm/RdStation/'.$name.'.json')), true, flags: JSON_THROW_ON_ERROR);
 }
 
+function rdStationWebhookFixture(string $name): array
+{
+    return json_decode(
+        file_get_contents(base_path('tests/Fixtures/Crm/RdStation/Webhooks/'.$name.'.json')),
+        true,
+        flags: JSON_THROW_ON_ERROR,
+    );
+}
+
 function fakeRdStationServer(): void
 {
-    Http::fake(function (Request $request) {
+    $webhooks = [];
+
+    Http::fake(function (Request $request) use (&$webhooks) {
         $path = parse_url($request->url(), PHP_URL_PATH);
         $queryString = (string) parse_url($request->url(), PHP_URL_QUERY);
 
         if ($path === '/oauth2/token') {
             return Http::response(rdStationFixture($request->data()['grant_type'] === 'refresh_token' ? 'refresh-token' : 'token'));
+        }
+
+        if ($path === '/crm/v2/webhooks' && $request->method() === 'GET') {
+            return Http::response(['data' => array_values($webhooks), 'links' => ['next' => null]]);
+        }
+
+        if ($path === '/crm/v2/webhooks' && $request->method() === 'POST') {
+            $data = $request->data()['data'];
+            $subscription = [
+                ...rdStationWebhookFixture('subscription')['data'],
+                ...$data,
+                'id' => (string) Str::uuid(),
+            ];
+            $webhooks[$subscription['id']] = $subscription;
+
+            return Http::response(['data' => $subscription], 201);
+        }
+
+        if (str_starts_with((string) $path, '/crm/v2/webhooks/') && $request->method() === 'PUT') {
+            $subscriptionId = basename((string) $path);
+            $data = $request->data()['data'];
+            $subscription = [
+                ...($webhooks[$subscriptionId] ?? rdStationWebhookFixture('subscription')['data']),
+                ...$data,
+                'id' => $subscriptionId,
+            ];
+            $webhooks[$subscriptionId] = $subscription;
+
+            return Http::response(['data' => $subscription]);
+        }
+
+        if (str_starts_with((string) $path, '/crm/v2/webhooks/') && $request->method() === 'DELETE') {
+            unset($webhooks[basename((string) $path)]);
+
+            return Http::response(null, 204);
         }
 
         $fixture = match ($path) {
@@ -108,6 +159,36 @@ it('connects RD Station, loads metadata, and reconnects the same company CRM', f
         ->all();
     expect(collect($pipelineUrls)->contains(fn (string $url): bool => str_contains($url, 'page%5Bnumber%5D=2')))->toBeTrue();
 
+    $webhookWrites = Http::recorded()
+        ->filter(fn (array $record): bool => str_contains($record[0]->url(), '/crm/v2/webhooks') && in_array($record[0]->method(), ['POST', 'PUT'], true));
+    $registrationRequests = $webhookWrites
+        ->filter(fn (array $record): bool => $record[0]->method() === 'POST')
+        ->values();
+    $registeredEvents = $registrationRequests
+        ->map(fn (array $record): string => $record[0]->data()['data']['event_name'])
+        ->sort()
+        ->values()
+        ->all();
+    $oneTimeKeys = $registrationRequests
+        ->map(fn (array $record): string => $record[0]->data()['data']['auth_key'])
+        ->unique()
+        ->values();
+    $writtenKeys = $webhookWrites
+        ->map(fn (array $record): string => $record[0]->data()['data']['auth_key'])
+        ->unique()
+        ->values();
+    expect($registrationRequests)->toHaveCount(5)
+        ->and($webhookWrites->filter(fn (array $record): bool => $record[0]->method() === 'PUT'))->toHaveCount(5)
+        ->and($registeredEvents)->toBe([
+            'crm_contact_deleted',
+            'crm_contact_updated',
+            'crm_deal_created',
+            'crm_deal_deleted',
+            'crm_deal_updated',
+        ])
+        ->and($oneTimeKeys)->toHaveCount(1)
+        ->and($writtenKeys)->toHaveCount(2);
+
     $integration = $user->company()->integrations()->where('type', 'crm')->firstOrFail();
     expect($user->company()->integrations()->where('type', 'crm')->count())->toBe(1)
         ->and($integration->provider)->toBe('rd_station')
@@ -120,7 +201,22 @@ it('connects RD Station, loads metadata, and reconnects the same company CRM', f
         ->and($integration->crm_metadata['lost_reasons'][0]['id'])->toBe('reason-1')
         ->and($integration->crm_metadata['account']['teams'][0])->toBe(['id' => 'team-1', 'name' => 'Empresa RD'])
         ->and($integration->crm_metadata_loaded_at)->not->toBeNull()
+        ->and($integration->credential('webhook_secret_hash'))->toMatch('/\A[a-f0-9]{64}\z/')
+        ->and($integration->credential('webhook_secret_hashes'))->toBe([$integration->credential('webhook_secret_hash')])
+        ->and($integration->credential('webhook_secret_hash'))->toBe(hash('sha256', $writtenKeys->last()))
+        ->and($integration->getRawOriginal('credentials'))->not->toContain($writtenKeys->first())
+        ->and($integration->getRawOriginal('credentials'))->not->toContain($writtenKeys->last())
         ->and($integration->getRawOriginal('credentials'))->not->toContain('rd-access-token');
+
+    $adapter = app(RdStationCrmAdapter::class);
+    $subscriptions = $adapter->checkWebhooks($integration);
+    expect($subscriptions)->toHaveCount(5)
+        ->and(collect($subscriptions)->pluck('secret_hash')->unique()->all())
+        ->toBe([$integration->credential('webhook_secret_hash')]);
+
+    $adapter->removeWebhooks($integration);
+
+    expect($adapter->checkWebhooks($integration))->toBe([]);
 });
 
 it('reloads CRM metadata when the connection page opens', function () {
