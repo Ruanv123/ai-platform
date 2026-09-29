@@ -10,6 +10,8 @@ use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
+use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Support\Carbon;
 
 /**
@@ -29,7 +31,7 @@ use Illuminate\Support\Carbon;
 class Integration extends Model
 {
     /** @use HasFactory<IntegrationFactory> */
-    use BelongsToTeam, HasFactory, HasUuids;
+    use BelongsToTeam, HasFactory, HasUuids, SoftDeletes;
 
     public function credential(string $key, mixed $default = null): mixed
     {
@@ -49,11 +51,17 @@ class Integration extends Model
         return $this->hasMany(SchedulableCalendar::class);
     }
 
+    public function shop(): HasOne
+    {
+        return $this->hasOne(Shop::class);
+    }
+
     protected function casts(): array
     {
         return [
             'credentials' => 'encrypted:array',
             'last_tested_at' => 'immutable_datetime',
+            'deleted_at' => 'immutable_datetime',
         ];
     }
 }

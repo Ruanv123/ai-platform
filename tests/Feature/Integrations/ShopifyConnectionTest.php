@@ -1,0 +1,319 @@
+<?php
+
+use App\Ecommerce\EcommerceAdapter;
+use App\Enums\TeamRole;
+use App\Models\Integration;
+use App\Models\Shop;
+use App\Models\User;
+use Illuminate\Http\Client\Request as ClientRequest;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Http;
+use Inertia\Testing\AssertableInertia as Assert;
+use Tests\TestCase;
+
+beforeEach(function (): void {
+    config([
+        'app.key' => 'base64:'.base64_encode(str_repeat('x', 32)),
+        'services.shopify.client_id' => 'client-id',
+        'services.shopify.client_secret' => 'client-secret',
+        'services.shopify.redirect' => 'http://localhost/integrations/ecommerce/shopify/callback',
+        'services.shopify.scopes' => ['read_products', 'read_inventory', 'read_customers', 'read_orders'],
+        'services.shopify.api_version' => '2026-07',
+    ]);
+});
+
+it('starts a Shopify authorization with read scopes and a state bound to the active team', function () {
+    $user = User::factory()->withTeam()->create();
+
+    $response = $this->actingAs($user)->get(route('integrations.shopify.connect', ['shop' => 'alpha.myshopify.com']));
+
+    $response->assertRedirect();
+    parse_str((string) parse_url((string) $response->headers->get('Location'), PHP_URL_QUERY), $query);
+
+    expect($query['client_id'])->toBe('client-id')
+        ->and(explode(',', $query['scope']))->toBe(['read_products', 'read_inventory', 'read_customers', 'read_orders'])
+        ->and($query['redirect_uri'])->toBe('http://localhost/integrations/ecommerce/shopify/callback');
+
+    $pendingAuthorizations = session()->all()['shopify_oauth']['pending'];
+    expect($pendingAuthorizations[$query['state']]['team_id'])->toBe($user->company()->getKey())
+        ->and($pendingAuthorizations[$query['state']]['domain'])->toBe('alpha.myshopify.com')
+        ->and($pendingAuthorizations[$query['state']]['expires_at'])->toBeGreaterThan(now()->timestamp);
+});
+
+it('rejects an invalid shop domain before redirecting to Shopify', function () {
+    $user = User::factory()->withTeam()->create();
+
+    $this->actingAs($user)
+        ->from(route('integrations.show', ['type' => 'ecommerce', 'provider' => 'shopify']))
+        ->get(route('integrations.shopify.connect', ['shop' => 'alpha.example.com']))
+        ->assertRedirect(route('integrations.show', ['type' => 'ecommerce', 'provider' => 'shopify']))
+        ->assertSessionHasErrors('shop');
+});
+
+it('allows an Admin to start a Shopify connection', function () {
+    $owner = User::factory()->withTeam()->create();
+    $admin = User::factory()->create();
+    $team = $owner->company();
+    $team->members()->attach($admin, ['role' => TeamRole::Admin->value]);
+    $admin->switchTeam($team);
+
+    $this->actingAs($admin)
+        ->get(route('integrations.shopify.connect', ['shop' => 'alpha.myshopify.com']))
+        ->assertRedirect();
+});
+
+it('completes Shopify OAuth, persists encrypted credentials and reuses the same shop on reconnect', function () {
+    $user = User::factory()->withTeam()->create();
+    $this->withoutVite();
+    Http::preventStrayRequests();
+    Http::fake([
+        'https://alpha.myshopify.com/admin/oauth/access_token' => Http::response([
+            'access_token' => 'temporary-access-token',
+            'refresh_token' => 'temporary-refresh-token',
+            'expires_in' => 3600,
+            'refresh_token_expires_in' => 86400,
+            'scope' => 'read_products,read_inventory,read_customers,read_orders',
+        ]),
+        'https://alpha.myshopify.com/admin/api/2026-07/graphql.json' => Http::response([
+            'data' => [
+                'shop' => [
+                    'name' => 'Alpha Store',
+                    'myshopifyDomain' => 'alpha.myshopify.com',
+                    'currencyCode' => 'BRL',
+                    'ianaTimezone' => 'America/Sao_Paulo',
+                    'shopAddress' => ['countryCodeV2' => 'BR'],
+                ],
+            ],
+        ]),
+    ]);
+
+    $this->actingAs($user);
+    $firstState = startShopifyAuthorization($this, 'alpha.myshopify.com');
+    $this->get(route('integrations.shopify.callback', shopifySignedCallback($firstState)))
+        ->assertRedirect(route('integrations.show', ['type' => 'ecommerce', 'provider' => 'shopify']))
+        ->assertSessionHas('shopify_success', 'Loja Shopify conectada.');
+
+    $integration = Integration::query()->where('team_id', $user->company()->getKey())->firstOrFail();
+    $shop = Shop::query()->where('team_id', $user->company()->getKey())->firstOrFail();
+
+    expect($integration->type)->toBe('ecommerce')
+        ->and($integration->provider)->toBe('shopify')
+        ->and($integration->status)->toBe('connected')
+        ->and($integration->credential('access_token'))->toBe('temporary-access-token')
+        ->and($integration->credential('refresh_token'))->toBe('temporary-refresh-token')
+        ->and($shop->integration_id)->toBe($integration->getKey())
+        ->and($shop->domain)->toBe('alpha.myshopify.com')
+        ->and($shop->name)->toBe('Alpha Store')
+        ->and($shop->currency_code)->toBe('BRL')
+        ->and($shop->country_code)->toBe('BR')
+        ->and($shop->timezone)->toBe('America/Sao_Paulo')
+        ->and($shop->sync_status)->toBe('importing')
+        ->and(DB::table('integrations')->where('id', $integration->getKey())->value('credentials'))->not->toContain('temporary-access-token');
+
+    $this->get(route('integrations.show', ['type' => 'ecommerce', 'provider' => 'shopify']))
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->component('integrations/show')
+            ->where('shop.domain', 'alpha.myshopify.com')
+            ->where('shop.syncStatus', 'importing')
+            ->where('shop.currencyCode', 'BRL'),
+        );
+
+    $secondState = startShopifyAuthorization($this, 'alpha.myshopify.com');
+    $this->get(route('integrations.shopify.callback', shopifySignedCallback($secondState)))
+        ->assertRedirect(route('integrations.show', ['type' => 'ecommerce', 'provider' => 'shopify']));
+
+    expect(Integration::query()->where('team_id', $user->company()->getKey())->count())->toBe(1)
+        ->and(Shop::query()->where('team_id', $user->company()->getKey())->count())->toBe(1)
+        ->and(Integration::query()->where('team_id', $user->company()->getKey())->value('id'))->toBe($integration->getKey())
+        ->and(Shop::query()->where('team_id', $user->company()->getKey())->value('id'))->toBe($shop->getKey());
+
+    Http::assertSent(fn (ClientRequest $request): bool => $request->url() === 'https://alpha.myshopify.com/admin/oauth/access_token'
+        && $request->data()['expiring'] === '1');
+    Http::assertSent(fn (ClientRequest $request): bool => $request->url() === 'https://alpha.myshopify.com/admin/api/2026-07/graphql.json'
+        && str_contains($request->data()['query'], 'myshopifyDomain'));
+});
+
+it('rejects invalid, expired or refused callbacks without creating integration data', function (string $callbackType) {
+    $user = User::factory()->withTeam()->create();
+    $this->actingAs($user);
+    Http::preventStrayRequests();
+    $state = startShopifyAuthorization($this, 'alpha.myshopify.com');
+    $parameters = shopifySignedCallback($state);
+
+    if ($callbackType === 'invalid_state') {
+        $parameters['state'] = str_repeat('x', 64);
+        $parameters = shopifySignCallback($parameters);
+    } elseif ($callbackType === 'invalid_hmac') {
+        $parameters['hmac'] = str_repeat('0', 64);
+    } elseif ($callbackType === 'refused') {
+        $parameters['error'] = 'access_denied';
+        $parameters = shopifySignCallback($parameters);
+    } else {
+        $parameters['timestamp'] = (string) now()->subMinutes(11)->timestamp;
+        $parameters = shopifySignCallback($parameters);
+    }
+
+    $this->get(route('integrations.shopify.callback', $parameters))
+        ->assertRedirect(route('integrations.show', ['type' => 'ecommerce', 'provider' => 'shopify']))
+        ->assertSessionHas('shopify_error');
+
+    expect(Integration::query()->count())->toBe(0)
+        ->and(Shop::query()->count())->toBe(0);
+})
+    ->with(['invalid_state', 'invalid_hmac', 'refused', 'expired_timestamp']);
+
+it('refreshes expired Shopify credentials before making a GraphQL request and stores rotated tokens', function () {
+    $user = User::factory()->withTeam()->create();
+    $integration = Integration::factory()->for($user->company())->create([
+        'type' => 'ecommerce',
+        'provider' => 'shopify',
+        'status' => 'connected',
+        'credentials' => [
+            'access_token' => 'expired-access-token',
+            'refresh_token' => 'current-refresh-token',
+            'access_token_expires_at' => now()->subMinute()->timestamp,
+            'refresh_token_expires_at' => now()->addDay()->timestamp,
+            'scopes' => ['read_products', 'read_inventory', 'read_customers', 'read_orders'],
+        ],
+    ]);
+    $shop = Shop::factory()->for($user->company())->for($integration)->create(['domain' => 'alpha.myshopify.com']);
+    Http::preventStrayRequests();
+    Http::fake([
+        'https://alpha.myshopify.com/admin/oauth/access_token' => Http::response([
+            'access_token' => 'rotated-access-token',
+            'refresh_token' => 'rotated-refresh-token',
+            'expires_in' => 3600,
+            'refresh_token_expires_in' => 86400,
+        ]),
+        'https://alpha.myshopify.com/admin/api/2026-07/graphql.json' => Http::response([
+            'data' => [
+                'bulkOperationRunQuery' => [
+                    'bulkOperation' => [
+                        'id' => 'gid://shopify/BulkOperation/123',
+                        'status' => 'CREATED',
+                    ],
+                ],
+            ],
+        ]),
+    ]);
+
+    $result = app(EcommerceAdapter::class)->queryShop($shop, 'mutation { bulkOperationRunQuery { bulkOperation { id status } } }');
+
+    expect($result['bulkOperationRunQuery']['bulkOperation']['id'])->toBe('gid://shopify/BulkOperation/123')
+        ->and($integration->fresh()->credential('access_token'))->toBe('rotated-access-token')
+        ->and($integration->fresh()->credential('refresh_token'))->toBe('rotated-refresh-token')
+        ->and($integration->fresh()->credential('access_token_expires_at'))->toBeGreaterThan(now()->timestamp);
+
+    Http::assertSent(fn (ClientRequest $request): bool => $request->url() === 'https://alpha.myshopify.com/admin/oauth/access_token'
+        && $request->data()['grant_type'] === 'refresh_token'
+        && $request->data()['refresh_token'] === 'current-refresh-token');
+    Http::assertSent(fn (ClientRequest $request): bool => $request->url() === 'https://alpha.myshopify.com/admin/api/2026-07/graphql.json'
+        && $request->hasHeader('X-Shopify-Access-Token', 'rotated-access-token'));
+});
+
+it('marks the Shopify connection as expired when refresh fails', function () {
+    $user = User::factory()->withTeam()->create();
+    $integration = Integration::factory()->for($user->company())->create([
+        'type' => 'ecommerce',
+        'provider' => 'shopify',
+        'status' => 'connected',
+        'credentials' => [
+            'access_token' => 'expired-access-token',
+            'refresh_token' => 'expired-refresh-token',
+            'access_token_expires_at' => now()->subMinute()->timestamp,
+            'refresh_token_expires_at' => now()->addDay()->timestamp,
+        ],
+    ]);
+    $shop = Shop::factory()->for($user->company())->for($integration)->create(['domain' => 'alpha.myshopify.com']);
+    Http::preventStrayRequests();
+    Http::fake([
+        'https://alpha.myshopify.com/admin/oauth/access_token' => Http::response(['error' => 'invalid_grant'], 400),
+    ]);
+
+    expect(fn () => app(EcommerceAdapter::class)->queryShop($shop, 'query { shop { name } }'))
+        ->toThrow(RuntimeException::class, 'Reconecte a Loja');
+
+    expect($integration->fresh()->status)->toBe('error')
+        ->and($integration->fresh()->status_message)->toContain('Reconecte a Loja')
+        ->and($shop->fresh()->sync_status)->toBe('error')
+        ->and($shop->fresh()->sync_error)->toContain('Reconecte a Loja');
+});
+
+it('requires integration management permission for Shopify routes and disconnects by soft deleting both records', function () {
+    $owner = User::factory()->withTeam()->create();
+    $member = User::factory()->create();
+    $team = $owner->company();
+    $team->members()->attach($member, ['role' => TeamRole::Member->value]);
+    $member->switchTeam($team);
+    $integration = Integration::factory()->for($team)->create([
+        'type' => 'ecommerce',
+        'provider' => 'shopify',
+        'status' => 'connected',
+        'credentials' => ['access_token' => 'secret-access-token', 'refresh_token' => 'secret-refresh-token'],
+    ]);
+    $shop = Shop::factory()->for($team)->for($integration)->create();
+
+    $this->actingAs($member)->get(route('integrations.shopify.connect', ['shop' => $shop->domain]))->assertForbidden();
+    $this->get(route('integrations.shopify.callback'))->assertForbidden();
+    $this->delete(route('integrations.destroy', $integration))->assertForbidden();
+
+    $this->actingAs($owner)
+        ->delete(route('integrations.destroy', $integration))
+        ->assertRedirect(route('integrations.index'));
+
+    $this->assertSoftDeleted('integrations', ['id' => $integration->getKey()]);
+    $this->assertSoftDeleted('shops', ['id' => $shop->getKey()]);
+
+    expect(Integration::withTrashed()->findOrFail($integration->getKey())->credentials)->toBe([])
+        ->and(Integration::withTrashed()->findOrFail($integration->getKey())->status)->toBe('disconnected');
+});
+
+it('marks Shopify as available in the catalog while keeping other ecommerce providers planned', function () {
+    $user = User::factory()->withTeam()->create();
+    $this->withoutVite();
+
+    $this->actingAs($user)
+        ->get(route('integrations.index'))
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('ecommerceCatalog.0.value', 'shopify')
+            ->where('ecommerceCatalog.0.available', true)
+            ->where('ecommerceCatalog.0.planned', false)
+            ->where('ecommerceCatalog.1.available', false)
+            ->where('ecommerceCatalog.1.planned', true),
+        );
+});
+
+function shopifySignedCallback(string $state): array
+{
+    return shopifySignCallback([
+        'code' => 'authorization-code',
+        'shop' => 'alpha.myshopify.com',
+        'state' => $state,
+        'timestamp' => (string) now()->timestamp,
+    ]);
+}
+
+function shopifySignCallback(array $parameters): array
+{
+    unset($parameters['hmac']);
+    ksort($parameters, SORT_STRING);
+
+    $parts = [];
+    foreach ($parameters as $key => $value) {
+        $parts[] = $key.'='.$value;
+    }
+
+    $parameters['hmac'] = hash_hmac('sha256', implode('&', $parts), 'client-secret');
+
+    return $parameters;
+}
+
+function startShopifyAuthorization(TestCase $test, string $domain): string
+{
+    $response = $test->get(route('integrations.shopify.connect', ['shop' => $domain]));
+    parse_str((string) parse_url((string) $response->headers->get('Location'), PHP_URL_QUERY), $query);
+
+    return $query['state'];
+}
