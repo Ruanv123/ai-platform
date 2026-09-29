@@ -192,6 +192,7 @@ it('searches the shop catalog with semantic ranking and SQL filters from the Pla
     $user = User::factory()->withTeam()->create();
     $team = $user->company();
     $shop = productSearchShop($team, ['sync_status' => 'error']);
+    $shop->integration->forceFill(['status' => 'error'])->save();
     $embedding = productSearchVector();
     $product = Product::factory()->for($team)->for($shop)->create([
         'title' => 'Tênis de corrida leve',

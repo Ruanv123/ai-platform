@@ -4,12 +4,15 @@ namespace App\Ecommerce;
 
 use App\Ecommerce\Data\EcommerceConnection;
 use App\Enums\EcommerceProvider;
+use App\Enums\TeamRole;
 use App\Models\Integration;
 use App\Models\Scopes\TeamScope;
 use App\Models\Shop;
+use App\Notifications\Shopify\ShopConnectionErrorNotification;
 use Illuminate\Http\Client\Response;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Notification;
 use RuntimeException;
 use Throwable;
 
@@ -253,15 +256,16 @@ final class ShopifyAdapter implements EcommerceAdapter
 
     public function refreshAccessToken(Shop $shop): string
     {
-        $accessToken = DB::transaction(function () use ($shop): ?string {
-            $integration = Integration::withTrashed()
+        [$accessToken, $notifyTeam] = DB::transaction(function () use ($shop): array {
+            $integration = Integration::withoutGlobalScope(TeamScope::class)
+                ->withTrashed()
                 ->whereKey($shop->integration_id)
                 ->where('team_id', $shop->team_id)
                 ->lockForUpdate()
                 ->first();
 
             if ($integration === null || $integration->trashed() || $integration->status === 'error') {
-                return null;
+                return [null, false];
             }
 
             $credentials = $integration->credentials;
@@ -269,22 +273,22 @@ final class ShopifyAdapter implements EcommerceAdapter
             $expiresAt = $integration->credential('access_token_expires_at');
 
             if (is_string($currentToken) && is_numeric($expiresAt) && (int) $expiresAt > now()->addSeconds(60)->timestamp) {
-                return $currentToken;
+                return [$currentToken, false];
             }
 
             $refreshToken = $integration->credential('refresh_token');
             if (! is_string($refreshToken) || $refreshToken === '') {
-                $this->markConnectionAsExpired($shop, $integration);
+                $notifyTeam = $this->markConnectionAsExpired($shop, $integration);
 
-                return null;
+                return [null, $notifyTeam];
             }
 
             $clientId = config('services.shopify.client_id');
             $clientSecret = config('services.shopify.client_secret');
             if (! is_string($clientId) || $clientId === '' || ! is_string($clientSecret) || $clientSecret === '') {
-                $this->markConnectionAsExpired($shop, $integration);
+                $notifyTeam = $this->markConnectionAsExpired($shop, $integration);
 
-                return null;
+                return [null, $notifyTeam];
             }
 
             try {
@@ -298,10 +302,16 @@ final class ShopifyAdapter implements EcommerceAdapter
                         'grant_type' => 'refresh_token',
                         'refresh_token' => $refreshToken,
                     ]);
+            } catch (ShopifyThrottleException $exception) {
+                throw $exception;
             } catch (Throwable) {
-                $this->markConnectionAsExpired($shop, $integration);
+                $notifyTeam = $this->markConnectionAsExpired($shop, $integration);
 
-                return null;
+                return [null, $notifyTeam];
+            }
+
+            if ($response->status() === 429) {
+                throw new ShopifyThrottleException($this->retryAfterSeconds($response));
             }
 
             $token = $response->json();
@@ -311,9 +321,9 @@ final class ShopifyAdapter implements EcommerceAdapter
             $refreshTokenLifetime = is_array($token) ? data_get($token, 'refresh_token_expires_in') : null;
 
             if (! $response->successful() || ! is_string($newAccessToken) || $newAccessToken === '' || ! is_string($newRefreshToken) || $newRefreshToken === '' || ! is_numeric($accessTokenLifetime) || ! is_numeric($refreshTokenLifetime)) {
-                $this->markConnectionAsExpired($shop, $integration);
+                $notifyTeam = $this->markConnectionAsExpired($shop, $integration);
 
-                return null;
+                return [null, $notifyTeam];
             }
 
             $refreshedAt = now();
@@ -330,8 +340,12 @@ final class ShopifyAdapter implements EcommerceAdapter
                 'status_message' => null,
             ])->save();
 
-            return $newAccessToken;
+            return [$newAccessToken, false];
         });
+
+        if ($notifyTeam) {
+            $this->notifyTeamOfConnectionError($shop);
+        }
 
         if (! is_string($accessToken)) {
             throw new RuntimeException('A autorização da Shopify expirou. Reconecte a Loja para continuar.');
@@ -342,7 +356,15 @@ final class ShopifyAdapter implements EcommerceAdapter
 
     public function queryShop(Shop $shop, string $query, array $variables = []): array
     {
-        return $this->requestGraphql($shop->domain, $this->refreshAccessToken($shop), $query, $variables);
+        $accessToken = $this->refreshAccessToken($shop);
+
+        try {
+            return $this->requestGraphql($shop->domain, $accessToken, $query, $variables);
+        } catch (ShopifyAccessRevokedException $exception) {
+            $this->markShopConnectionAsExpired($shop);
+
+            throw $exception;
+        }
     }
 
     public function validateWebhookSignature(string $body, string $signature): bool
@@ -393,29 +415,127 @@ final class ShopifyAdapter implements EcommerceAdapter
 
     private function extractGraphqlData(Response $response): array
     {
+        if ($response->status() === 429) {
+            throw new ShopifyThrottleException($this->retryAfterSeconds($response));
+        }
+
+        if (in_array($response->status(), [401, 403], true)) {
+            throw new ShopifyAccessRevokedException;
+        }
+
         if (! $response->successful()) {
             throw new RuntimeException('A Shopify não respondeu à consulta da loja. Tente novamente.');
         }
 
         $body = $response->json();
-        if (! is_array($body) || data_get($body, 'errors') !== null || ! is_array(data_get($body, 'data'))) {
+        $errors = is_array($body) ? data_get($body, 'errors') : null;
+        if (is_array($errors)) {
+            foreach ($errors as $error) {
+                $code = data_get($error, 'extensions.code');
+                if ($code === 'THROTTLED') {
+                    throw new ShopifyThrottleException($this->retryAfterSeconds($response, $body));
+                }
+
+                if (in_array($code, ['ACCESS_DENIED', 'UNAUTHORIZED', 'INVALID_AUTHENTICATION'], true)) {
+                    throw new ShopifyAccessRevokedException;
+                }
+            }
+        }
+
+        if (! is_array($body) || ($errors !== null && $errors !== []) || ! is_array(data_get($body, 'data'))) {
             throw new RuntimeException('A Shopify não retornou os dados solicitados para a loja.');
         }
 
         return data_get($body, 'data');
     }
 
-    private function markConnectionAsExpired(Shop $shop, Integration $integration): void
+    private function markConnectionAsExpired(Shop $shop, Integration $integration): bool
     {
         $message = 'A autorização da Shopify expirou. Reconecte a Loja.';
+        $lockedShop = Shop::withoutGlobalScope(TeamScope::class)
+            ->lockForUpdate()
+            ->whereKey($shop->getKey())
+            ->first();
+        $notifyTeam = $integration->status !== 'error' || $lockedShop?->sync_status !== 'error';
+
         $integration->forceFill([
             'status' => 'error',
             'status_message' => $message,
         ])->save();
-        $shop->forceFill([
-            'sync_status' => 'error',
-            'sync_error' => $message,
-            'suggested_action' => 'Reconecte a Loja pela tela de Integrações.',
-        ])->save();
+
+        if ($lockedShop !== null) {
+            $lockedShop->forceFill([
+                'sync_status' => 'error',
+                'sync_error' => $message,
+                'suggested_action' => 'Reconecte a Loja pela tela de Integrações.',
+            ])->save();
+        }
+
+        return $notifyTeam;
+    }
+
+    private function markShopConnectionAsExpired(Shop $shop): void
+    {
+        $notifyTeam = DB::transaction(function () use ($shop): bool {
+            $integration = Integration::withoutGlobalScope(TeamScope::class)
+                ->withTrashed()
+                ->whereKey($shop->integration_id)
+                ->where('team_id', $shop->team_id)
+                ->lockForUpdate()
+                ->first();
+
+            if ($integration === null || $integration->trashed()) {
+                return false;
+            }
+
+            return $this->markConnectionAsExpired($shop, $integration);
+        });
+
+        if ($notifyTeam) {
+            $this->notifyTeamOfConnectionError($shop);
+        }
+    }
+
+    private function notifyTeamOfConnectionError(Shop $shop): void
+    {
+        $team = $shop->team()->first();
+        if ($team === null) {
+            return;
+        }
+
+        $recipients = $team->members()
+            ->wherePivotIn('role', [TeamRole::Owner->value, TeamRole::Admin->value])
+            ->get();
+
+        if ($recipients->isNotEmpty()) {
+            Notification::send(
+                $recipients,
+                (new ShopConnectionErrorNotification(
+                    $shop->name,
+                    $shop->domain,
+                    'Reconecte a Loja pela tela de Integrações.',
+                ))->afterCommit(),
+            );
+        }
+    }
+
+    private function retryAfterSeconds(Response $response, array $body = []): int
+    {
+        $retryAfter = $response->header('Retry-After');
+        if (is_numeric($retryAfter)) {
+            return max(1, min(300, (int) ceil((float) $retryAfter)));
+        }
+
+        $requestedCost = data_get($body, 'extensions.cost.requestedQueryCost');
+        $availableCost = data_get($body, 'extensions.cost.throttleStatus.currentlyAvailable');
+        $restoreRate = data_get($body, 'extensions.cost.throttleStatus.restoreRate');
+
+        if (is_numeric($requestedCost) && is_numeric($availableCost) && is_numeric($restoreRate) && (float) $restoreRate > 0) {
+            $waitSeconds = (int) ceil(max(0, (float) $requestedCost - (float) $availableCost) / (float) $restoreRate);
+
+            return max(1, min(300, $waitSeconds));
+        }
+
+        return 30;
     }
 }
