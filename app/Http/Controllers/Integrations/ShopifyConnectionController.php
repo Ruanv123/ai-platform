@@ -6,6 +6,7 @@ use App\Ecommerce\EcommerceAdapter;
 use App\Enums\EcommerceProvider;
 use App\Enums\TeamPermission;
 use App\Http\Controllers\Controller;
+use App\Jobs\StartShopifyCatalogImport;
 use App\Models\Integration;
 use App\Models\Scopes\TeamScope;
 use App\Models\Shop;
@@ -131,11 +132,6 @@ class ShopifyConnectionController extends Controller
                     ->where('team_id', $team->getKey())
                     ->lockForUpdate()
                     ->first();
-                $syncStatus = $shop?->sync_status;
-                if ($syncStatus === null || $syncStatus === 'error') {
-                    $syncStatus = 'importing';
-                }
-
                 $shop ??= $team->shops()->make();
                 if ($shop->trashed()) {
                     $shop->restore();
@@ -149,12 +145,18 @@ class ShopifyConnectionController extends Controller
                     'currency_code' => $connection->currencyCode,
                     'country_code' => $connection->countryCode,
                     'timezone' => $connection->timezone,
-                    'sync_status' => $syncStatus,
-                    'sync_progress' => $shop->exists ? $shop->sync_progress : 0,
+                    'sync_status' => 'importing',
+                    'sync_progress' => 0,
+                    'bulk_operation_id' => null,
+                    'sync_processed_count' => 0,
+                    'sync_total_count' => null,
                     'sync_error' => null,
                     'suggested_action' => null,
                 ])->save();
             });
+
+            $shop = $team->shops()->firstOrFail();
+            StartShopifyCatalogImport::dispatch($shop->getKey());
 
             return $this->redirectToShopifySettings()->with('shopify_success', 'Loja Shopify conectada.');
         } catch (Throwable $exception) {

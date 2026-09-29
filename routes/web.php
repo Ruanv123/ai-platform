@@ -24,6 +24,7 @@ use App\Http\Controllers\Integrations\AgendaCalendarController;
 use App\Http\Controllers\Integrations\IntegrationController;
 use App\Http\Controllers\Integrations\IntegrationWebhookFailureController;
 use App\Http\Controllers\Integrations\ShopifyConnectionController;
+use App\Http\Controllers\Integrations\ShopifyWebhookController;
 use App\Http\Controllers\Knowledge\CollectionController;
 use App\Http\Controllers\Knowledge\DocumentController;
 use App\Http\Controllers\Onboarding\CompanyController;
@@ -46,6 +47,10 @@ Route::match(['get', 'post'], 'webhooks/whatsapp/app-proprio', [WhatsAppWebhookC
 
 Route::post('webhooks/whatsapp-test', [WhatsAppTestWebhookController::class, 'handle'])
     ->name('webhooks.whatsapp-test');
+
+Route::post('webhooks/shopify', [ShopifyWebhookController::class, 'handle'])
+    ->middleware('throttle:shopify-webhook')
+    ->name('webhooks.shopify');
 
 Route::get(
     'webhooks/whatsapp-test/profile-photo/{photoToken}/{extension}',

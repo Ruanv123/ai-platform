@@ -1,0 +1,10 @@
+{
+  "data": {
+    "bulkOperation": {
+      "id": "gid://shopify/BulkOperation/987654321",
+      "status": "COMPLETED",
+      "objectCount": "3",
+      "url": "https://storage.googleapis.com/shopify/catalog-987654321.jsonl"
+    }
+  }
+}
