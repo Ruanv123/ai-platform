@@ -123,7 +123,7 @@ export default function ShopifyConnectionPanel({
                         </a>
                     </CardHeader>
                     <CardContent className="grid gap-5">
-                        <dl className="grid grid-cols-3 gap-3 rounded-lg border bg-muted/30 p-4">
+                        <dl className="bg-muted/30 grid grid-cols-3 gap-3 rounded-lg border p-4">
                             <div className="grid gap-1">
                                 <dt className="text-muted-foreground text-xs">
                                     Produtos
