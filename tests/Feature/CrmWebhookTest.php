@@ -1,6 +1,10 @@
 <?php
 
+use App\Crm\CrmCommercialStageService;
+use App\Inbox\AgentConversationService;
 use App\Jobs\ProcessCrmWebhook;
+use App\Models\Agent;
+use App\Models\Channel;
 use App\Models\Contact;
 use App\Models\CrmContactLink;
 use App\Models\CrmLinkedDeal;
@@ -11,7 +15,6 @@ use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
-use RuntimeException;
 use Tests\TestCase;
 
 uses(TestCase::class, RefreshDatabase::class);
@@ -251,4 +254,174 @@ it('removes a canonical linked deal after an RD deletion notice', function () {
     postCrmWebhook($this, crmWebhookFixture('deal-deleted'))->assertOk();
 
     $this->assertDatabaseMissing('crm_linked_deals', ['external_deal_id' => '65b000000000000000000001']);
+});
+
+it('pauses every Agent channel when the webhook moves a linked deal into a commercial stage', function () {
+    $user = User::factory()->withTeam()->create();
+    $integration = createConnectedCrmWebhookIntegration($user);
+    $integration->forceFill([
+        'crm_settings' => ['commercial_stage_ids' => ['65a000000000000000000002']],
+    ])->save();
+    $contact = Contact::factory()->for($user->company())->create();
+    $link = CrmContactLink::query()->create([
+        'team_id' => $contact->team_id,
+        'contact_id' => $contact->getKey(),
+        'integration_id' => $integration->getKey(),
+        'external_person_id' => '67c000000000000000000002',
+    ]);
+    CrmLinkedDeal::query()->create([
+        'team_id' => $contact->team_id,
+        'crm_contact_link_id' => $link->getKey(),
+        'integration_id' => $integration->getKey(),
+        'external_deal_id' => '65b000000000000000000001',
+        'pipeline_id' => 'old-pipeline',
+        'stage_id' => 'stage-before-commercial',
+        'status' => 'open',
+    ]);
+    $agent = Agent::factory()->for($user->company())->create();
+    $channel = Channel::factory()->for($user->company())->connected()->create(['agent_id' => $agent->getKey()]);
+    Http::fake(fn (Request $request) => Http::response(crmRdApiFixture('deal-updated')));
+    Http::preventStrayRequests();
+    config(['queue.default' => 'sync']);
+
+    postCrmWebhook($this, crmWebhookFixture('deal-updated'))->assertOk();
+
+    $contact->refresh();
+    $responseAttempted = false;
+    expect($contact->crm_agent_paused)->toBeTrue()
+        ->and($contact->human_waiting)->toBeTrue()
+        ->and(app(AgentConversationService::class)->isPaused($channel, (int) $contact->getKey()))->toBeTrue()
+        ->and(app(AgentConversationService::class)->runIfUnpaused($channel, $contact, function () use (&$responseAttempted): void {
+            $responseAttempted = true;
+        }))->toBeFalse()
+        ->and($responseAttempted)->toBeFalse();
+});
+
+it('re-evaluates linked contacts when commercial stages are changed and restricts edits to integration managers', function () {
+    $user = User::factory()->withTeam()->create();
+    $team = $user->company();
+    $integration = createConnectedCrmWebhookIntegration($user);
+    $integration->forceFill([
+        'crm_metadata' => ['pipelines' => [[
+            'id' => 'pipeline-1',
+            'stages' => [['id' => 'stage-commercial', 'name' => 'Proposta']],
+        ]]],
+        'crm_settings' => ['commercial_stage_ids' => []],
+    ])->save();
+    $contact = Contact::factory()->for($team)->create();
+    $link = CrmContactLink::query()->create([
+        'team_id' => $team->getKey(),
+        'contact_id' => $contact->getKey(),
+        'integration_id' => $integration->getKey(),
+        'external_person_id' => 'person-commercial-stage',
+    ]);
+    CrmLinkedDeal::query()->create([
+        'team_id' => $team->getKey(),
+        'crm_contact_link_id' => $link->getKey(),
+        'integration_id' => $integration->getKey(),
+        'external_deal_id' => 'deal-commercial-stage',
+        'pipeline_id' => 'pipeline-1',
+        'stage_id' => 'stage-commercial',
+        'status' => 'open',
+    ]);
+
+    $member = User::factory()->create();
+    $team->members()->attach($member, ['role' => 'member']);
+    $this->actingAs($member)
+        ->put(route('integrations.crm.commercial-stages.update'), ['commercial_stage_ids' => ['stage-commercial']])
+        ->assertForbidden();
+
+    $this->actingAs($user)
+        ->put(route('integrations.crm.commercial-stages.update'), ['commercial_stage_ids' => ['stage-commercial']])
+        ->assertRedirect(route('integrations.show', 'crm'));
+    expect($contact->fresh()->crm_agent_paused)->toBeTrue()
+        ->and($integration->fresh()->crm_settings['commercial_stage_ids'])->toBe(['stage-commercial']);
+
+    $this->actingAs($user)
+        ->put(route('integrations.crm.commercial-stages.update'), ['commercial_stage_ids' => []])
+        ->assertRedirect(route('integrations.show', 'crm'));
+    expect($contact->fresh()->crm_agent_paused)->toBeFalse()
+        ->and($contact->fresh()->human_waiting)->toBeFalse();
+});
+
+it('suppresses a manual CRM return until the contact leaves and re-enters a commercial stage', function () {
+    $user = User::factory()->withTeam()->create();
+    $integration = createConnectedCrmWebhookIntegration($user);
+    $integration->forceFill(['crm_settings' => ['commercial_stage_ids' => ['stage-commercial']]])->save();
+    $contact = Contact::factory()->for($user->company())->create();
+    $link = CrmContactLink::query()->create([
+        'team_id' => $contact->team_id,
+        'contact_id' => $contact->getKey(),
+        'integration_id' => $integration->getKey(),
+        'external_person_id' => 'person-manual-return',
+    ]);
+    $firstDeal = CrmLinkedDeal::query()->create([
+        'team_id' => $contact->team_id,
+        'crm_contact_link_id' => $link->getKey(),
+        'integration_id' => $integration->getKey(),
+        'external_deal_id' => 'deal-first-commercial',
+        'pipeline_id' => 'pipeline-1',
+        'stage_id' => 'stage-commercial',
+        'status' => 'open',
+    ]);
+    $secondDeal = CrmLinkedDeal::query()->create([
+        'team_id' => $contact->team_id,
+        'crm_contact_link_id' => $link->getKey(),
+        'integration_id' => $integration->getKey(),
+        'external_deal_id' => 'deal-second-commercial',
+        'pipeline_id' => 'pipeline-1',
+        'stage_id' => 'stage-commercial',
+        'status' => 'open',
+    ]);
+    $agent = Agent::factory()->for($user->company())->create();
+    $channel = Channel::factory()->for($user->company())->connected()->create(['agent_id' => $agent->getKey()]);
+    $stages = app(CrmCommercialStageService::class);
+    $stages->reconcileContact($contact->team_id, (int) $contact->getKey());
+
+    app(AgentConversationService::class)->returnToAgent($contact, $channel, $user);
+    $stages->reconcileContact($contact->team_id, (int) $contact->getKey());
+    expect($contact->fresh()->crm_agent_paused)->toBeFalse()
+        ->and($contact->fresh()->crm_pause_suppressed)->toBeTrue();
+
+    $firstDeal->forceFill(['status' => 'lost'])->save();
+    $stages->reconcileDealChange($firstDeal->fresh(), 'open');
+    expect($contact->fresh()->crm_agent_paused)->toBeFalse();
+
+    $secondDeal->forceFill(['stage_id' => 'stage-before-commercial'])->save();
+    $stages->reconcileDealChange($secondDeal->fresh(), 'open');
+    expect($contact->fresh()->crm_pause_suppressed)->toBeFalse();
+
+    $secondDeal->forceFill(['stage_id' => 'stage-commercial'])->save();
+    $stages->reconcileDealChange($secondDeal->fresh(), 'open');
+    expect($contact->fresh()->crm_agent_paused)->toBeTrue();
+});
+
+it('clears CRM pauses for linked contacts when the integration is deleted', function () {
+    $user = User::factory()->withTeam()->create();
+    $integration = createConnectedCrmWebhookIntegration($user);
+    $integration->forceFill(['crm_settings' => ['commercial_stage_ids' => ['stage-commercial']]])->save();
+    $contact = Contact::factory()->for($user->company())->create();
+    $link = CrmContactLink::query()->create([
+        'team_id' => $contact->team_id,
+        'contact_id' => $contact->getKey(),
+        'integration_id' => $integration->getKey(),
+        'external_person_id' => 'person-deleted-integration',
+    ]);
+    CrmLinkedDeal::query()->create([
+        'team_id' => $contact->team_id,
+        'crm_contact_link_id' => $link->getKey(),
+        'integration_id' => $integration->getKey(),
+        'external_deal_id' => 'deal-deleted-integration',
+        'pipeline_id' => 'pipeline-1',
+        'stage_id' => 'stage-commercial',
+        'status' => 'open',
+    ]);
+    app(CrmCommercialStageService::class)->reconcileContact($contact->team_id, (int) $contact->getKey());
+
+    $this->actingAs($user)
+        ->delete(route('integrations.destroy', $integration))
+        ->assertRedirect(route('integrations.index'));
+
+    expect($contact->fresh()->crm_agent_paused)->toBeFalse()
+        ->and($contact->fresh()->human_waiting)->toBeFalse();
 });

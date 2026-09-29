@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Integrations;
 
 use App\Crm\Contracts\CrmProviderAdapter;
+use App\Crm\CrmCommercialStageService;
 use App\Ecommerce\EcommerceAdapter;
 use App\Ecommerce\ShopifyAccessRevokedException;
 use App\Ecommerce\ShopifyInstallationCleanup;
@@ -13,6 +14,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\Integrations\SaveIntegrationRequest;
 use App\Integrations\GoogleCalendarClient;
 use App\Integrations\IntegrationConnectionTester;
+use App\Models\CrmContactLink;
 use App\Models\Flow;
 use App\Models\Integration;
 use App\Models\Product;
@@ -139,6 +141,8 @@ class IntegrationController extends Controller
             'crmSuccess' => session('crm_success'),
             'crmFields' => $type === 'crm' ? $this->crmFieldOptions($integration) : [],
             'crmOwners' => $type === 'crm' ? $this->crmOwnerOptions($integration) : [],
+            'crmPipelines' => $type === 'crm' ? $this->crmPipelineOptions($integration) : [],
+            'commercialCrmStageIds' => data_get($integration?->crm_settings, 'commercial_stage_ids', []),
             'defaultCrmOwnerId' => $type === 'crm' ? data_get($integration?->crm_settings, 'default_owner_id') : null,
             'visibleCrmFieldIds' => data_get($integration?->crm_settings, 'agent_visible_field_ids', []),
             'permissions' => $request->user()->toTeamPermissions($team),
@@ -296,10 +300,14 @@ class IntegrationController extends Controller
     public function destroy(
         Request $request,
         Integration $integration,
+        CrmCommercialStageService $commercialStages,
         EcommerceAdapter $ecommerceAdapter,
         ShopifyInstallationCleanup $shopifyInstallationCleanup,
     ): RedirectResponse|JsonResponse {
         $this->authorizeManagement($request, $integration);
+        $crmContactIds = $integration->type === 'crm'
+            ? CrmContactLink::withoutGlobalScopes()->where('integration_id', $integration->getKey())->pluck('contact_id')->all()
+            : [];
         $isShopify = $integration->type === 'ecommerce' && $integration->provider === 'shopify';
         if ($integration->type !== 'agenda' && ! $isShopify) {
             $usingFlows = $this->flowsUsing($request->user()->company(), $integration->getKey());
@@ -349,6 +357,10 @@ class IntegrationController extends Controller
             }
         } else {
             $integration->forceDelete();
+        }
+
+        foreach ($crmContactIds as $contactId) {
+            $commercialStages->reconcileContact($integration->team_id, (int) $contactId);
         }
 
         if ($request->expectsJson()) {
@@ -537,6 +549,27 @@ class IntegrationController extends Controller
             ->map(fn (array $owner): array => [
                 'id' => $owner['id'],
                 'name' => $owner['name'],
+            ])
+            ->values()
+            ->all();
+    }
+
+    /** @return list<array{id: string, name: string, stages: list<array{id: string, name: string}>}> */
+    private function crmPipelineOptions(?Integration $integration): array
+    {
+        return collect($integration?->crm_metadata['pipelines'] ?? [])
+            ->filter(fn (array $pipeline): bool => is_string($pipeline['id'] ?? null))
+            ->map(fn (array $pipeline): array => [
+                'id' => $pipeline['id'],
+                'name' => (string) ($pipeline['name'] ?? $pipeline['id']),
+                'stages' => collect($pipeline['stages'] ?? [])
+                    ->filter(fn (array $stage): bool => is_string($stage['id'] ?? null))
+                    ->map(fn (array $stage): array => [
+                        'id' => $stage['id'],
+                        'name' => (string) ($stage['name'] ?? $stage['id']),
+                    ])
+                    ->values()
+                    ->all(),
             ])
             ->values()
             ->all();

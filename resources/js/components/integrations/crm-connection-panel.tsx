@@ -16,6 +16,7 @@ import visibleToAgent from '@/routes/integrations/crm/fields/visible-to-agent';
 import { connect } from '@/routes/integrations/crm/rd-station';
 import type { TeamPermissions } from '@/types';
 import defaultOwner from '@/routes/integrations/crm/default-owner';
+import commercialStages from '@/routes/integrations/crm/commercial-stages';
 import {
     Select,
     SelectContent,
@@ -41,6 +42,8 @@ type Props = {
     crmSuccess: string | null;
     crmFields: { id: string; name: string }[];
     crmOwners: { id: string; name: string }[];
+    crmPipelines: { id: string; name: string; stages: { id: string; name: string }[] }[];
+    commercialCrmStageIds: string[];
     defaultCrmOwnerId: string | null;
     visibleCrmFieldIds: string[];
     permissions: TeamPermissions;
@@ -52,6 +55,8 @@ export default function CrmConnectionPanel({
     crmSuccess,
     crmFields,
     crmOwners,
+    crmPipelines,
+    commercialCrmStageIds,
     defaultCrmOwnerId,
     visibleCrmFieldIds,
     permissions,
@@ -59,6 +64,9 @@ export default function CrmConnectionPanel({
     const [selectedFieldIds, setSelectedFieldIds] = useState(visibleCrmFieldIds);
     const [selectedDefaultOwnerId, setSelectedDefaultOwnerId] = useState(
         defaultCrmOwnerId ?? 'none',
+    );
+    const [selectedCommercialStageIds, setSelectedCommercialStageIds] = useState(
+        commercialCrmStageIds,
     );
     const connected = integration?.status === 'connected';
     const teamAccountNames =
@@ -183,6 +191,56 @@ export default function CrmConnectionPanel({
                                 <Trash2 /> Desconectar
                             </Button>
                         )}
+                    </CardContent>
+                </Card>
+            )}
+            {connected && permissions.canManageIntegrations && (
+                <Card className="max-w-2xl">
+                    <CardHeader>
+                        <CardTitle>Etapas comerciais</CardTitle>
+                        <CardDescription>
+                            Ao entrar em uma destas etapas, qualquer Negócio aberto pausa a IA em todas as conversas da Pessoa até a saída do funil comercial ou uma devolução manual.
+                        </CardDescription>
+                    </CardHeader>
+                    <CardContent className="grid gap-4">
+                        {crmPipelines.length === 0 ? (
+                            <p className="text-muted-foreground text-sm">
+                                Nenhum funil foi encontrado nesta conta.
+                            </p>
+                        ) : crmPipelines.map((pipeline) => (
+                            <fieldset key={pipeline.id} className="grid gap-2">
+                                <legend className="text-sm font-medium">{pipeline.name}</legend>
+                                {pipeline.stages.map((stage) => (
+                                    <label
+                                        key={stage.id}
+                                        className="border-input hover:bg-muted/50 flex cursor-pointer items-start gap-3 rounded-md border px-3 py-2 text-sm"
+                                    >
+                                        <input
+                                            type="checkbox"
+                                            checked={selectedCommercialStageIds.includes(stage.id)}
+                                            onChange={() => setSelectedCommercialStageIds((current) =>
+                                                current.includes(stage.id)
+                                                    ? current.filter((id) => id !== stage.id)
+                                                    : [...current, stage.id],
+                                            )}
+                                            className="accent-primary mt-0.5 size-4"
+                                        />
+                                        <span>{stage.name}</span>
+                                    </label>
+                                ))}
+                            </fieldset>
+                        ))}
+                        <Button
+                            type="button"
+                            className="w-fit"
+                            onClick={() => router.put(
+                                commercialStages.update().url,
+                                { commercial_stage_ids: selectedCommercialStageIds },
+                                { preserveScroll: true },
+                            )}
+                        >
+                            Salvar etapas comerciais
+                        </Button>
                     </CardContent>
                 </Card>
             )}

@@ -88,6 +88,8 @@ type Props = {
     crmSuccess: string | null;
     crmFields: { id: string; name: string }[];
     crmOwners: { id: string; name: string }[];
+    crmPipelines: { id: string; name: string; stages: { id: string; name: string }[] }[];
+    commercialCrmStageIds: string[];
     defaultCrmOwnerId: string | null;
     visibleCrmFieldIds: string[];
     permissions: TeamPermissions;
@@ -135,6 +137,8 @@ export default function IntegrationShowPage(props: Props) {
                 crmSuccess={props.crmSuccess}
                 crmFields={props.crmFields}
                 crmOwners={props.crmOwners}
+                crmPipelines={props.crmPipelines}
+                commercialCrmStageIds={props.commercialCrmStageIds}
                 defaultCrmOwnerId={props.defaultCrmOwnerId}
                 visibleCrmFieldIds={props.visibleCrmFieldIds}
                 permissions={permissions}

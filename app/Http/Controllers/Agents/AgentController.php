@@ -324,7 +324,7 @@ class AgentController extends Controller
     }
 
     /**
-     * @return list<array{id: string, name: string, stages: list<array{id: string, name: string}>}>
+     * @return list<array{id: string, name: string, stages: list<array{id: string, name: string, commercial: bool}>}>
      */
     private function crmPipelineOptions(?Integration $integration): array
     {
@@ -338,6 +338,7 @@ class AgentController extends Controller
                     ->map(fn (array $stage): array => [
                         'id' => $stage['id'],
                         'name' => (string) ($stage['name'] ?? $stage['id']),
+                        'commercial' => in_array($stage['id'], data_get($integration?->crm_settings, 'commercial_stage_ids', []), true),
                     ])
                     ->values()
                     ->all(),

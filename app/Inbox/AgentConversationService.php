@@ -2,6 +2,7 @@
 
 namespace App\Inbox;
 
+use App\Crm\CrmCommercialStageService;
 use App\Enums\ChannelStatus;
 use App\Enums\MessageDeliveryStatus;
 use App\Enums\MessageDirection;
@@ -28,6 +29,7 @@ final class AgentConversationService
     public function __construct(
         private readonly WhatsAppOutputAdapterFactory $outputAdapterFactory,
         private readonly WhatsAppCustomerCareWindow $customerCareWindow,
+        private readonly CrmCommercialStageService $crmCommercialStages,
     ) {}
 
     public function canPause(Contact $contact, Channel $channel): bool
@@ -57,38 +59,55 @@ final class AgentConversationService
 
     public function isPaused(Channel $channel, int $contactId): bool
     {
-        return AgentConversationState::withoutGlobalScopes()
+        return Contact::withoutGlobalScopes()
             ->where('team_id', $channel->team_id)
-            ->where('contact_id', $contactId)
-            ->where('channel_id', $channel->getKey())
-            ->where('is_paused', true)
-            ->exists();
+            ->whereKey($contactId)
+            ->where('crm_agent_paused', true)
+            ->exists()
+            || AgentConversationState::withoutGlobalScopes()
+                ->where('team_id', $channel->team_id)
+                ->where('contact_id', $contactId)
+                ->where('channel_id', $channel->getKey())
+                ->where('is_paused', true)
+                ->exists();
     }
 
     public function recordActivityWhilePaused(Contact $contact, Channel $channel, Message $incomingMessage): bool
     {
         $returnAction = null;
         $wasPaused = DB::transaction(function () use ($contact, $channel, $incomingMessage, &$returnAction): bool {
+            $lockedContact = Contact::withoutGlobalScopes()
+                ->where('team_id', $channel->team_id)
+                ->whereKey($contact->getKey())
+                ->lockForUpdate()
+                ->first();
             $state = $this->lockExistingState($contact, $channel);
-            if ($state === null || ! $state->is_paused) {
-                return false;
+            if ($state !== null && $state->is_paused) {
+                $this->renewPause($state);
+
+                if ($state->return_requested_at !== null
+                    && $state->return_started_at === null
+                    && $state->return_attempted_message_id !== $incomingMessage->getKey()
+                    && ! $lockedContact?->crm_agent_paused) {
+                    $returnAction = $state->return_action ?? 'returned';
+                    $state->forceFill([
+                        'return_requested_at' => now(),
+                        'return_attempted_message_id' => $incomingMessage->getKey(),
+                    ])->save();
+                }
+
+                HumanConversationUpdated::dispatch($state->team_id, $state->contact_id, $state->channel_id, 'activity');
+
+                return true;
             }
 
-            $this->renewPause($state);
+            if ($lockedContact?->crm_agent_paused) {
+                HumanConversationUpdated::dispatch($channel->team_id, (int) $contact->getKey(), (string) $channel->getKey(), 'activity');
 
-            if ($state->return_requested_at !== null
-                && $state->return_started_at === null
-                && $state->return_attempted_message_id !== $incomingMessage->getKey()) {
-                $returnAction = $state->return_action ?? 'returned';
-                $state->forceFill([
-                    'return_requested_at' => now(),
-                    'return_attempted_message_id' => $incomingMessage->getKey(),
-                ])->save();
+                return true;
             }
 
-            HumanConversationUpdated::dispatch($state->team_id, $state->contact_id, $state->channel_id, 'activity');
-
-            return true;
+            return false;
         });
 
         if ($wasPaused && $returnAction !== null) {
@@ -105,7 +124,7 @@ final class AgentConversationService
 
     public function returnToAgent(Contact $contact, Channel $channel, User $user): void
     {
-        $this->requestReturn($contact, $channel, $user, 'returned');
+        $this->requestReturn($contact, $channel, $user, 'returned', suppressCrmPause: true);
     }
 
     public function returnExpired(Contact $contact, Channel $channel): void
@@ -285,6 +304,15 @@ final class AgentConversationService
     public function runIfUnpaused(Channel $channel, Contact $contact, callable $action): bool
     {
         return DB::transaction(function () use ($channel, $contact, $action): bool {
+            $lockedContact = Contact::withoutGlobalScopes()
+                ->where('team_id', $channel->team_id)
+                ->whereKey($contact->getKey())
+                ->lockForUpdate()
+                ->first();
+            if ($lockedContact === null || $lockedContact->crm_agent_paused) {
+                return false;
+            }
+
             $state = $this->lockState($contact, $channel);
             if ($state->is_paused) {
                 return false;
@@ -530,16 +558,25 @@ final class AgentConversationService
         return $message;
     }
 
-    private function requestReturn(Contact $contact, Channel $channel, ?User $user, string $action): void
+    private function requestReturn(Contact $contact, Channel $channel, ?User $user, string $action, bool $suppressCrmPause = false): void
     {
-        $shouldDispatch = DB::transaction(function () use ($contact, $channel, $user, $action): bool {
+        $shouldDispatch = DB::transaction(function () use ($contact, $channel, $user, $action, $suppressCrmPause): bool {
+            $lockedContact = Contact::withoutGlobalScopes()
+                ->where('team_id', $channel->team_id)
+                ->whereKey($contact->getKey())
+                ->lockForUpdate()
+                ->first();
             $state = $this->lockExistingState($contact, $channel);
-            if ($state === null || ! $state->is_paused) {
-                return false;
+            if ($state?->is_paused && $user !== null && $state->assigned_user_id !== $user->getKey()) {
+                throw new ConflictHttpException('Somente a pessoa responsável pode devolver esta conversa ao Agente.');
             }
 
-            if ($user !== null && $state->assigned_user_id !== $user->getKey()) {
-                throw new ConflictHttpException('Somente a pessoa responsável pode devolver esta conversa ao Agente.');
+            if ($suppressCrmPause && $lockedContact !== null) {
+                $this->crmCommercialStages->suppressForManualReturn($lockedContact);
+            }
+
+            if ($state === null || ! $state->is_paused) {
+                return false;
             }
 
             if ($action === 'expired' && ($state->expires_at === null || $state->expires_at->isFuture())) {
