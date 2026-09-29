@@ -18,7 +18,7 @@ use RuntimeException;
 
 abstract class AbstractWhatsAppOutputAdapter implements WhatsAppOutputAdapter
 {
-    protected function storeOutgoingMedia(UploadedFile $file): array
+    protected function storeOutgoingMedia(UploadedFile $file): StoredWhatsAppMedia
     {
         $path = $file->store('outgoing', 'whatsapp_media');
 
@@ -26,22 +26,22 @@ abstract class AbstractWhatsAppOutputAdapter implements WhatsAppOutputAdapter
             throw new RuntimeException('Não foi possível salvar o arquivo enviado.');
         }
 
-        return [
-            'path' => $path,
-            'filename' => mb_substr($file->getClientOriginalName(), 0, 255),
-            'mime_type' => $file->getMimeType() ?: 'application/octet-stream',
-            'size' => (int) $file->getSize(),
-        ];
+        return new StoredWhatsAppMedia(
+            path: $path,
+            filename: mb_substr($file->getClientOriginalName(), 0, 255),
+            mimeType: $file->getMimeType() ?: 'application/octet-stream',
+            size: (int) $file->getSize(),
+        );
     }
 
     protected function postStoredMedia(
         PendingRequest $request,
         string $url,
         array $data,
-        array $media,
+        StoredWhatsAppMedia $media,
         ?Closure $beforeThrow = null,
     ): Response {
-        $stream = Storage::disk('whatsapp_media')->readStream($media['path']);
+        $stream = Storage::disk('whatsapp_media')->readStream($media->path);
 
         if (! is_resource($stream)) {
             throw new RuntimeException('Não foi possível ler o arquivo enviado.');
@@ -49,7 +49,7 @@ abstract class AbstractWhatsAppOutputAdapter implements WhatsAppOutputAdapter
 
         try {
             $response = $request
-                ->attach('file', $stream, $media['filename'], ['Content-Type' => $media['mime_type']])
+                ->attach('file', $stream, $media->filename, ['Content-Type' => $media->mimeType])
                 ->post($url, $data);
 
             $beforeThrow?->__invoke($response);
@@ -64,7 +64,7 @@ abstract class AbstractWhatsAppOutputAdapter implements WhatsAppOutputAdapter
         Channel $channel,
         Contact $contact,
         string $type,
-        array $media,
+        StoredWhatsAppMedia $media,
         string $providerMessageId,
     ): Message {
         return Message::create([
@@ -75,17 +75,17 @@ abstract class AbstractWhatsAppOutputAdapter implements WhatsAppOutputAdapter
             'payload_type' => $type,
             'provider_message_id' => $providerMessageId,
             'delivery_status' => MessageDeliveryStatus::Sent,
-            'media_path' => $media['path'],
-            'media_filename' => $media['filename'],
-            'media_mime_type' => $media['mime_type'],
-            'media_size' => $media['size'],
+            'media_path' => $media->path,
+            'media_filename' => $media->filename,
+            'media_mime_type' => $media->mimeType,
+            'media_size' => $media->size,
             'media_available' => true,
         ]);
     }
 
-    protected function deleteStoredMedia(array $media): void
+    protected function deleteStoredMedia(StoredWhatsAppMedia $media): void
     {
-        Storage::disk('whatsapp_media')->delete($media['path']);
+        Storage::disk('whatsapp_media')->delete($media->path);
     }
 
     protected function recordOutgoingText(
@@ -114,7 +114,7 @@ abstract class AbstractWhatsAppOutputAdapter implements WhatsAppOutputAdapter
         string|WhatsAppTemplate $template,
         array $parameters,
         string $providerMessageId,
-        ?array $media = null,
+        ?StoredWhatsAppMedia $media = null,
     ): Message {
         return Message::create([
             'team_id' => $channel->team_id,
@@ -131,10 +131,10 @@ abstract class AbstractWhatsAppOutputAdapter implements WhatsAppOutputAdapter
             ], JSON_THROW_ON_ERROR),
             'delivery_status' => MessageDeliveryStatus::Sent,
             ...($media === null ? [] : [
-                'media_path' => $media['path'],
-                'media_filename' => $media['filename'],
-                'media_mime_type' => $media['mime_type'],
-                'media_size' => $media['size'],
+                'media_path' => $media->path,
+                'media_filename' => $media->filename,
+                'media_mime_type' => $media->mimeType,
+                'media_size' => $media->size,
                 'media_available' => true,
             ]),
         ]);

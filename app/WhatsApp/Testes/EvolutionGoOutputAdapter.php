@@ -55,7 +55,7 @@ final class EvolutionGoOutputAdapter extends AbstractWhatsAppOutputAdapter
                 [
                     'number' => E164PhoneNumber::recipient($contact->phone),
                     'type' => $type,
-                    'filename' => $media['filename'],
+                    'filename' => $media->filename,
                 ],
                 $media,
             );

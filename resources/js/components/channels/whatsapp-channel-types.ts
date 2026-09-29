@@ -9,7 +9,7 @@ export type AgentOption = {
 export type WhatsAppChannelDetails = ChannelReadiness &
     WhatsAppChannel & {
         verifyToken: string | null;
-        method: string;
+        method: 'tech_provider' | 'own_app' | null;
         displayPhoneNumber: string | null;
         verifiedName: string | null;
         qualityRating: string | null;

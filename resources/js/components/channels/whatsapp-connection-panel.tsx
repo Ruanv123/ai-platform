@@ -129,9 +129,17 @@ export default function WhatsAppConnectionPanel({
             whatsapp.registeredAt === null ||
             whatsapp.detailsSyncedAt === null ||
             whatsapp.templatesSyncedAt === null);
+    const hasInitialAuthorizationAttempt =
+        whatsapp?.method === 'tech_provider' &&
+        whatsapp.status === 'error' &&
+        whatsapp.wabaId === null &&
+        whatsapp.phoneNumberId === null;
     const canStartMetaSignup =
         whatsapp === null ||
-        (whatsapp.method === 'tech_provider' && whatsapp.status === 'error');
+        hasInitialAuthorizationAttempt ||
+        (whatsapp.method === 'tech_provider' &&
+            whatsapp.status === 'error' &&
+            !canRetryMetaConnection);
 
     const test = () => {
         if (whatsapp !== null) {
@@ -200,6 +208,11 @@ export default function WhatsAppConnectionPanel({
                                     configId={metaSignup.configId}
                                     graphApiVersion={metaSignup.graphApiVersion}
                                     status={connectionStatus}
+                                    connectButtonLabel={
+                                        hasInitialAuthorizationAttempt
+                                            ? 'Autorizar novamente com a Meta'
+                                            : undefined
+                                    }
                                     onStatusChange={setConnectionStatus}
                                     onAuthorization={submitMetaCode}
                                 />

@@ -20,9 +20,9 @@ type AgentOption = {
 
 export type WhatsAppChannel = {
     id: string;
-    wabaId: string;
+    wabaId: string | null;
     appId: string | null;
-    phoneNumberId: string;
+    phoneNumberId: string | null;
     accessTokenSet: boolean;
     accessTokenMasked: string | null;
     appSecretSet: boolean;
