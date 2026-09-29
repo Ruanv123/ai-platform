@@ -34,6 +34,27 @@ class FakeCrmProviderAdapter extends AbstractCrmProviderAdapter
 
     public array $lookupBudgets = [];
 
+    /** @var list<Throwable> */
+    public array $personSearchFailures = [];
+
+    /** @var list<Throwable> */
+    public array $createPersonFailures = [];
+
+    /** @var list<Throwable> */
+    public array $createDealFailures = [];
+
+    public ?Throwable $renewalFailure = null;
+
+    public int $renewalCount = 0;
+
+    public array $createPersonCalls = [];
+
+    public array $updatePersonCalls = [];
+
+    public array $createDealCalls = [];
+
+    public array $updateDealCalls = [];
+
     public function provider(): string
     {
         return 'fake';
@@ -59,6 +80,16 @@ class FakeCrmProviderAdapter extends AbstractCrmProviderAdapter
         return $integration;
     }
 
+    public function renewIntegration(Integration $integration, float $timeoutSeconds = 15.0): Integration
+    {
+        $this->renewalCount++;
+        if ($this->renewalFailure !== null) {
+            throw $this->renewalFailure;
+        }
+
+        return $integration;
+    }
+
     /** @return CrmMetadata */
     public function loadMetadata(Integration $integration): array
     {
@@ -76,6 +107,10 @@ class FakeCrmProviderAdapter extends AbstractCrmProviderAdapter
     {
         $this->phoneSearches[] = $phone;
         $this->lookupBudgets[] = $timeoutSeconds;
+
+        if ($this->personSearchFailures !== []) {
+            throw array_shift($this->personSearchFailures);
+        }
 
         if ($this->lookupFailure !== null) {
             throw $this->lookupFailure;
@@ -121,7 +156,15 @@ class FakeCrmProviderAdapter extends AbstractCrmProviderAdapter
      */
     public function createPerson(Integration $integration, array $attributes): array
     {
-        return $this->person('person-1', $attributes);
+        if ($this->createPersonFailures !== []) {
+            throw array_shift($this->createPersonFailures);
+        }
+
+        $this->createPersonCalls[] = $attributes;
+        $person = $this->person('person-1', $attributes);
+        $this->people[] = $person;
+
+        return $person;
     }
 
     /** @param CrmPersonAttributes $attributes
@@ -129,7 +172,19 @@ class FakeCrmProviderAdapter extends AbstractCrmProviderAdapter
      */
     public function updatePerson(Integration $integration, string $personId, array $attributes): array
     {
-        return $this->person($personId, $attributes);
+        $this->updatePersonCalls[] = ['id' => $personId, 'attributes' => $attributes];
+        foreach ($this->people as $index => $person) {
+            if (($person['id'] ?? null) === $personId) {
+                $this->people[$index] = $this->person($personId, array_merge($person, $attributes));
+
+                return $this->people[$index];
+            }
+        }
+
+        $person = $this->person($personId, $attributes);
+        $this->people[] = $person;
+
+        return $person;
     }
 
     /** @param CrmDealAttributes $attributes
@@ -137,7 +192,15 @@ class FakeCrmProviderAdapter extends AbstractCrmProviderAdapter
      */
     public function createDeal(Integration $integration, array $attributes): array
     {
-        return $this->deal('deal-1', $attributes);
+        if ($this->createDealFailures !== []) {
+            throw array_shift($this->createDealFailures);
+        }
+
+        $this->createDealCalls[] = $attributes;
+        $deal = $this->deal('deal-1', $attributes);
+        $this->openDeals[] = $deal;
+
+        return $deal;
     }
 
     /** @param CrmDealUpdateAttributes $attributes
@@ -145,6 +208,15 @@ class FakeCrmProviderAdapter extends AbstractCrmProviderAdapter
      */
     public function updateDeal(Integration $integration, string $dealId, array $attributes): array
     {
+        $this->updateDealCalls[] = ['id' => $dealId, 'attributes' => $attributes];
+        foreach ($this->openDeals as $index => $deal) {
+            if (($deal['id'] ?? null) === $dealId) {
+                $this->openDeals[$index] = $this->deal($dealId, array_merge($deal, $attributes));
+
+                return $this->openDeals[$index];
+            }
+        }
+
         return $this->deal($dealId, $attributes);
     }
 

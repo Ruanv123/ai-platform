@@ -138,6 +138,8 @@ class IntegrationController extends Controller
             'crmError' => $crmError,
             'crmSuccess' => session('crm_success'),
             'crmFields' => $type === 'crm' ? $this->crmFieldOptions($integration) : [],
+            'crmOwners' => $type === 'crm' ? $this->crmOwnerOptions($integration) : [],
+            'defaultCrmOwnerId' => $type === 'crm' ? data_get($integration?->crm_settings, 'default_owner_id') : null,
             'visibleCrmFieldIds' => data_get($integration?->crm_settings, 'agent_visible_field_ids', []),
             'permissions' => $request->user()->toTeamPermissions($team),
         ]);
@@ -521,6 +523,21 @@ class IntegrationController extends Controller
                 'name' => (string) ($field['name'] ?? $field['id'] ?? ''),
             ])
             ->filter(fn (array $field): bool => $field['id'] !== '')
+            ->values()
+            ->all();
+    }
+
+    /**
+     * @return list<array{id: string, name: string}>
+     */
+    private function crmOwnerOptions(?Integration $integration): array
+    {
+        return collect($integration?->crm_metadata['owners'] ?? [])
+            ->filter(fn (array $owner): bool => is_string($owner['id'] ?? null) && is_string($owner['name'] ?? null))
+            ->map(fn (array $owner): array => [
+                'id' => $owner['id'],
+                'name' => $owner['name'],
+            ])
             ->values()
             ->all();
     }

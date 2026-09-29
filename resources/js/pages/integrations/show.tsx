@@ -87,6 +87,8 @@ type Props = {
     crmError: string | null;
     crmSuccess: string | null;
     crmFields: { id: string; name: string }[];
+    crmOwners: { id: string; name: string }[];
+    defaultCrmOwnerId: string | null;
     visibleCrmFieldIds: string[];
     permissions: TeamPermissions;
 };
@@ -132,6 +134,8 @@ export default function IntegrationShowPage(props: Props) {
                 crmError={props.crmError}
                 crmSuccess={props.crmSuccess}
                 crmFields={props.crmFields}
+                crmOwners={props.crmOwners}
+                defaultCrmOwnerId={props.defaultCrmOwnerId}
                 visibleCrmFieldIds={props.visibleCrmFieldIds}
                 permissions={permissions}
             />

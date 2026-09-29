@@ -91,16 +91,30 @@ class RdStationCrmAdapter extends AbstractCrmProviderAdapter
             return $integration;
         }
 
+        return $this->refreshIntegration($integration, $timeoutSeconds, false);
+    }
+
+    public function renewIntegration(Integration $integration, float $timeoutSeconds = 15.0): Integration
+    {
+        return $this->refreshIntegration($integration, $timeoutSeconds, true);
+    }
+
+    private function refreshIntegration(Integration $integration, float $timeoutSeconds, bool $force): Integration
+    {
+        if (! $integration->exists) {
+            throw new CrmProviderException(CrmErrorCategory::AccessDenied, 'A conta do RD Station CRM precisa ser reconectada.');
+        }
+
         $integrationId = (string) $integration->getKey();
         $deadline = hrtime(true) + (int) ($timeoutSeconds * 1_000_000_000);
         $lockWaitSeconds = max(1, min(10, (int) ceil($timeoutSeconds)));
-        $credentials = Cache::lock('crm:token-refresh:'.$integrationId, 30)->block($lockWaitSeconds, function () use ($integrationId, $deadline): array {
+        $credentials = Cache::lock('crm:token-refresh:'.$integrationId, 30)->block($lockWaitSeconds, function () use ($integrationId, $deadline, $force): array {
             $current = Integration::withoutGlobalScope(TeamScope::class)
                 ->whereKey($integrationId)
                 ->where('type', 'crm')
                 ->firstOrFail();
             $expiry = (int) $current->credential('expires_at', 0);
-            if ($expiry > now()->addSeconds(self::REFRESH_WINDOW_SECONDS)->timestamp) {
+            if (! $force && $expiry > now()->addSeconds(self::REFRESH_WINDOW_SECONDS)->timestamp) {
                 return $current->credentials;
             }
 
@@ -215,7 +229,7 @@ class RdStationCrmAdapter extends AbstractCrmProviderAdapter
             'loss_reason_required' => true,
             'won_and_lost_stages' => false,
             'webhooks' => false,
-            'operations' => [],
+            'operations' => ['lookup', 'person_create', 'person_update', 'deal_create', 'deal_update'],
         ];
     }
 
@@ -284,6 +298,107 @@ class RdStationCrmAdapter extends AbstractCrmProviderAdapter
             array_filter($records, fn (array $deal): bool => $this->dealIncludesPerson($deal, $personId)
                 && $this->dealStatus($deal['status'] ?? null) === 'open'),
         ));
+    }
+
+    public function createPerson(Integration $integration, array $attributes): array
+    {
+        $response = $this->api($integration)->post('/contacts', [
+            'data' => $this->personRequestData($attributes),
+        ]);
+        $this->throwIfFailed($response);
+        $record = $response->json('data');
+
+        return is_array($record)
+            ? ($this->normalizePerson($record, $attributes['phone'] ?? null) ?? throw new CrmProviderException(CrmErrorCategory::Definitive, 'O RD Station CRM retornou uma pessoa inválida.'))
+            : throw new CrmProviderException(CrmErrorCategory::Definitive, 'O RD Station CRM retornou uma pessoa inválida.');
+    }
+
+    public function updatePerson(Integration $integration, string $personId, array $attributes): array
+    {
+        $response = $this->api($integration)->put('/contacts/'.rawurlencode($personId), [
+            'data' => $this->personRequestData($attributes),
+        ]);
+        $this->throwIfFailed($response);
+        $record = $response->json('data');
+
+        return is_array($record)
+            ? ($this->normalizePerson($record, $attributes['phone'] ?? null) ?? throw new CrmProviderException(CrmErrorCategory::Definitive, 'O RD Station CRM retornou uma pessoa inválida.'))
+            : throw new CrmProviderException(CrmErrorCategory::Definitive, 'O RD Station CRM retornou uma pessoa inválida.');
+    }
+
+    public function createDeal(Integration $integration, array $attributes): array
+    {
+        $data = [
+            'name' => $attributes['name'] ?? '',
+            'contact_ids' => [$attributes['person_id']],
+            'pipeline_id' => $attributes['pipeline_id'],
+            'stage_id' => $attributes['stage_id'],
+            'status' => ($attributes['status'] ?? 'open') === 'open' ? 'ongoing' : ($attributes['status'] ?? 'ongoing'),
+        ];
+        if (is_numeric($attributes['value'] ?? null)) {
+            $data['total_price'] = (float) $attributes['value'];
+        }
+        if (is_string($attributes['owner_id'] ?? null) && $attributes['owner_id'] !== '') {
+            $data['owner_id'] = $attributes['owner_id'];
+        }
+        if (is_string($attributes['organization_id'] ?? null) && $attributes['organization_id'] !== '') {
+            $data['organization_id'] = $attributes['organization_id'];
+        }
+
+        $response = $this->api($integration)->post('/deals', ['data' => $data]);
+        $this->throwIfFailed($response);
+        $record = $response->json('data');
+
+        return is_array($record)
+            ? $this->normalizeDeal($record, $attributes['person_id'])
+            : throw new CrmProviderException(CrmErrorCategory::Definitive, 'O RD Station CRM retornou uma negociação inválida.');
+    }
+
+    public function updateDeal(Integration $integration, string $dealId, array $attributes): array
+    {
+        $data = [];
+        if (is_string($attributes['name'] ?? null)) {
+            $data['name'] = $attributes['name'];
+        }
+        if (is_numeric($attributes['value'] ?? null)) {
+            $data['total_price'] = (float) $attributes['value'];
+        }
+
+        $response = $this->api($integration)->put('/deals/'.rawurlencode($dealId), ['data' => $data]);
+        $this->throwIfFailed($response);
+        $record = $response->json('data');
+
+        return is_array($record)
+            ? $this->normalizeDeal($record, isset($attributes['person_id']) ? (string) $attributes['person_id'] : null)
+            : throw new CrmProviderException(CrmErrorCategory::Definitive, 'O RD Station CRM retornou uma negociação inválida.');
+    }
+
+    /** @param CrmPersonAttributes $attributes
+     * @return array<string, mixed>
+     */
+    private function personRequestData(array $attributes): array
+    {
+        $data = [];
+        if (is_string($attributes['name'] ?? null) && $attributes['name'] !== '') {
+            $data['name'] = $attributes['name'];
+        }
+        if (is_string($attributes['phone'] ?? null) && $attributes['phone'] !== '') {
+            $data['phones'] = [['phone' => $attributes['phone'], 'type' => 'mobile']];
+        }
+        if (is_string($attributes['email'] ?? null) && $attributes['email'] !== '') {
+            $data['emails'] = [['email' => $attributes['email']]];
+        }
+        if (is_string($attributes['organization_id'] ?? null) && $attributes['organization_id'] !== '') {
+            $data['organization_id'] = $attributes['organization_id'];
+        }
+        if (is_string($attributes['owner_id'] ?? null) && $attributes['owner_id'] !== '') {
+            $data['owner_id'] = $attributes['owner_id'];
+        }
+        if (is_array($attributes['fields'] ?? null) && $attributes['fields'] !== []) {
+            $data['custom_fields'] = $attributes['fields'];
+        }
+
+        return $data;
     }
 
     /** @return CrmRateLimit */
@@ -370,6 +485,7 @@ class RdStationCrmAdapter extends AbstractCrmProviderAdapter
     {
         $deadline = hrtime(true) + (int) ($timeoutSeconds * 1_000_000_000);
         $fresh = $this->freshIntegration($integration, $timeoutSeconds);
+        $this->consumeRequestQuota($fresh);
         $token = $fresh->credential('access_token');
         if (! is_string($token) || $token === '') {
             throw new CrmProviderException(CrmErrorCategory::AccessDenied, 'A conta do RD Station CRM precisa ser reconectada.');
@@ -385,6 +501,35 @@ class RdStationCrmAdapter extends AbstractCrmProviderAdapter
             ->timeout($remainingSeconds)
             ->acceptJson()
             ->withToken($token);
+    }
+
+    private function consumeRequestQuota(Integration $integration): void
+    {
+        $limit = $this->rateLimit();
+        $requests = max(0, $limit['requests']);
+        $windowSeconds = max(1, $limit['window_seconds']);
+        if ($requests === 0) {
+            return;
+        }
+
+        $now = now()->timestamp;
+        $windowStart = intdiv($now, $windowSeconds) * $windowSeconds;
+        $remainingSeconds = max(1, $windowStart + $windowSeconds - $now);
+        $key = 'crm:request-quota:'.$integration->getKey().':'.$windowStart;
+
+        Cache::lock('crm:request-quota-lock:'.$integration->getKey(), 5)->block(2, function () use ($key, $remainingSeconds, $requests): void {
+            if (! Cache::has($key)) {
+                Cache::put($key, 0, $remainingSeconds);
+            }
+
+            $used = (int) Cache::get($key, 0);
+            if ($used >= $requests) {
+                $retryAfter = max(1, $remainingSeconds);
+                throw new CrmProviderException(CrmErrorCategory::RateLimit, 'O limite de requisições do CRM foi atingido.', $retryAfter);
+            }
+
+            Cache::increment($key);
+        });
     }
 
     private function remainingSeconds(int $deadline): float

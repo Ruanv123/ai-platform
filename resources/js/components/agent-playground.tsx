@@ -34,6 +34,9 @@ export type AgentDraft = {
     searchProducts: boolean;
     sendPurchaseLink: boolean;
     crmLookupEnabled: boolean;
+    crmEnsureDealEnabled: boolean;
+    crmPipelineId: string;
+    crmInitialStageId: string;
 };
 
 type Source = {
@@ -341,7 +344,7 @@ export default function AgentPlayground({ draft }: Props) {
                             Teste como {draft.name || 'este Agente'} responde
                             com a configuração atual.
                         </CardDescription>
-                        {draft.crmLookupEnabled && (
+                        {(draft.crmLookupEnabled || draft.crmEnsureDealEnabled) && (
                             <div className="mt-3 grid gap-2">
                                 <Label htmlFor="playground-crm-phone">
                                     Telefone para consulta no CRM

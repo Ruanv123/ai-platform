@@ -42,10 +42,17 @@ type SchedulableCalendarOption = {
     description: string | null;
 };
 
+type CrmPipelineOption = {
+    id: string;
+    name: string;
+    stages: { id: string; name: string }[];
+};
+
 type Agent = AgentDraft & {
     id: string;
     description: string | null;
     crmLookupConfigured: boolean;
+    crmEnsureDealConfigured: boolean;
 };
 
 type Props = {
@@ -54,6 +61,7 @@ type Props = {
     schedulableCalendars: SchedulableCalendarOption[];
     agendaConnected: boolean;
     crmConnected: boolean;
+    crmPipelines: CrmPipelineOption[];
     shopConnected: boolean;
     productSearchConfigured: boolean;
     purchaseLinkConfigured: boolean;
@@ -259,6 +267,7 @@ function AgentForm({
     schedulableCalendars,
     agendaConnected,
     crmConnected,
+    crmPipelines,
     shopConnected,
     productSearchConfigured,
     purchaseLinkConfigured,
@@ -297,6 +306,16 @@ function AgentForm({
     const [crmLookupConfigured, setCrmLookupConfigured] = useState(
         agent.crmLookupConfigured,
     );
+    const [crmEnsureDealEnabled, setCrmEnsureDealEnabled] = useState(
+        agent.crmEnsureDealEnabled,
+    );
+    const [crmEnsureDealConfigured, setCrmEnsureDealConfigured] = useState(
+        agent.crmEnsureDealConfigured,
+    );
+    const [crmPipelineId, setCrmPipelineId] = useState(agent.crmPipelineId);
+    const [crmInitialStageId, setCrmInitialStageId] = useState(
+        agent.crmInitialStageId,
+    );
     const [welcomeMessage, setWelcomeMessage] = useState(agent.welcomeMessage);
     const [activePanel, setActivePanel] = useState<'config' | 'playground'>(
         'config',
@@ -314,6 +333,9 @@ function AgentForm({
         collectionIds: selectedCollectionIds,
         schedulableCalendarIds: selectedSchedulableCalendarIds,
         crmLookupEnabled,
+        crmEnsureDealEnabled,
+        crmPipelineId,
+        crmInitialStageId,
         searchProducts,
         sendPurchaseLink,
     };
@@ -334,6 +356,18 @@ function AgentForm({
                 crmConnected &&
                     ['sales', 'qualification'].includes(nextObjective),
             );
+        }
+
+        if (!crmEnsureDealConfigured) {
+            setCrmEnsureDealEnabled(
+                crmConnected &&
+                    ['sales', 'qualification'].includes(nextObjective),
+            );
+        }
+
+        if (!crmPipelineId && crmPipelines[0]) {
+            setCrmPipelineId(crmPipelines[0].id);
+            setCrmInitialStageId(crmPipelines[0].stages[0]?.id ?? '');
         }
     };
 
@@ -358,7 +392,14 @@ function AgentForm({
                 rules,
                 collection_ids: selectedCollectionIds,
                 schedulable_calendar_ids: selectedSchedulableCalendarIds,
-                ...(crmConnected ? { crm_lookup_enabled: crmLookupEnabled } : {}),
+                ...(crmConnected
+                    ? {
+                          crm_lookup_enabled: crmLookupEnabled,
+                          crm_ensure_deal_enabled: crmEnsureDealEnabled,
+                          crm_pipeline_id: crmPipelineId || null,
+                          crm_initial_stage_id: crmInitialStageId || null,
+                      }
+                    : {}),
             },
             {
                 preserveScroll: true,
@@ -468,11 +509,28 @@ function AgentForm({
                                         value={usesEmojis ? '1' : '0'}
                                     />
                                     {crmConnected && (
-                                        <input
-                                            type="hidden"
-                                            name="crm_lookup_enabled"
-                                            value={crmLookupEnabled ? '1' : '0'}
-                                        />
+                                        <>
+                                            <input
+                                                type="hidden"
+                                                name="crm_lookup_enabled"
+                                                value={crmLookupEnabled ? '1' : '0'}
+                                            />
+                                            <input
+                                                type="hidden"
+                                                name="crm_ensure_deal_enabled"
+                                                value={crmEnsureDealEnabled ? '1' : '0'}
+                                            />
+                                            <input
+                                                type="hidden"
+                                                name="crm_pipeline_id"
+                                                value={crmPipelineId}
+                                            />
+                                            <input
+                                                type="hidden"
+                                                name="crm_initial_stage_id"
+                                                value={crmInitialStageId}
+                                            />
+                                        </>
                                     )}
                                     {selectedCollectionIds.map(
                                         (collectionId) => (
@@ -844,17 +902,60 @@ function AgentForm({
                                                 </p>
                                             </div>
                                             <label className="border-input hover:bg-muted/50 flex cursor-pointer items-start gap-3 rounded-md border px-3 py-2 text-sm">
-                                            <input
-                                                type="checkbox"
-                                                checked={crmLookupEnabled}
-                                                onChange={(event) => {
-                                                    setCrmLookupConfigured(true);
-                                                    setCrmLookupEnabled(event.target.checked)
-                                                }}
+                                                <input
+                                                    type="checkbox"
+                                                    checked={crmLookupEnabled}
+                                                    onChange={(event) => {
+                                                        setCrmLookupConfigured(true);
+                                                        setCrmLookupEnabled(event.target.checked);
+                                                    }}
                                                     className="accent-primary mt-0.5 size-4"
                                                 />
                                                 <span>Consultar ficha no CRM</span>
                                             </label>
+                                            <label className="border-input hover:bg-muted/50 flex cursor-pointer items-start gap-3 rounded-md border px-3 py-2 text-sm">
+                                                <input
+                                                    type="checkbox"
+                                                    checked={crmEnsureDealEnabled}
+                                                    onChange={(event) => {
+                                                        setCrmEnsureDealConfigured(true);
+                                                        setCrmEnsureDealEnabled(event.target.checked);
+                                                    }}
+                                                    className="accent-primary mt-0.5 size-4"
+                                                />
+                                                <span>Garantir Negócio no CRM</span>
+                                            </label>
+                                            <div className="grid gap-3 sm:grid-cols-2">
+                                                <SelectField
+                                                    id="crm-pipeline"
+                                                    label="Funil de vendas"
+                                                    value={crmPipelineId}
+                                                    onValueChange={(pipelineId) => {
+                                                        setCrmPipelineId(pipelineId);
+                                                        setCrmInitialStageId(
+                                                            crmPipelines.find((pipeline) => pipeline.id === pipelineId)?.stages[0]?.id ?? '',
+                                                        );
+                                                    }}
+                                                    options={crmPipelines.map((pipeline) => ({
+                                                        value: pipeline.id,
+                                                        label: pipeline.name,
+                                                    }))}
+                                                    error={errors.crm_pipeline_id}
+                                                />
+                                                <SelectField
+                                                    id="crm-initial-stage"
+                                                    label="Etapa inicial"
+                                                    value={crmInitialStageId}
+                                                    onValueChange={setCrmInitialStageId}
+                                                    options={
+                                                        crmPipelines.find((pipeline) => pipeline.id === crmPipelineId)?.stages.map((stage) => ({
+                                                            value: stage.id,
+                                                            label: stage.name,
+                                                        })) ?? []
+                                                    }
+                                                    error={errors.crm_initial_stage_id}
+                                                />
+                                            </div>
                                         </section>
                                     )}
 

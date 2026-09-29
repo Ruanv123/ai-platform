@@ -68,6 +68,18 @@ class Integration extends Model
         return $this->hasMany(CrmContactLink::class);
     }
 
+    /** @return HasMany<CrmOperation, $this> */
+    public function crmOperations(): HasMany
+    {
+        return $this->hasMany(CrmOperation::class);
+    }
+
+    /** @return HasMany<CrmLinkedDeal, $this> */
+    public function crmLinkedDeals(): HasMany
+    {
+        return $this->hasMany(CrmLinkedDeal::class);
+    }
+
     protected function casts(): array
     {
         return [

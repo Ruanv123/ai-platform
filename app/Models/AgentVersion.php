@@ -11,7 +11,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use LogicException;
 
-#[Fillable(['team_id', 'agent_id', 'number', 'objective', 'ecommerce_tools', 'published_at'])]
+#[Fillable(['team_id', 'agent_id', 'number', 'objective', 'ecommerce_tools', 'crm_tools', 'published_at'])]
 class AgentVersion extends Model
 {
     use BelongsToTeam, HasFactory, HasUuids;
@@ -62,6 +62,7 @@ class AgentVersion extends Model
         return [
             'objective' => AgentObjective::class,
             'ecommerce_tools' => 'array',
+            'crm_tools' => 'array',
             'published_at' => 'immutable_datetime',
         ];
     }

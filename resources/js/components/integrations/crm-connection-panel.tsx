@@ -15,6 +15,14 @@ import { destroy, index } from '@/routes/integrations';
 import visibleToAgent from '@/routes/integrations/crm/fields/visible-to-agent';
 import { connect } from '@/routes/integrations/crm/rd-station';
 import type { TeamPermissions } from '@/types';
+import defaultOwner from '@/routes/integrations/crm/default-owner';
+import {
+    Select,
+    SelectContent,
+    SelectItem,
+    SelectTrigger,
+    SelectValue,
+} from '@/components/ui/select';
 
 type Integration = {
     id: string;
@@ -32,6 +40,8 @@ type Props = {
     crmError: string | null;
     crmSuccess: string | null;
     crmFields: { id: string; name: string }[];
+    crmOwners: { id: string; name: string }[];
+    defaultCrmOwnerId: string | null;
     visibleCrmFieldIds: string[];
     permissions: TeamPermissions;
 };
@@ -41,10 +51,15 @@ export default function CrmConnectionPanel({
     crmError,
     crmSuccess,
     crmFields,
+    crmOwners,
+    defaultCrmOwnerId,
     visibleCrmFieldIds,
     permissions,
 }: Props) {
     const [selectedFieldIds, setSelectedFieldIds] = useState(visibleCrmFieldIds);
+    const [selectedDefaultOwnerId, setSelectedDefaultOwnerId] = useState(
+        defaultCrmOwnerId ?? 'none',
+    );
     const connected = integration?.status === 'connected';
     const teamAccountNames =
         integration?.crmAccount?.teams.map(
@@ -168,6 +183,52 @@ export default function CrmConnectionPanel({
                                 <Trash2 /> Desconectar
                             </Button>
                         )}
+                    </CardContent>
+                </Card>
+            )}
+            {connected && permissions.canManageIntegrations && (
+                <Card className="max-w-2xl">
+                    <CardHeader>
+                        <CardTitle>Responsável padrão</CardTitle>
+                        <CardDescription>
+                            Novas Pessoas do CRM e Negócios sem Responsável herdam esta escolha.
+                        </CardDescription>
+                    </CardHeader>
+                    <CardContent className="grid gap-4">
+                        <Select
+                            value={selectedDefaultOwnerId}
+                            onValueChange={setSelectedDefaultOwnerId}
+                        >
+                            <SelectTrigger className="w-full">
+                                <SelectValue placeholder="Selecione um Responsável" />
+                            </SelectTrigger>
+                            <SelectContent>
+                                <SelectItem value="none">Sem Responsável padrão</SelectItem>
+                                {crmOwners.map((owner) => (
+                                    <SelectItem key={owner.id} value={owner.id}>
+                                        {owner.name}
+                                    </SelectItem>
+                                ))}
+                            </SelectContent>
+                        </Select>
+                        <Button
+                            type="button"
+                            className="w-fit"
+                            onClick={() =>
+                                router.put(
+                                    defaultOwner.update().url,
+                                    {
+                                        default_owner_id:
+                                            selectedDefaultOwnerId === 'none'
+                                                ? null
+                                                : selectedDefaultOwnerId,
+                                    },
+                                    { preserveScroll: true },
+                                )
+                            }
+                        >
+                            Salvar Responsável padrão
+                        </Button>
                     </CardContent>
                 </Card>
             )}

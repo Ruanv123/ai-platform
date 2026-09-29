@@ -6,12 +6,14 @@ use App\Ai\Tools\BookAppointment;
 use App\Ai\Tools\CancelAppointment;
 use App\Ai\Tools\ConsultAvailableTimes;
 use App\Ai\Tools\ConsultCrmCard;
+use App\Ai\Tools\GuaranteeCrmDeal;
 use App\Ai\Tools\ListAppointments;
 use App\Ai\Tools\ReturnToFlow;
 use App\Ai\Tools\SearchKnowledgeBase;
 use App\Ai\Tools\SearchProducts;
 use App\Ai\Tools\SendPurchaseLink;
 use App\Crm\CrmCardLookup;
+use App\Crm\CrmOperationDispatcher;
 use App\Ecommerce\ProductCatalogSearch;
 use App\Ecommerce\ProductCatalogTriage;
 use App\Enums\AgentObjective;
@@ -92,6 +94,30 @@ class AgentToolFactory
                 $team,
                 $contact,
                 $this->crmCardLookup ?? app(CrmCardLookup::class),
+                $mode === AgentToolMode::Simulated ? $crmLookupPhone : null,
+            );
+        }
+
+        $crmTools = $mode === AgentToolMode::Real
+            ? ($publishedVersion?->crm_tools ?? [])
+            : [
+                'ensure_deal_enabled' => $agent->crm_ensure_deal_enabled ?? in_array($agent->objective, [AgentObjective::Sales, AgentObjective::Qualification], true),
+                'pipeline_id' => $agent->crm_pipeline_id,
+                'initial_stage_id' => $agent->crm_initial_stage_id,
+            ];
+        $ensureDealEnabled = $crmConnected && ($crmTools['ensure_deal_enabled'] ?? false) === true;
+        $pipelineId = $crmTools['pipeline_id'] ?? null;
+        $initialStageId = $crmTools['initial_stage_id'] ?? null;
+
+        if ($ensureDealEnabled && is_string($pipelineId) && $pipelineId !== '' && is_string($initialStageId) && $initialStageId !== '') {
+            $tools[] = new GuaranteeCrmDeal(
+                $team,
+                $agent,
+                $contact,
+                app(CrmOperationDispatcher::class),
+                $pipelineId,
+                $initialStageId,
+                $mode === AgentToolMode::Simulated,
                 $mode === AgentToolMode::Simulated ? $crmLookupPhone : null,
             );
         }

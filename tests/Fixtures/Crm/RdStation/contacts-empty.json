@@ -1,0 +1,10 @@
+{
+  "data": [],
+  "links": {
+    "first": "https://api.rd.services/crm/v2/contacts?page[number]=1&page[size]=100",
+    "prev": null,
+    "self": "https://api.rd.services/crm/v2/contacts?page[number]=1&page[size]=100",
+    "next": null,
+    "last": "https://api.rd.services/crm/v2/contacts?page[number]=1&page[size]=100"
+  }
+}

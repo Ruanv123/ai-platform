@@ -186,7 +186,13 @@ it('conforms to the canonical metadata shape from provider fixtures', function (
             'webhooks',
             'operations',
         ])
-        ->and(app($adapterClass)->capabilities()['operations'])->toBe([])
+        ->and(app($adapterClass)->capabilities()['operations'])->toBe([
+            'lookup',
+            'person_create',
+            'person_update',
+            'deal_create',
+            'deal_update',
+        ])
         ->and(app($adapterClass)->rateLimit())->toBe(['requests' => 120, 'window_seconds' => 60]);
 })->with([
     'RD Station CRM' => [RdStationCrmAdapter::class],
