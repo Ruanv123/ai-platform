@@ -7,6 +7,8 @@ use App\Ai\Tools\CancelAppointment;
 use App\Ai\Tools\ConsultAvailableTimes;
 use App\Ai\Tools\ListAppointments;
 use App\Ai\Tools\SearchKnowledgeBase;
+use App\Ai\Tools\SearchProducts;
+use App\Ecommerce\ProductCatalogSearch;
 use App\Knowledge\AgentInstructionTemplate;
 use App\Knowledge\KnowledgeBaseSearch;
 use App\Models\Agent as ConfiguredAgent;
@@ -35,6 +37,7 @@ class PlaygroundAgent implements Agent, Conversational, HasTools
         private array $conversationMessages,
         private AgentInstructionTemplate $instructionTemplate,
         private KnowledgeBaseSearch $knowledgeBaseSearch,
+        private ProductCatalogSearch $productCatalogSearch,
         private ?SchedulingService $scheduling = null,
     ) {}
 
@@ -76,6 +79,10 @@ class PlaygroundAgent implements Agent, Conversational, HasTools
                 $collections->modelKeys(),
                 $this->knowledgeBaseSearch,
             );
+        }
+        $team = $this->configuredAgent->team;
+        if ($this->configuredAgent->shouldSearchProducts($team->shops()->exists())) {
+            $tools[] = new SearchProducts($team, $this->productCatalogSearch);
         }
 
         $calendars = $this->configuredAgent->schedulableCalendars;

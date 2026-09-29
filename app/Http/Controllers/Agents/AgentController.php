@@ -204,12 +204,15 @@ class AgentController extends Controller
         Agent $agent,
         bool $canManageAgents = false,
     ): array {
+        $shopConnected = $team->shops()->exists();
+
         return [
             'agent' => [
                 'id' => $agent->id,
                 'name' => $agent->name,
                 'description' => $agent->description,
                 'objective' => $agent->objective->value,
+                'searchProducts' => $agent->search_products ?? ($shopConnected && $agent->objective === AgentObjective::Sales),
                 'tone' => $agent->tone->value,
                 'usesEmojis' => $agent->uses_emojis,
                 'responseLength' => $agent->response_length->value,
@@ -238,6 +241,8 @@ class AgentController extends Controller
                 ])
                 ->values(),
             'agendaConnected' => $team->integrations()->where('type', 'agenda')->where('status', 'connected')->exists(),
+            'shopConnected' => $shopConnected,
+            'productSearchConfigured' => $agent->search_products !== null,
             'objectives' => AgentObjective::options(),
             'tones' => AgentTone::options(),
             'responseLengths' => AgentResponseLength::options(),

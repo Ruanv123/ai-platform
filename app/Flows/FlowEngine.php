@@ -5,6 +5,7 @@ namespace App\Flows;
 use App\Ai\Agents\WhatsAppAgent;
 use App\Ai\Tools\ReturnToFlow;
 use App\Consent\ContactConsentService;
+use App\Ecommerce\ProductCatalogSearch;
 use App\Enums\ChannelType;
 use App\Enums\ConsentPurpose;
 use App\Enums\FlowCategory;
@@ -52,6 +53,7 @@ final class FlowEngine
         private readonly WhatsAppCustomerCareWindow $customerCareWindow,
         private readonly AgentInstructionTemplate $instructionTemplate,
         private readonly KnowledgeBaseSearch $knowledgeBaseSearch,
+        private readonly ProductCatalogSearch $productCatalogSearch,
         private readonly TraceSanitizer $traceSanitizer,
         private readonly FlowExecutionAggregator $aggregator,
         private readonly IntegrationClient $integrationClient,
@@ -760,6 +762,7 @@ final class FlowEngine
                 $history,
                 $this->instructionTemplate,
                 $this->knowledgeBaseSearch,
+                $this->productCatalogSearch,
                 new ReturnToFlow($execution),
                 $execution->contact,
             ))->prompt($prompt, provider: config('ai.playground.provider'), model: config('ai.playground.model'), timeout: (int) config('ai.playground.timeout', 60));
@@ -1198,7 +1201,7 @@ final class FlowEngine
         try {
             $history = $execution->contact?->history($execution->channel) ?? new Collection;
             $prompt = $this->interpolate((string) ($config['instruction'] ?? $config['prompt'] ?? ''), $execution);
-            $response = (new WhatsAppAgent($agent, $history, $this->instructionTemplate, $this->knowledgeBaseSearch, null, $execution->contact))
+            $response = (new WhatsAppAgent($agent, $history, $this->instructionTemplate, $this->knowledgeBaseSearch, $this->productCatalogSearch, null, $execution->contact))
                 ->prompt($prompt, provider: config('ai.playground.provider'), model: config('ai.playground.model'), timeout: (int) config('ai.playground.timeout', 60));
             $traceData = $this->aiTraceData($prompt, $response, $config, $execution->variables);
             $value = trim($response->text);
@@ -1236,7 +1239,7 @@ final class FlowEngine
         try {
             $history = $execution->contact?->history($execution->channel) ?? new Collection;
             $prompt = $message !== null ? $message->content : (string) ($execution->variables['message'] ?? '');
-            $response = (new WhatsAppAgent($agent, $history, $this->instructionTemplate, $this->knowledgeBaseSearch, null, $execution->contact))
+            $response = (new WhatsAppAgent($agent, $history, $this->instructionTemplate, $this->knowledgeBaseSearch, $this->productCatalogSearch, null, $execution->contact))
                 ->prompt($prompt, provider: config('ai.playground.provider'), model: config('ai.playground.model'), timeout: (int) config('ai.playground.timeout', 60));
             $traceData = $this->aiTraceData($prompt, $response, $config, $execution->variables);
             $intent = trim($response->text);

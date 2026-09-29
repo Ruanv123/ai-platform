@@ -8,6 +8,8 @@ use App\Ai\Tools\ConsultAvailableTimes;
 use App\Ai\Tools\ListAppointments;
 use App\Ai\Tools\ReturnToFlow;
 use App\Ai\Tools\SearchKnowledgeBase;
+use App\Ai\Tools\SearchProducts;
+use App\Ecommerce\ProductCatalogSearch;
 use App\Enums\MessageDirection;
 use App\Knowledge\AgentInstructionTemplate;
 use App\Knowledge\KnowledgeBaseSearch;
@@ -39,6 +41,7 @@ class WhatsAppAgent implements Agent, Conversational, HasTools
         private Collection $conversationMessages,
         private AgentInstructionTemplate $instructionTemplate,
         private KnowledgeBaseSearch $knowledgeBaseSearch,
+        private ProductCatalogSearch $productCatalogSearch,
         private ?ReturnToFlow $returnToFlow = null,
         private ?Contact $contact = null,
         private ?SchedulingService $scheduling = null,
@@ -81,6 +84,10 @@ class WhatsAppAgent implements Agent, Conversational, HasTools
                 $collections->modelKeys(),
                 $this->knowledgeBaseSearch,
             );
+        }
+        $team = $this->configuredAgent->team;
+        if ($this->configuredAgent->shouldSearchProducts($team->shops()->exists())) {
+            $tools[] = new SearchProducts($team, $this->productCatalogSearch);
         }
         $calendars = $this->configuredAgent->schedulableCalendars;
         if ($calendars->isNotEmpty()) {
