@@ -91,7 +91,9 @@ class WhatsAppAgent implements Agent, Conversational, HasTools
         }
         $team = $this->configuredAgent->team;
         $publishedVersion = $this->configuredAgent->publishedVersion();
-        if ($publishedVersion?->shouldSearchProducts($team->shops()->exists())) {
+        $shopConnected = $team->shops()->exists();
+        $shopToolsEnabled = $this->configuredAgent->shop_tools_enabled;
+        if ($publishedVersion?->shouldSearchProducts($shopConnected, $shopToolsEnabled)) {
             $tools[] = new SearchProducts(
                 $team,
                 $this->productCatalogSearch,
@@ -101,7 +103,7 @@ class WhatsAppAgent implements Agent, Conversational, HasTools
                 $this->conversationMessages,
             );
         }
-        if ($publishedVersion?->shouldSendPurchaseLink($team->shops()->exists())) {
+        if ($publishedVersion?->shouldSendPurchaseLink($shopConnected, $shopToolsEnabled)) {
             $tools[] = new SendPurchaseLink($team, $this->configuredAgent, $this->contact, $this->channel);
         }
         $calendars = $this->configuredAgent->schedulableCalendars;

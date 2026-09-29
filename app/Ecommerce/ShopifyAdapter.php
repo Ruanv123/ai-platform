@@ -34,6 +34,17 @@ final class ShopifyAdapter implements EcommerceAdapter
         }
         GRAPHQL;
 
+    private const APP_UNINSTALL_MUTATION = <<<'GRAPHQL'
+        mutation ShopifyAppUninstall {
+          appUninstall {
+            userErrors {
+              field
+              message
+            }
+          }
+        }
+        GRAPHQL;
+
     public function provider(): EcommerceProvider
     {
         return EcommerceProvider::Shopify;
@@ -364,6 +375,24 @@ final class ShopifyAdapter implements EcommerceAdapter
             $this->markShopConnectionAsExpired($shop);
 
             throw $exception;
+        }
+    }
+
+    public function uninstallApp(Shop $shop): void
+    {
+        $result = $this->queryShop($shop, self::APP_UNINSTALL_MUTATION);
+        $userErrors = data_get($result, 'appUninstall.userErrors');
+
+        if (! is_array($userErrors) || $userErrors !== []) {
+            $messages = collect($userErrors)
+                ->pluck('message')
+                ->filter(fn (mixed $message): bool => is_string($message) && $message !== '')
+                ->values()
+                ->all();
+
+            throw new RuntimeException($messages === []
+                ? 'A Shopify não confirmou a desinstalação do app.'
+                : implode(' ', $messages));
         }
     }
 

@@ -2,6 +2,9 @@
 
 namespace App\Http\Controllers\Integrations;
 
+use App\Ecommerce\EcommerceAdapter;
+use App\Ecommerce\ShopifyAccessRevokedException;
+use App\Ecommerce\ShopifyInstallationCleanup;
 use App\Enums\CrmProvider;
 use App\Enums\EcommerceProvider;
 use App\Enums\TeamPermission;
@@ -25,6 +28,7 @@ use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use Inertia\Response;
 use Laravel\Socialite\Facades\Socialite;
+use RuntimeException;
 use Throwable;
 
 class IntegrationController extends Controller
@@ -140,7 +144,7 @@ class IntegrationController extends Controller
                 ->user();
             $email = $googleUser->getEmail();
             if (! is_string($email) || $email === '' || ! is_string($googleUser->token ?? null)) {
-                throw new \RuntimeException('O Google não retornou uma conta válida.');
+                throw new RuntimeException('O Google não retornou uma conta válida.');
             }
 
             $team = $request->user()->company();
@@ -257,8 +261,12 @@ class IntegrationController extends Controller
         return $this->redirectToIntegration($integration);
     }
 
-    public function destroy(Request $request, Integration $integration): RedirectResponse|JsonResponse
-    {
+    public function destroy(
+        Request $request,
+        Integration $integration,
+        EcommerceAdapter $ecommerceAdapter,
+        ShopifyInstallationCleanup $shopifyInstallationCleanup,
+    ): RedirectResponse|JsonResponse {
         $this->authorizeManagement($request, $integration);
         $isShopify = $integration->type === 'ecommerce' && $integration->provider === 'shopify';
         if ($integration->type !== 'agenda' && ! $isShopify) {
@@ -281,15 +289,32 @@ class IntegrationController extends Controller
         }
 
         if ($isShopify) {
-            DB::transaction(function () use ($integration): void {
-                $integration->shop()->first()?->delete();
-                $integration->forceFill([
-                    'credentials' => [],
-                    'status' => 'disconnected',
-                    'status_message' => null,
-                ])->save();
-                $integration->delete();
-            });
+            $shop = $integration->shop()->first();
+
+            if ($shop !== null) {
+                try {
+                    $ecommerceAdapter->uninstallApp($shop);
+                } catch (ShopifyAccessRevokedException) {
+                } catch (Throwable $exception) {
+                    report($exception);
+                    throw ValidationException::withMessages([
+                        'integration' => $exception instanceof RuntimeException
+                            ? $exception->getMessage()
+                            : 'Não foi possível desinstalar o app na Shopify. Tente novamente.',
+                    ]);
+                }
+
+                $shopifyInstallationCleanup->removeAfterUninstall($shop);
+            } else {
+                DB::transaction(function () use ($integration): void {
+                    $integration->forceFill([
+                        'credentials' => [],
+                        'status' => 'disconnected',
+                        'status_message' => null,
+                    ])->save();
+                    $integration->delete();
+                });
+            }
         } else {
             $integration->forceDelete();
         }

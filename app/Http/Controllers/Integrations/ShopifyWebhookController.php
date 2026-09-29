@@ -6,6 +6,7 @@ use App\Ecommerce\EcommerceAdapter;
 use App\Ecommerce\ShopifyInstallationCleanup;
 use App\Http\Controllers\Controller;
 use App\Jobs\CompleteShopifyBulkOperation;
+use App\Jobs\Integrations\ProcessShopifyComplianceWebhook;
 use App\Jobs\SyncShopifyCatalogResource;
 use App\Models\ShopifyPendingInstallation;
 use Illuminate\Http\Request;
@@ -29,6 +30,12 @@ class ShopifyWebhookController extends Controller
         'orders/delete' => ['order', 'Order', true, 'id'],
     ];
 
+    private const COMPLIANCE_TOPICS = [
+        'customers/data_request',
+        'customers/redact',
+        'shop/redact',
+    ];
+
     public function handle(
         Request $request,
         EcommerceAdapter $adapter,
@@ -46,12 +53,35 @@ class ShopifyWebhookController extends Controller
 
         if ($topic === 'app/uninstalled') {
             if (is_string($shopDomain) && preg_match('/\A[a-z0-9][a-z0-9-]*\.myshopify\.com\z/i', $shopDomain) === 1) {
-                $shop = $adapter->identifyShopByDomain($shopDomain);
-                if ($shop !== null) {
-                    $installationCleanup->removeAfterUninstall($shop);
-                }
-
+                $installationCleanup->removeAfterUninstallByDomain($shopDomain);
                 ShopifyPendingInstallation::query()->where('domain', strtolower($shopDomain))->delete();
+            }
+
+            return response()->noContent(Response::HTTP_OK);
+        }
+
+        if (is_string($topic) && in_array($topic, self::COMPLIANCE_TOPICS, true)) {
+            if (! is_string($shopDomain)
+                || preg_match('/\A[a-z0-9][a-z0-9-]*\.myshopify\.com\z/i', $shopDomain) !== 1
+            ) {
+                return response()->noContent(Response::HTTP_OK);
+            }
+
+            $payload = json_decode($body, true);
+            if (! is_array($payload)) {
+                return response()->noContent(Response::HTTP_OK);
+            }
+
+            $customerExternalId = $topic === 'shop/redact'
+                ? null
+                : $this->customerExternalId($payload);
+
+            if ($topic === 'shop/redact' || $customerExternalId !== null) {
+                ProcessShopifyComplianceWebhook::dispatch(
+                    $topic,
+                    strtolower($shopDomain),
+                    $customerExternalId,
+                );
             }
 
             return response()->noContent(Response::HTTP_OK);
@@ -110,6 +140,25 @@ class ShopifyWebhookController extends Controller
 
         if (is_int($id) || (is_string($id) && ctype_digit($id))) {
             return 'gid://shopify/'.$shopifyType.'/'.(string) $id;
+        }
+
+        return null;
+    }
+
+    private function customerExternalId(array $payload): ?string
+    {
+        $id = data_get($payload, 'customer.admin_graphql_api_id');
+        if (is_string($id) && preg_match('/\Agid:\/\/shopify\/Customer\/\d+\z/', $id) === 1) {
+            return $id;
+        }
+
+        $id = data_get($payload, 'customer.id');
+        if (is_string($id) && preg_match('/\Agid:\/\/shopify\/Customer\/\d+\z/', $id) === 1) {
+            return $id;
+        }
+
+        if (is_int($id) || (is_string($id) && ctype_digit($id))) {
+            return 'gid://shopify/Customer/'.(string) $id;
         }
 
         return null;

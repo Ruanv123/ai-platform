@@ -20,6 +20,8 @@ interface EcommerceAdapter
 
     public function queryShop(Shop $shop, string $query, array $variables = []): array;
 
+    public function uninstallApp(Shop $shop): void;
+
     public function validateWebhookSignature(string $body, string $signature): bool;
 
     public function identifyShopByDomain(string $domain): ?Shop;
