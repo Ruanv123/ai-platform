@@ -10,7 +10,9 @@ use App\Knowledge\AgentInstructionTemplate;
 use App\Knowledge\KnowledgeBaseSearch;
 use App\Models\Agent;
 use App\Models\Collection;
+use App\Models\Contact;
 use App\Models\Team;
+use App\Support\E164PhoneNumber;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Str;
 use Laravel\Ai\Streaming\Events\Error;
@@ -50,6 +52,7 @@ class PlaygroundController extends Controller
         );
 
         $crmLookupPhone = $validated['crm_lookup_phone'] ?? null;
+        $contact = $this->playgroundContact($team, $crmLookupPhone);
 
         return response()->stream(function () use (
             $draftAgent,
@@ -58,6 +61,7 @@ class PlaygroundController extends Controller
             $knowledgeBaseSearch,
             $productCatalogSearch,
             $crmLookupPhone,
+            $contact,
         ): void {
             $invocationId = (string) Str::uuid7();
 
@@ -69,6 +73,7 @@ class PlaygroundController extends Controller
                     $knowledgeBaseSearch,
                     $productCatalogSearch,
                     crmLookupPhone: $crmLookupPhone,
+                    contact: $contact,
                 );
                 $stream = $playgroundAgent->stream(
                     $validated['message'],
@@ -111,6 +116,24 @@ class PlaygroundController extends Controller
     private function draftCollections(Team $team, array $collectionIds): \Illuminate\Database\Eloquent\Collection
     {
         return $team->collections()->whereKey($collectionIds)->get();
+    }
+
+    private function playgroundContact(Team $team, ?string $phone): ?Contact
+    {
+        if ($phone === null) {
+            return null;
+        }
+
+        $normalizedPhone = E164PhoneNumber::formatForCountry($phone, 'BR');
+
+        if ($normalizedPhone === null) {
+            return null;
+        }
+
+        return Contact::query()
+            ->where('team_id', $team->getKey())
+            ->where('phone', $normalizedPhone)
+            ->first();
     }
 
     /**
