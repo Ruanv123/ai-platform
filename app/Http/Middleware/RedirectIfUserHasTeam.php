@@ -15,7 +15,9 @@ class RedirectIfUserHasTeam
      */
     public function handle(Request $request, Closure $next): Response
     {
-        if ($request->user()?->company() !== null) {
+        $team = $request->user()?->company();
+
+        if ($team !== null && $team->isOnboardingComplete()) {
             return to_route('dashboard');
         }
 
