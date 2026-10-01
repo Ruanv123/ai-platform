@@ -1,5 +1,6 @@
 import { Form, Head } from '@inertiajs/react';
 import Heading from '@/components/heading';
+import CompanyDetail from '@/components/company-detail';
 import InputError from '@/components/input-error';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -19,6 +20,8 @@ type CompanyTeam = Pick<
     | 'phone'
     | 'publicEmail'
     | 'address'
+    | 'brandVoice'
+    | 'brandVoiceExamples'
 > & { agentPauseDurationMinutes: number };
 
 type Props = {
@@ -187,6 +190,67 @@ export default function Company({ team, segments, canUpdate }: Props) {
                                     <InputError message={errors.address} />
                                 </div>
 
+                                <div className="space-y-4 border-t pt-6">
+                                    <Heading
+                                        variant="small"
+                                        title="Voz da marca"
+                                        description="Descreva como sua marca fala. O Estilo de cada Agente continua valendo quando houver divergência."
+                                    />
+
+                                    <div className="grid gap-2">
+                                        <Label htmlFor="brand_voice">
+                                            Descrição
+                                        </Label>
+                                        <textarea
+                                            id="brand_voice"
+                                            name="brand_voice"
+                                            defaultValue={team.brandVoice ?? ''}
+                                            maxLength={1000}
+                                            className="border-input bg-background min-h-24 rounded-md border px-3 py-2 text-sm"
+                                        />
+                                        <InputError
+                                            message={errors.brand_voice}
+                                        />
+                                    </div>
+
+                                    <div className="grid gap-2">
+                                        <Label htmlFor="brand_voice_examples_0">
+                                            Frases de exemplo
+                                        </Label>
+                                        <p className="text-muted-foreground text-sm">
+                                            Informe de 2 a 4 frases ou deixe todos os campos vazios.
+                                        </p>
+                                        {Array.from({ length: 4 }, (_, index) => (
+                                            <div key={index} className="grid gap-2">
+                                                <Label
+                                                    htmlFor={`brand_voice_examples_${index}`}
+                                                >
+                                                    Frase de exemplo {index + 1}
+                                                </Label>
+                                                <textarea
+                                                    id={`brand_voice_examples_${index}`}
+                                                    name="brand_voice_examples[]"
+                                                    defaultValue={
+                                                        team.brandVoiceExamples?.[index] ?? ''
+                                                    }
+                                                    maxLength={1000}
+                                                    className="border-input bg-background min-h-16 rounded-md border px-3 py-2 text-sm"
+                                                />
+                                                <InputError
+                                                    message={
+                                                        errors[
+                                                            `brand_voice_examples.${index}`
+                                                        ]
+                                                    }
+                                                />
+                                            </div>
+                                        ))}
+                                        <InputError
+                                            message={errors.brand_voice_examples}
+                                        />
+                                    </div>
+                                </div>
+
                                 <div className="grid gap-2">
                                     <Label>Prazo da Pausa da IA</Label>
                                     <p className="text-muted-foreground text-sm">
@@ -292,6 +356,16 @@ export default function Company({ team, segments, canUpdate }: Props) {
                             preserveWhitespace
                         />
                         <CompanyDetail
+                            label="Voz da marca"
+                            value={team.brandVoice}
+                            preserveWhitespace
+                        />
+                        <CompanyDetail
+                            label="Frases de exemplo"
+                            value={team.brandVoiceExamples?.join('\n')}
+                            preserveWhitespace
+                        />
+                        <CompanyDetail
                             label="Prazo da Pausa da IA"
                             value={`${Math.floor(team.agentPauseDurationMinutes / 60)} h ${team.agentPauseDurationMinutes % 60} min`}
                         />
@@ -299,29 +373,6 @@ export default function Company({ team, segments, canUpdate }: Props) {
                 </div>
             )}
         </>
-    );
-}
-
-function CompanyDetail({
-    label,
-    value,
-    preserveWhitespace = false,
-}: {
-    label: string;
-    value?: string | null;
-    preserveWhitespace?: boolean;
-}) {
-    return (
-        <div>
-            <p className="text-muted-foreground">{label}</p>
-            <p
-                className={
-                    preserveWhitespace ? 'whitespace-pre-wrap' : 'font-medium'
-                }
-            >
-                {value || 'Não informado'}
-            </p>
-        </div>
     );
 }
 

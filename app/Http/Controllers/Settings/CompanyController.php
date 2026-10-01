@@ -33,6 +33,8 @@ class CompanyController extends Controller
                 'phone' => $team->phone,
                 'publicEmail' => $team->public_email,
                 'address' => $team->address,
+                'brandVoice' => $team->brand_voice,
+                'brandVoiceExamples' => $team->brand_voice_examples,
                 'agentPauseDurationMinutes' => $team->agent_pause_duration_minutes,
             ],
             'segments' => TeamSegment::options(),
