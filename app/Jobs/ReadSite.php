@@ -51,9 +51,11 @@ class ReadSite implements ShouldQueue
             json_encode($additionalUrls, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR),
         );
         $selection = (new SelectSitePages($maximumPages))->prompt($prompt);
-        $selectedUrls = $this->selectedUrls($selection['urls'] ?? [], $additionalUrls, $homeUrl, $maximumPages);
+        $faqUrl = $selection['faq_url'] ?? null;
+        $selectedUrls = $this->selectedUrls($selection['urls'] ?? [], $additionalUrls, $homeUrl, $maximumPages, $faqUrl);
+        $faqUrl = is_string($faqUrl) && in_array($faqUrl, $selectedUrls, true) ? $faqUrl : null;
 
-        $pages = DB::transaction(function () use ($siteRead, $candidateUrls, $selectedUrls): array {
+        $pages = DB::transaction(function () use ($siteRead, $candidateUrls, $selectedUrls, $faqUrl): array {
             $lockedSiteRead = SiteRead::withoutGlobalScopes()->lockForUpdate()->findOrFail($siteRead->getKey());
             $team = $lockedSiteRead->team()->lockForUpdate()->firstOrFail();
             $collection = Collection::withoutGlobalScopes()
@@ -109,14 +111,14 @@ class ReadSite implements ShouldQueue
                     'ingestion_token' => (string) Str::uuid(),
                 ]);
 
-                $sitePages[] = [$page, $document];
+                $sitePages[] = [$page, $document, $url === $faqUrl];
             }
 
             return $sitePages;
         });
 
-        foreach ($pages as [$page, $document]) {
-            IngestSiteReadPage::dispatch($page->getKey(), $document->getKey());
+        foreach ($pages as [$page, $document, $isFaqPage]) {
+            IngestSiteReadPage::dispatch($page->getKey(), $document->getKey(), $isFaqPage);
         }
     }
 
@@ -138,13 +140,20 @@ class ReadSite implements ShouldQueue
         return $scheme.'://'.$host.$port.'/';
     }
 
-    private function selectedUrls(mixed $urls, array $availableUrls, string $homeUrl, int $maximumPages): array
+    private function selectedUrls(mixed $urls, array $availableUrls, string $homeUrl, int $maximumPages, mixed $faqUrl): array
     {
         if (! is_array($urls)) {
             $urls = [];
         }
 
         $selected = [$homeUrl];
+        $faqUrl = is_string($faqUrl) && ($faqUrl === $homeUrl || in_array($faqUrl, $availableUrls, true))
+            ? $faqUrl
+            : null;
+
+        if ($faqUrl !== null && $faqUrl !== $homeUrl && count($selected) < $maximumPages) {
+            $selected[] = $faqUrl;
+        }
 
         foreach ($urls as $url) {
             if (! is_string($url) || ! in_array($url, $availableUrls, true) || in_array($url, $selected, true)) {

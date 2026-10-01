@@ -32,7 +32,7 @@ class IngestDocument implements ShouldQueue
     /**
      * Create a new ingestion job.
      */
-    public function __construct(public int $documentId, public string $ingestionToken)
+    public function __construct(public int $documentId, public string $ingestionToken, public ?string $extractedUrlContent = null)
     {
         $this->onQueue('ingestion');
     }
@@ -64,9 +64,12 @@ class IngestDocument implements ShouldQueue
         $extractedContent = null;
 
         try {
-            $chunks = $document->type === DocumentType::Faq
-                ? $this->extractFaqChunks($document)
-                : $chunker->chunk($extractedContent = $this->extractText($document, $fileExtractor, $urlExtractor));
+            if ($document->type === DocumentType::Faq) {
+                $extractedContent = $document->content;
+                $chunks = $this->extractFaqChunks($document);
+            } else {
+                $chunks = $chunker->chunk($extractedContent = $this->extractText($document, $fileExtractor, $urlExtractor));
+            }
         } catch (UrlDocumentException|ValidationException $exception) {
             $this->markAsFailed($document, $this->friendlyErrorMessage($exception));
 
@@ -106,7 +109,7 @@ class IngestDocument implements ShouldQueue
                     return;
                 }
 
-                if ($lockedDocument->type === DocumentType::Url && $extractedContent !== null) {
+                if (in_array($lockedDocument->type, [DocumentType::Url, DocumentType::Faq], true) && $extractedContent !== null) {
                     $lockedTeam = Team::withoutGlobalScopes()
                         ->lockForUpdate()
                         ->whereKey($lockedDocument->team_id)
@@ -115,7 +118,7 @@ class IngestDocument implements ShouldQueue
                         $lockedTeam,
                         strlen($extractedContent),
                         $lockedDocument,
-                        'url',
+                        $lockedDocument->type === DocumentType::Url ? 'url' : 'content',
                     );
                 }
 
@@ -144,7 +147,7 @@ class IngestDocument implements ShouldQueue
                     $updates['content'] = $extractedContent;
                 }
 
-                if ($lockedDocument->type === DocumentType::Url && $extractedContent !== null) {
+                if (in_array($lockedDocument->type, [DocumentType::Url, DocumentType::Faq], true) && $extractedContent !== null) {
                     $updates['content'] = $extractedContent;
                     $updates['size_bytes'] = strlen($extractedContent);
                 }
@@ -186,7 +189,7 @@ class IngestDocument implements ShouldQueue
 
         if ($document->type !== DocumentType::Text) {
             if ($document->type === DocumentType::Url && $document->url !== null) {
-                return $urlExtractor->extract($document->url);
+                return $this->extractedUrlContent ?? $urlExtractor->extract($document->url);
             }
 
             throw new RuntimeException('Este tipo de documento ainda não está disponível.');
