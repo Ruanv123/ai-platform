@@ -4,6 +4,9 @@ namespace App\Http\Controllers\Onboarding;
 
 use App\Actions\Teams\CreateTeam;
 use App\Ecommerce\ShopifyInstallationFlow;
+use App\Enums\AgentObjective;
+use App\Enums\AgentResponseLength;
+use App\Enums\AgentTone;
 use App\Enums\CompanyOnboardingStep;
 use App\Enums\SiteReadPageStatus;
 use App\Enums\SiteReadProposalStatus;
@@ -13,8 +16,10 @@ use App\Enums\Weekday;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Onboarding\CompleteManualCompanyOnboardingRequest;
 use App\Http\Requests\Onboarding\ConfirmSiteProposalOnboardingRequest;
+use App\Http\Requests\Onboarding\SelectFirstAgentObjectiveRequest;
 use App\Http\Requests\Onboarding\StartCompanyOnboardingRequest;
 use App\Jobs\ReadSite;
+use App\Models\Agent;
 use App\Models\SiteRead;
 use App\Models\SiteReadProposal;
 use App\Models\Team;
@@ -101,6 +106,7 @@ class CompanyController extends Controller
                 'website' => $team->website,
             ] : null,
             'segments' => TeamSegment::options(),
+            'objectives' => AgentObjective::onboardingOptions(),
             'timezones' => timezone_identifiers_list(),
             'weekdays' => Weekday::options(),
             'siteRead' => $this->siteReadData($siteRead),
@@ -162,20 +168,18 @@ class CompanyController extends Controller
         return to_route('dashboard');
     }
 
-    public function completeManual(
-        CompleteManualCompanyOnboardingRequest $request,
-        ShopifyInstallationFlow $shopifyInstallationFlow,
-    ): RedirectResponse {
+    public function completeManual(CompleteManualCompanyOnboardingRequest $request): RedirectResponse
+    {
         $team = $request->user()?->company();
         abort_unless($team instanceof Team, 404);
 
         $team->update([
             ...$request->validated(),
-            'onboarding_step' => CompanyOnboardingStep::Completed,
-            'onboarding_completed_at' => now(),
+            'onboarding_step' => CompanyOnboardingStep::AgentObjective,
+            'onboarding_completed_at' => null,
         ]);
 
-        return $this->afterOnboarding($request, $shopifyInstallationFlow);
+        return to_route('onboarding.company');
     }
 
     public function confirmProposal(
@@ -185,7 +189,7 @@ class CompanyController extends Controller
         $team = $request->user()?->company();
         abort_unless($team instanceof Team, 404);
 
-        DB::transaction(function () use ($request, $team): void {
+        $onboardingWasComplete = DB::transaction(function () use ($request, $team): bool {
             $lockedTeam = Team::query()->lockForUpdate()->findOrFail($team->getKey());
             $isOnboardingComplete = $lockedTeam->isOnboardingComplete();
             $pendingProposal = $isOnboardingComplete
@@ -205,15 +209,53 @@ class CompanyController extends Controller
                 $teamUpdates['onboarding_step'] = $lockedTeam->onboarding_step;
                 $teamUpdates['onboarding_completed_at'] = $lockedTeam->onboarding_completed_at;
             } else {
-                $teamUpdates['onboarding_step'] = CompanyOnboardingStep::Completed;
-                $teamUpdates['onboarding_completed_at'] = now();
+                $teamUpdates['onboarding_step'] = CompanyOnboardingStep::AgentObjective;
+                $teamUpdates['onboarding_completed_at'] = null;
             }
 
             $lockedTeam->update($teamUpdates);
             $proposal->update(['status' => SiteReadProposalStatus::Confirmed]);
+
+            return $isOnboardingComplete;
         });
 
-        return $this->afterOnboarding($request, $shopifyInstallationFlow);
+        return $onboardingWasComplete
+            ? $this->afterOnboarding($request, $shopifyInstallationFlow)
+            : to_route('onboarding.company');
+    }
+
+    public function storeFirstAgent(
+        SelectFirstAgentObjectiveRequest $request,
+        ShopifyInstallationFlow $shopifyInstallationFlow,
+    ): RedirectResponse {
+        $team = $request->user()?->company();
+        abort_unless($team instanceof Team, 404);
+
+        $objective = AgentObjective::from($request->validated('objective'));
+        $agent = DB::transaction(function () use ($team, $objective): Agent {
+            $lockedTeam = Team::query()->lockForUpdate()->findOrFail($team->getKey());
+            abort_unless($lockedTeam->onboarding_step === CompanyOnboardingStep::AgentObjective, 403);
+
+            $agent = $lockedTeam->agents()->create([
+                ...$objective->startingPoints(),
+                'objective' => $objective,
+                'tone' => AgentTone::Friendly,
+                'uses_emojis' => false,
+                'response_length' => AgentResponseLength::Short,
+                'is_active' => false,
+                'shop_tools_enabled' => false,
+            ]);
+
+            $lockedTeam->update([
+                'onboarding_step' => CompanyOnboardingStep::Completed,
+                'onboarding_completed_at' => now(),
+            ]);
+
+            return $agent;
+        });
+
+        return $shopifyInstallationFlow->redirectAfterAuthentication($request)
+            ?? to_route('agents.edit', ['agent' => $agent, 'panel' => 'playground']);
     }
 
     private function siteReadData(?SiteRead $siteRead): ?array
