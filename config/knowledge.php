@@ -26,4 +26,7 @@ return [
         'candidate_limit' => (int) env('PRODUCT_SEARCH_CANDIDATE_LIMIT', 30),
         'offer_limit' => (int) env('PRODUCT_SEARCH_OFFER_LIMIT', 5),
     ],
+    'site_read' => [
+        'maximum_pages' => (int) env('SITE_READ_MAXIMUM_PAGES', 25),
+    ],
 ];

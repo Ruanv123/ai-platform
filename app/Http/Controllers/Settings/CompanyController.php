@@ -2,6 +2,8 @@
 
 namespace App\Http\Controllers\Settings;
 
+use App\Enums\SiteReadPageStatus;
+use App\Enums\SiteReadStatus;
 use App\Enums\TeamSegment;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Teams\UpdateCompanyRequest;
@@ -21,6 +23,11 @@ class CompanyController extends Controller
 
         abort_if(! $team, 404);
 
+        $canUpdate = $request->user()->can('update', $team);
+        $latestSiteRead = $team->siteReads()->with('pages')->latest('started_at')->first();
+        $availableAgainAt = $latestSiteRead?->started_at?->copy()->addHours(24);
+        $siteReadInProgress = $latestSiteRead?->status === SiteReadStatus::InProgress;
+
         return Inertia::render('settings/company', [
             'team' => [
                 'id' => $team->id,
@@ -38,7 +45,34 @@ class CompanyController extends Controller
                 'agentPauseDurationMinutes' => $team->agent_pause_duration_minutes,
             ],
             'segments' => TeamSegment::options(),
-            'canUpdate' => $request->user()->can('update', $team),
+            'canUpdate' => $canUpdate,
+            'siteRead' => [
+                'website' => $team->website,
+                'canStart' => $canUpdate
+                    && filled($team->website)
+                    && ! $siteReadInProgress
+                    && ($availableAgainAt === null || ! $availableAgainAt->isFuture()),
+                'availableAgainAt' => $availableAgainAt?->timezone($team->timezone ?: config('app.timezone'))->format('d/m/Y \à\s H:i'),
+                'latest' => $latestSiteRead === null ? null : [
+                    'id' => $latestSiteRead->getKey(),
+                    'website' => $latestSiteRead->website,
+                    'status' => $latestSiteRead->status->value,
+                    'statusLabel' => $latestSiteRead->status->label(),
+                    'startedAt' => $latestSiteRead->started_at->timezone($team->timezone ?: config('app.timezone'))->format('d/m/Y H:i'),
+                    'completedAt' => $latestSiteRead->completed_at?->timezone($team->timezone ?: config('app.timezone'))->format('d/m/Y H:i'),
+                    'foundPagesCount' => $latestSiteRead->found_pages_count,
+                    'readPagesCount' => $latestSiteRead->pages->where('status', SiteReadPageStatus::Read)->count(),
+                    'failedPagesCount' => $latestSiteRead->pages->where('status', SiteReadPageStatus::Failed)->count(),
+                    'errorMessage' => $latestSiteRead->error_message,
+                    'pages' => $latestSiteRead->pages->sortBy('id')->map(static fn ($page): array => [
+                        'id' => $page->getKey(),
+                        'url' => $page->url,
+                        'title' => $page->title,
+                        'status' => $page->status->value,
+                        'errorMessage' => $page->error_message,
+                    ])->values(),
+                ],
+            ],
         ]);
     }
 
