@@ -1,4 +1,5 @@
 import CompanyOnboardingManual from '@/components/company-onboarding-manual';
+import CompanyOnboardingObjective from '@/components/company-onboarding-objective';
 import CompanyOnboardingProgress from '@/components/company-onboarding-progress';
 import CompanyOnboardingProposal from '@/components/company-onboarding-proposal';
 import CompanyOnboardingStart from '@/components/company-onboarding-start';
@@ -8,7 +9,8 @@ type OnboardingStep =
     | 'name_website'
     | 'manual_company_details'
     | 'site_read'
-    | 'proposal_review';
+    | 'proposal_review'
+    | 'agent_objective';
 
 type Team = {
     name: string;
@@ -29,10 +31,17 @@ type ProposalField = {
     sourceUrl: string;
 };
 
+type AgentObjectiveOption = {
+    value: string;
+    label: string;
+    description: string;
+};
+
 type Props = {
     step: OnboardingStep;
     team: Team | null;
     segments: CompanyOption[];
+    objectives: AgentObjectiveOption[];
     timezones: string[];
     weekdays: CompanyOption[];
     siteRead: SiteRead | null;
@@ -44,6 +53,7 @@ export default function CompanyOnboarding({
     step,
     team,
     segments,
+    objectives,
     timezones,
     weekdays,
     siteRead,
@@ -74,9 +84,20 @@ export default function CompanyOnboarding({
         );
     }
 
+    if (step === 'agent_objective') {
+        return (
+            <CompanyOnboardingObjective
+                name={team?.name ?? 'sua Empresa'}
+                isSitePath={team !== null && team.website !== null}
+                objectives={objectives}
+            />
+        );
+    }
+
     return (
         <CompanyOnboardingManual
             name={team?.name ?? 'sua Empresa'}
+            isSitePath={team !== null && team.website !== null}
             manualError={manualError}
             segments={segments}
             timezones={timezones}

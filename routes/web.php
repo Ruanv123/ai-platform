@@ -117,6 +117,7 @@ Route::middleware(['auth', RedirectIfUserHasTeam::class])->group(function () {
     Route::post('onboarding/company', [CompanyController::class, 'store'])->name('onboarding.company.store');
     Route::post('onboarding/company/manual', [CompanyController::class, 'completeManual'])->name('onboarding.company.manual');
     Route::post('onboarding/company/proposal', [CompanyController::class, 'confirmProposal'])->name('onboarding.company.proposal');
+    Route::post('onboarding/company/objective', [CompanyController::class, 'storeFirstAgent'])->name('onboarding.company.objective');
 });
 
 Route::get('dashboard', DashboardController::class)

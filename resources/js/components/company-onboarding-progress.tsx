@@ -42,7 +42,7 @@ export default function CompanyOnboardingProgress({
             <main className="mx-auto grid min-h-screen max-w-3xl content-center gap-8 px-4 py-10 sm:px-6">
                 <div className="grid gap-3">
                     <p className="text-primary text-sm font-medium">
-                        2 de 3 · Leitura do site
+                        2 de 4 · Leitura do site
                     </p>
                     <h1 className="text-3xl font-semibold tracking-tight text-balance">
                         Estamos conhecendo a {teamName}

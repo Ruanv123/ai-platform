@@ -1,11 +1,13 @@
 <?php
 
+use App\Enums\AgentObjective;
 use App\Enums\CompanyOnboardingStep;
 use App\Enums\SiteReadPageStatus;
 use App\Enums\SiteReadProposalStatus;
 use App\Enums\SiteReadStatus;
 use App\Enums\TeamRole;
 use App\Jobs\ReadSite;
+use App\Models\Agent;
 use App\Models\Collection;
 use App\Models\Team;
 use App\Models\TeamInvitation;
@@ -119,7 +121,7 @@ test('site onboarding rejects Instagram and WhatsApp before creating a company',
     'WhatsApp API subdomain' => 'https://api.whatsapp.com/send?phone=5511999999999',
 ]);
 
-test('manual onboarding creates a company first and completes it from the manual form', function () {
+test('manual onboarding creates a company and first inactive Agent after the objective choice', function () {
     Queue::fake([ReadSite::class]);
     $user = User::factory()->create();
 
@@ -144,11 +146,11 @@ test('manual onboarding creates a company first and completes it from the manual
 
     $completionResponse = $this->post(route('onboarding.company.manual'), manualCompanyOnboardingDetails());
 
-    $completionResponse->assertRedirect(route('dashboard'));
+    $completionResponse->assertRedirect(route('onboarding.company'));
     $team->refresh();
 
-    expect($team->onboarding_step)->toBe(CompanyOnboardingStep::Completed)
-        ->and($team->onboarding_completed_at)->not->toBeNull()
+    expect($team->onboarding_step)->toBe(CompanyOnboardingStep::AgentObjective)
+        ->and($team->onboarding_completed_at)->toBeNull()
         ->and($team->segment)->toBe('tecnologia')
         ->and($team->business_description)->toBe('Atendimento automatizado para empresas.')
         ->and($team->timezone)->toBe('America/Sao_Paulo')
@@ -157,6 +159,42 @@ test('manual onboarding creates a company first and completes it from the manual
         ->and($team->business_hours['monday']['open'])->toBe('09:00')
         ->and($team->business_hours['sunday']['enabled'])->toBe(false)
         ->and($team->business_hours['sunday']['open'])->toBeNull();
+
+    $objectivePage = $this->withoutVite()->get(route('onboarding.company'));
+    $objectivePage->assertOk()->assertInertia(fn (Assert $page) => $page
+        ->component('onboarding/company')
+        ->where('step', CompanyOnboardingStep::AgentObjective->value)
+        ->has('objectives', 4),
+    );
+
+    $completionResponse = $this->post(route('onboarding.company.objective'), [
+        'objective' => AgentObjective::Support->value,
+    ]);
+    $agent = Agent::query()->where('team_id', $team->getKey())->sole();
+
+    $completionResponse->assertRedirect(route('agents.edit', [
+        'agent' => $agent,
+        'panel' => 'playground',
+    ]));
+    $this->get(route('agents.edit', ['agent' => $agent, 'panel' => 'playground']))
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->component('agents/edit')
+            ->where('initialPanel', 'playground')
+            ->where('publishedVersion', null),
+        );
+    $team->refresh();
+
+    expect($team->onboarding_step)->toBe(CompanyOnboardingStep::Completed)
+        ->and($team->onboarding_completed_at)->not->toBeNull()
+        ->and($agent->objective)->toBe(AgentObjective::Support)
+        ->and($agent->is_active)->toBeFalse()
+        ->and($agent->publishedVersion())->toBeNull()
+        ->and($agent->channels()->exists())->toBeFalse()
+        ->and($agent->collections()->exists())->toBeFalse()
+        ->and($agent->name)->toBe('Atendimento')
+        ->and($agent->instructions)->not->toBeEmpty()
+        ->and($agent->rules)->not->toBeEmpty();
 
     $this->assertDatabaseHas('team_members', [
         'team_id' => $team->getKey(),
@@ -201,6 +239,72 @@ test('manual onboarding requires valid company details before completion', funct
     expect($team->fresh()->onboarding_step)->toBe(CompanyOnboardingStep::ManualCompanyDetails)
         ->and($team->fresh()->onboarding_completed_at)->toBeNull()
         ->and($team->fresh()->business_description)->toBeNull();
+});
+
+test('each first Agent objective has its own editable starting points', function (string $objective, string $name, string $welcomeMessage) {
+    $user = User::factory()->withTeam()->create();
+    $team = $user->company();
+    $team->update([
+        'onboarding_step' => CompanyOnboardingStep::AgentObjective,
+        'onboarding_completed_at' => null,
+    ]);
+
+    $response = $this->actingAs($user)->post(route('onboarding.company.objective'), [
+        'objective' => $objective,
+    ]);
+
+    $agent = Agent::query()->where('team_id', $team->getKey())->sole();
+
+    $response->assertRedirect(route('agents.edit', [
+        'agent' => $agent,
+        'panel' => 'playground',
+    ]));
+
+    expect($agent->objective->value)->toBe($objective)
+        ->and($agent->name)->toBe($name)
+        ->and($agent->welcome_message)->toBe($welcomeMessage)
+        ->and($agent->is_active)->toBeFalse()
+        ->and($agent->publishedVersion())->toBeNull()
+        ->and($agent->channels()->exists())->toBeFalse();
+})->with([
+    'support' => [AgentObjective::Support->value, 'Atendimento', 'Olá! Como posso ajudar você hoje?'],
+    'sales' => [AgentObjective::Sales->value, 'Vendas', 'Olá! O que você está procurando hoje?'],
+    'qualification' => [AgentObjective::Qualification->value, 'Qualificação', 'Olá! Para eu entender como podemos ajudar, o que você está buscando?'],
+    'scheduling' => [AgentObjective::Scheduling->value, 'Agendamento', 'Olá! Qual serviço você gostaria de agendar?'],
+]);
+
+test('an invalid objective leaves onboarding pending without creating an Agent', function () {
+    $user = User::factory()->withTeam()->create();
+    $team = $user->company();
+    $team->update([
+        'onboarding_step' => CompanyOnboardingStep::AgentObjective,
+        'onboarding_completed_at' => null,
+    ]);
+
+    $this->actingAs($user)->post(route('onboarding.company.objective'), [
+        'objective' => 'unknown',
+    ])->assertSessionHasErrors('objective');
+
+    expect($team->fresh()->onboarding_step)->toBe(CompanyOnboardingStep::AgentObjective)
+        ->and(Agent::query()->where('team_id', $team->getKey())->exists())->toBeFalse();
+});
+
+test('a member cannot choose the first Agent objective', function () {
+    $owner = User::factory()->withTeam()->create();
+    $team = $owner->company();
+    $team->update([
+        'onboarding_step' => CompanyOnboardingStep::AgentObjective,
+        'onboarding_completed_at' => null,
+    ]);
+    $member = User::factory()->create();
+    $team->members()->attach($member, ['role' => TeamRole::Member->value]);
+
+    $this->actingAs($member)->post(route('onboarding.company.objective'), [
+        'objective' => AgentObjective::Support->value,
+    ])->assertForbidden();
+
+    expect($team->fresh()->onboarding_step)->toBe(CompanyOnboardingStep::AgentObjective)
+        ->and(Agent::query()->where('team_id', $team->getKey())->exists())->toBeFalse();
 });
 
 test('the onboarding progress page reports found, read, and failed pages', function () {
@@ -313,7 +417,23 @@ test('a completed read opens the proposal with source links and saves edited val
         'brand_voice_examples' => ['Conte com a nossa equipe.', 'Estamos aqui para ajudar.'],
     ]);
 
-    $completionResponse->assertRedirect(route('dashboard'));
+    $completionResponse->assertRedirect(route('onboarding.company'));
+    expect($team->fresh()->onboarding_step)->toBe(CompanyOnboardingStep::AgentObjective)
+        ->and($team->fresh()->onboarding_completed_at)->toBeNull();
+
+    $siteCollection = Collection::factory()->for($team)->create([
+        'name' => 'Site da Empresa',
+        'is_site_collection' => true,
+    ]);
+    $agentResponse = $this->post(route('onboarding.company.objective'), [
+        'objective' => AgentObjective::Scheduling->value,
+    ]);
+    $agent = Agent::query()->where('team_id', $team->getKey())->sole();
+
+    $agentResponse->assertRedirect(route('agents.edit', [
+        'agent' => $agent,
+        'panel' => 'playground',
+    ]));
     $team->refresh();
 
     expect($team->onboarding_step)->toBe(CompanyOnboardingStep::Completed)
@@ -331,7 +451,11 @@ test('a completed read opens the proposal with source links and saves edited val
         ->and($team->business_hours['sunday']['enabled'])->toBe(false)
         ->and($team->brand_voice)->toBe('Direta e muito acolhedora.')
         ->and($team->brand_voice_examples)->toBe(['Conte com a nossa equipe.', 'Estamos aqui para ajudar.'])
-        ->and($proposal->fresh()->status)->toBe(SiteReadProposalStatus::Confirmed);
+        ->and($proposal->fresh()->status)->toBe(SiteReadProposalStatus::Confirmed)
+        ->and($agent->is_active)->toBeFalse()
+        ->and($agent->publishedVersion())->toBeNull()
+        ->and($agent->collections()->whereKey($siteCollection->getKey())->exists())->toBeTrue()
+        ->and($agent->channels()->exists())->toBeFalse();
 });
 
 test('proposal review requires the brand voice description and 2 to 4 examples together', function () {

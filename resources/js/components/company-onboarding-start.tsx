@@ -17,7 +17,7 @@ export default function CompanyOnboardingStart({ name }: Props) {
             <main className="mx-auto grid min-h-screen max-w-3xl content-center gap-8 px-4 py-10 sm:px-6">
                 <div className="grid gap-3">
                     <p className="text-primary text-sm font-medium">
-                        1 de 3 · Sua Empresa
+                        Sua Empresa
                     </p>
                     <h1 className="text-3xl font-semibold tracking-tight text-balance">
                         Comece pelo seu site

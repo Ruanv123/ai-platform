@@ -49,6 +49,7 @@ type Agent = AgentDraft & {
 
 type Props = {
     agent: Agent;
+    initialPanel: 'config' | 'playground';
     collections: CollectionOption[];
     schedulableCalendars: SchedulableCalendarOption[];
     agendaConnected: boolean;
@@ -249,6 +250,7 @@ function SelectField({
 
 function AgentForm({
     agent,
+    initialPanel,
     collections,
     objectives,
     tones,
@@ -290,7 +292,7 @@ function AgentForm({
         useState(agent.schedulableCalendarIds);
     const [welcomeMessage, setWelcomeMessage] = useState(agent.welcomeMessage);
     const [activePanel, setActivePanel] = useState<'config' | 'playground'>(
-        'config',
+        initialPanel,
     );
     const [isPublishing, setIsPublishing] = useState(false);
     const draft: AgentDraft = {

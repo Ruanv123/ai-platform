@@ -8,6 +8,7 @@ import type { CompanyOption } from '@/types';
 
 type Props = {
     name: string;
+    isSitePath: boolean;
     manualError: string | null;
     segments: CompanyOption[];
     timezones: string[];
@@ -16,6 +17,7 @@ type Props = {
 
 export default function CompanyOnboardingManual({
     name,
+    isSitePath,
     manualError,
     segments,
     timezones,
@@ -28,7 +30,7 @@ export default function CompanyOnboardingManual({
             <main className="mx-auto grid max-w-3xl gap-8 px-4 py-8 sm:px-6 lg:py-12">
                 <div className="grid gap-3">
                     <p className="text-primary text-sm font-medium">
-                        2 de 3 · Dados da Empresa
+                        {isSitePath ? '3 de 4' : '2 de 3'} · Dados da Empresa
                     </p>
                     <h1 className="text-3xl font-semibold tracking-tight text-balance">
                         Conte sobre a {name}

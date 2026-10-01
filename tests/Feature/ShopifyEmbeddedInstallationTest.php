@@ -195,6 +195,9 @@ it('accepts a handoff URL only once while preserving its hashed context through 
     unset($companyDetails['name']);
 
     $this->post(route('onboarding.company.manual'), $companyDetails)
+        ->assertRedirect(route('onboarding.company'));
+
+    $this->post(route('onboarding.company.objective'), ['objective' => 'support'])
         ->assertRedirect(route('shopify.install.resume'));
 
     $this->get(route('shopify.install.resume'))

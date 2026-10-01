@@ -58,7 +58,7 @@ export default function CompanyOnboardingProposal({
             <main className="mx-auto grid max-w-3xl gap-8 px-4 py-8 sm:px-6 lg:py-12">
                 <div className="grid gap-3">
                     <p className="text-primary text-sm font-medium">
-                        3 de 3 · Conferência
+                        3 de 4 · Conferência
                     </p>
                     <h1 className="text-3xl font-semibold tracking-tight text-balance">
                         Confira os dados da {name}
