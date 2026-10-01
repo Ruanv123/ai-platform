@@ -18,6 +18,9 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
     'resolved_website',
     'status',
     'found_pages_count',
+    'firecrawl_credits_used',
+    'ai_input_tokens',
+    'ai_output_tokens',
     'error_message',
     'started_at',
     'completed_at',
@@ -51,6 +54,9 @@ class SiteRead extends Model
         return [
             'status' => SiteReadStatus::class,
             'found_pages_count' => 'integer',
+            'firecrawl_credits_used' => 'integer',
+            'ai_input_tokens' => 'integer',
+            'ai_output_tokens' => 'integer',
             'started_at' => 'datetime',
             'completed_at' => 'datetime',
         ];

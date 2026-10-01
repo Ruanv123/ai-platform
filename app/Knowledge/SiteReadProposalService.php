@@ -67,14 +67,7 @@ class SiteReadProposalService
                 return null;
             }
 
-            SiteReadProposal::withoutGlobalScopes()
-                ->where('team_id', $team->getKey())
-                ->where('status', SiteReadProposalStatus::Pending->value)
-                ->lockForUpdate()
-                ->get()
-                ->each(fn (SiteReadProposal $proposal) => $proposal->update([
-                    'status' => SiteReadProposalStatus::Replaced,
-                ]));
+            $this->replacePendingProposals($team->getKey());
 
             return SiteReadProposal::withoutGlobalScopes()->create([
                 'team_id' => $team->getKey(),
@@ -83,6 +76,18 @@ class SiteReadProposalService
                 'status' => SiteReadProposalStatus::Pending,
             ]);
         });
+    }
+
+    public function replacePendingProposals(int $teamId): void
+    {
+        SiteReadProposal::withoutGlobalScopes()
+            ->where('team_id', $teamId)
+            ->where('status', SiteReadProposalStatus::Pending->value)
+            ->lockForUpdate()
+            ->get()
+            ->each(fn (SiteReadProposal $proposal) => $proposal->update([
+                'status' => SiteReadProposalStatus::Replaced,
+            ]));
     }
 
     public function differences(SiteReadProposal $proposal, Team $team): array

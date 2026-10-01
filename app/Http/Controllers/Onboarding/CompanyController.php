@@ -136,6 +136,9 @@ class CompanyController extends Controller
                 'website' => $validated['website'],
                 'status' => SiteReadStatus::InProgress,
                 'started_at' => now(),
+                'firecrawl_credits_used' => 0,
+                'ai_input_tokens' => 0,
+                'ai_output_tokens' => 0,
             ]);
 
             ReadSite::dispatch($siteRead->getKey());

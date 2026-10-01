@@ -9,7 +9,7 @@ return new class extends Migration
 {
     public function up(): void
     {
-        Schema::table('teams', function (Blueprint $table) {
+        Schema::table('teams', function (Blueprint $table): void {
             $table->string('onboarding_step')->default('completed');
             $table->timestamp('onboarding_completed_at')->nullable();
         });
@@ -21,7 +21,7 @@ return new class extends Migration
 
     public function down(): void
     {
-        Schema::table('teams', function (Blueprint $table) {
+        Schema::table('teams', function (Blueprint $table): void {
             $table->dropColumn(['onboarding_step', 'onboarding_completed_at']);
         });
     }
