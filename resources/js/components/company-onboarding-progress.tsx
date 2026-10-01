@@ -1,5 +1,6 @@
-import { usePoll } from '@inertiajs/react';
-import { Head } from '@inertiajs/react';
+import { Form, Head, usePoll } from '@inertiajs/react';
+import { continueMethod } from '@/routes/onboarding/company';
+import { Button } from '@/components/ui/button';
 import { Spinner } from '@/components/ui/spinner';
 
 type SiteRead = {
@@ -116,6 +117,26 @@ export default function CompanyOnboardingProgress({
                             {siteRead.errorMessage}
                         </p>
                     ) : null}
+
+                    <div className="flex flex-col gap-3 border-t pt-4 sm:flex-row sm:items-center sm:justify-between">
+                        <p className="text-muted-foreground text-sm">
+                            Você pode continuar usando a plataforma enquanto a
+                            Leitura termina.
+                        </p>
+                        <Form action={continueMethod.url()} method="post">
+                            {({ processing }) => (
+                                <Button
+                                    type="submit"
+                                    variant="outline"
+                                    disabled={processing}
+                                >
+                                    {processing
+                                        ? 'Continuando…'
+                                        : 'Continuar sem esperar'}
+                                </Button>
+                            )}
+                        </Form>
+                    </div>
                 </section>
             </main>
         </>

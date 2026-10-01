@@ -22,6 +22,7 @@ use App\Models\User;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Gate;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -38,48 +39,58 @@ class CompanyController extends Controller
 
         if ($team instanceof Team) {
             if ($team->isOnboardingComplete()) {
-                return to_route('dashboard');
-            }
+                if (! $request->routeIs('onboarding.company.proposal-review')) {
+                    return to_route('dashboard');
+                }
 
-            $step = $team->onboarding_step ?? CompanyOnboardingStep::NameAndWebsite;
-            $siteRead = $team->siteReads()->latest('started_at')->first();
+                $proposal = $team->pendingOnboardingProposal();
 
-            if ($step === CompanyOnboardingStep::SiteRead) {
-                if ($siteRead === null || $siteRead->status === SiteReadStatus::Failed) {
-                    $manualError = $siteRead?->error_message;
-                    $step = CompanyOnboardingStep::ManualCompanyDetails;
-                    $team->update(['onboarding_step' => $step]);
-                } elseif ($siteRead->status === SiteReadStatus::Completed) {
-                    $proposal = $siteRead->proposal()
+                if (! $proposal instanceof SiteReadProposal) {
+                    return to_route('dashboard');
+                }
+
+                $step = CompanyOnboardingStep::ProposalReview;
+            } else {
+                $step = $team->onboarding_step ?? CompanyOnboardingStep::NameAndWebsite;
+                $siteRead = $team->siteReads()->latest('started_at')->first();
+
+                if ($step === CompanyOnboardingStep::SiteRead) {
+                    if ($siteRead === null || $siteRead->status === SiteReadStatus::Failed) {
+                        $manualError = $siteRead?->error_message;
+                        $step = CompanyOnboardingStep::ManualCompanyDetails;
+                        $team->update(['onboarding_step' => $step]);
+                    } elseif ($siteRead->status === SiteReadStatus::Completed) {
+                        $proposal = $siteRead->proposal()
+                            ->where('status', SiteReadProposalStatus::Pending->value)
+                            ->first();
+
+                        if ($proposal instanceof SiteReadProposal) {
+                            $step = CompanyOnboardingStep::ProposalReview;
+                            $team->update(['onboarding_step' => $step]);
+                        } elseif (filled($siteRead->error_message)) {
+                            $manualError = $siteRead->error_message;
+                            $step = CompanyOnboardingStep::ManualCompanyDetails;
+                            $team->update(['onboarding_step' => $step]);
+                        }
+                    }
+                }
+
+                if ($step === CompanyOnboardingStep::ProposalReview && $proposal === null) {
+                    $proposal = $team->siteReadProposals()
                         ->where('status', SiteReadProposalStatus::Pending->value)
+                        ->latest('id')
                         ->first();
 
-                    if ($proposal instanceof SiteReadProposal) {
-                        $step = CompanyOnboardingStep::ProposalReview;
-                        $team->update(['onboarding_step' => $step]);
-                    } elseif (filled($siteRead->error_message)) {
-                        $manualError = $siteRead->error_message;
+                    if (! $proposal instanceof SiteReadProposal) {
+                        $manualError = 'Não foi possível preparar a proposta da Leitura. Preencha os dados da Empresa manualmente.';
                         $step = CompanyOnboardingStep::ManualCompanyDetails;
                         $team->update(['onboarding_step' => $step]);
                     }
                 }
-            }
 
-            if ($step === CompanyOnboardingStep::ProposalReview && $proposal === null) {
-                $proposal = $team->siteReadProposals()
-                    ->where('status', SiteReadProposalStatus::Pending->value)
-                    ->latest('id')
-                    ->first();
-
-                if (! $proposal instanceof SiteReadProposal) {
-                    $manualError = 'Não foi possível preparar a proposta da Leitura. Preencha os dados da Empresa manualmente.';
-                    $step = CompanyOnboardingStep::ManualCompanyDetails;
-                    $team->update(['onboarding_step' => $step]);
+                if ($step === CompanyOnboardingStep::ManualCompanyDetails && $manualError === null && $siteRead?->status === SiteReadStatus::Failed) {
+                    $manualError = $siteRead->error_message;
                 }
-            }
-
-            if ($step === CompanyOnboardingStep::ManualCompanyDetails && $manualError === null && $siteRead?->status === SiteReadStatus::Failed) {
-                $manualError = $siteRead->error_message;
             }
         }
 
@@ -127,6 +138,30 @@ class CompanyController extends Controller
         return to_route('onboarding.company');
     }
 
+    public function continueWithoutWaiting(Request $request): RedirectResponse
+    {
+        $team = $request->user()?->company();
+        abort_unless($team instanceof Team, 404);
+        Gate::authorize('update', $team);
+
+        if ($team->onboarding_step !== CompanyOnboardingStep::SiteRead) {
+            return to_route('onboarding.company');
+        }
+
+        $latestSiteRead = $team->siteReads()->latest('started_at')->first();
+
+        if ($latestSiteRead === null || $latestSiteRead->status === SiteReadStatus::Failed) {
+            return to_route('onboarding.company');
+        }
+
+        $team->update([
+            'onboarding_step' => CompanyOnboardingStep::Completed,
+            'onboarding_completed_at' => now(),
+        ]);
+
+        return to_route('dashboard');
+    }
+
     public function completeManual(
         CompleteManualCompanyOnboardingRequest $request,
         ShopifyInstallationFlow $shopifyInstallationFlow,
@@ -152,17 +187,29 @@ class CompanyController extends Controller
 
         DB::transaction(function () use ($request, $team): void {
             $lockedTeam = Team::query()->lockForUpdate()->findOrFail($team->getKey());
-            $proposal = $lockedTeam->siteReadProposals()
-                ->where('status', SiteReadProposalStatus::Pending->value)
-                ->lockForUpdate()
-                ->latest('id')
-                ->firstOrFail();
+            $isOnboardingComplete = $lockedTeam->isOnboardingComplete();
+            $pendingProposal = $isOnboardingComplete
+                ? $lockedTeam->pendingOnboardingProposal()
+                : ($lockedTeam->onboarding_step === CompanyOnboardingStep::ProposalReview
+                    ? $lockedTeam->siteReadProposals()
+                        ->where('status', SiteReadProposalStatus::Pending->value)
+                        ->latest('id')
+                        ->first()
+                    : null);
+            abort_unless($pendingProposal instanceof SiteReadProposal, 404);
+            $proposal = SiteReadProposal::query()->lockForUpdate()->findOrFail($pendingProposal->getKey());
 
-            $lockedTeam->update([
-                ...$request->validated(),
-                'onboarding_step' => CompanyOnboardingStep::Completed,
-                'onboarding_completed_at' => now(),
-            ]);
+            $teamUpdates = $request->validated();
+
+            if ($isOnboardingComplete) {
+                $teamUpdates['onboarding_step'] = $lockedTeam->onboarding_step;
+                $teamUpdates['onboarding_completed_at'] = $lockedTeam->onboarding_completed_at;
+            } else {
+                $teamUpdates['onboarding_step'] = CompanyOnboardingStep::Completed;
+                $teamUpdates['onboarding_completed_at'] = now();
+            }
+
+            $lockedTeam->update($teamUpdates);
             $proposal->update(['status' => SiteReadProposalStatus::Confirmed]);
         });
 

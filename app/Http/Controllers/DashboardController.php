@@ -5,6 +5,8 @@ namespace App\Http\Controllers;
 use App\Enums\ChannelStatus;
 use App\Enums\ChannelType;
 use App\Enums\DocumentStatus;
+use App\Enums\SiteReadProposalStatus;
+use App\Enums\SiteReadStatus;
 use App\Knowledge\DocumentStorageQuota;
 use App\Models\FlowEventDelivery;
 use App\Models\Team;
@@ -51,6 +53,7 @@ class DashboardController extends Controller
             ->whereNotNull('agent_id')
             ->whereHas('agent')
             ->exists();
+        $siteReadReminder = $this->siteReadReminder($team);
 
         return Inertia::render('dashboard', [
             'checklist' => [
@@ -107,7 +110,47 @@ class DashboardController extends Controller
                 'flowHealth' => $flowHealth,
                 'webhookFailures' => $webhookFailures,
             ],
+            'siteReadReminder' => $siteReadReminder,
         ]);
+    }
+
+    private function siteReadReminder(Team $team): array
+    {
+        $pendingProposal = $team->siteReadProposals()
+            ->where('status', SiteReadProposalStatus::Pending->value)
+            ->latest('id')
+            ->first();
+        $onboardingProposal = $team->pendingOnboardingProposal();
+        $onboardingSiteRead = $team->onboarding_completed_at === null
+            ? null
+            : $team->siteReads()
+                ->where('started_at', '<=', $team->onboarding_completed_at)
+                ->latest('started_at')
+                ->first();
+        $proposalIsMissing = $onboardingSiteRead !== null && ! $onboardingSiteRead->proposal()->exists();
+        $proposalExtractionFailed = $onboardingSiteRead?->status === SiteReadStatus::Completed
+            && $proposalIsMissing
+            && filled($onboardingSiteRead->error_message);
+        $waitingForProposal = $onboardingSiteRead?->status === SiteReadStatus::Completed
+            && $proposalIsMissing
+            && ! $proposalExtractionFailed;
+        $siteReadFailed = $onboardingSiteRead?->status === SiteReadStatus::Failed || $proposalExtractionFailed;
+
+        return [
+            'polling' => $onboardingSiteRead?->status === SiteReadStatus::InProgress || $waitingForProposal,
+            'proposal' => $pendingProposal === null ? null : [
+                'origin' => $onboardingProposal?->is($pendingProposal) ? 'onboarding' : 'settings',
+                'href' => $onboardingProposal?->is($pendingProposal)
+                    ? route('onboarding.company.proposal-review')
+                    : route('company.edit'),
+            ],
+            'failure' => $siteReadFailed ? [
+                'message' => filled($onboardingSiteRead->error_message)
+                    ? $onboardingSiteRead->error_message
+                    : 'A Leitura do site não foi concluída.',
+                'href' => route('company.edit'),
+            ] : null,
+        ];
     }
 
     private function companyIsComplete(Team $team): bool

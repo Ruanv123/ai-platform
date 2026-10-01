@@ -116,8 +116,15 @@ Route::middleware(['auth', RedirectIfUserHasTeam::class])->group(function () {
     Route::get('onboarding/company', [CompanyController::class, 'create'])->name('onboarding.company');
     Route::post('onboarding/company', [CompanyController::class, 'store'])->name('onboarding.company.store');
     Route::post('onboarding/company/manual', [CompanyController::class, 'completeManual'])->name('onboarding.company.manual');
-    Route::post('onboarding/company/proposal', [CompanyController::class, 'confirmProposal'])->name('onboarding.company.proposal');
+    Route::post('onboarding/company/continue', [CompanyController::class, 'continueWithoutWaiting'])->name('onboarding.company.continue');
 });
+
+Route::get('onboarding/company/proposal-review', [CompanyController::class, 'create'])
+    ->middleware('auth')
+    ->name('onboarding.company.proposal-review');
+Route::post('onboarding/company/proposal', [CompanyController::class, 'confirmProposal'])
+    ->middleware('auth')
+    ->name('onboarding.company.proposal');
 
 Route::get('dashboard', DashboardController::class)
     ->middleware(['auth', EnsureUserHasTeam::class])

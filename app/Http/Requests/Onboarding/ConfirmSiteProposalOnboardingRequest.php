@@ -64,13 +64,15 @@ class ConfirmSiteProposalOnboardingRequest extends FormRequest
         $user = $this->user();
         $team = $user?->company();
 
-        return $user instanceof User
-            && $team instanceof Team
-            && $team->onboarding_step === CompanyOnboardingStep::ProposalReview
-            && $team->siteReadProposals()
-                ->where('status', SiteReadProposalStatus::Pending->value)
-                ->exists()
-            && $user->can('update', $team);
+        if (! $user instanceof User || ! $team instanceof Team || ! $user->can('update', $team)) {
+            return false;
+        }
+
+        return ($team->onboarding_step === CompanyOnboardingStep::ProposalReview
+                && $team->siteReadProposals()
+                    ->where('status', SiteReadProposalStatus::Pending->value)
+                    ->exists())
+            || $team->pendingOnboardingProposal() !== null;
     }
 
     public function rules(): array

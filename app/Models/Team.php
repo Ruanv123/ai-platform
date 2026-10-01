@@ -4,10 +4,12 @@ namespace App\Models;
 
 use App\Concerns\GeneratesUniqueTeamSlugs;
 use App\Enums\CompanyOnboardingStep;
+use App\Enums\SiteReadProposalStatus;
 use App\Enums\TeamRole;
 use App\Models\Collection as TeamCollection;
 use Database\Factories\TeamFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -185,6 +187,21 @@ class Team extends Model
     public function siteReadProposals(): HasMany
     {
         return $this->hasMany(SiteReadProposal::class);
+    }
+
+    public function pendingOnboardingProposal(): ?SiteReadProposal
+    {
+        if ($this->onboarding_completed_at === null) {
+            return null;
+        }
+
+        return $this->siteReadProposals()
+            ->where('status', SiteReadProposalStatus::Pending->value)
+            ->whereHas('siteRead', fn (Builder $query) => $query
+                ->where('team_id', $this->getKey())
+                ->where('started_at', '<=', $this->onboarding_completed_at))
+            ->latest('id')
+            ->first();
     }
 
     public function isOnboardingComplete(): bool
