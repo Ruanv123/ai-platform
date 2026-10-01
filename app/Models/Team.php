@@ -168,6 +168,11 @@ class Team extends Model
         return $this->hasMany(TeamCollection::class);
     }
 
+    public function siteReads(): HasMany
+    {
+        return $this->hasMany(SiteRead::class);
+    }
+
     /**
      * Get the Agents for this Empresa.
      *

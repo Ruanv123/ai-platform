@@ -1,6 +1,10 @@
 import { Form, Head } from '@inertiajs/react';
 import Heading from '@/components/heading';
 import CompanyDetail from '@/components/company-detail';
+import SiteReadPanel, {
+    type LatestSiteRead,
+} from '@/components/site-read-panel';
+import SiteReadPolling from '@/components/site-read-polling';
 import InputError from '@/components/input-error';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -28,9 +32,20 @@ type Props = {
     team: CompanyTeam;
     segments: CompanyOption[];
     canUpdate: boolean;
+    siteRead: {
+        website: string | null;
+        canStart: boolean;
+        availableAgainAt: string | null;
+        latest: LatestSiteRead | null;
+    };
 };
 
-export default function Company({ team, segments, canUpdate }: Props) {
+export default function Company({
+    team,
+    segments,
+    canUpdate,
+    siteRead,
+}: Props) {
     return (
         <>
             <Head title="Empresa" />
@@ -218,35 +233,48 @@ export default function Company({ team, segments, canUpdate }: Props) {
                                             Frases de exemplo
                                         </Label>
                                         <p className="text-muted-foreground text-sm">
-                                            Informe de 2 a 4 frases ou deixe todos os campos vazios.
+                                            Informe de 2 a 4 frases ou deixe
+                                            todos os campos vazios.
                                         </p>
-                                        {Array.from({ length: 4 }, (_, index) => (
-                                            <div key={index} className="grid gap-2">
-                                                <Label
-                                                    htmlFor={`brand_voice_examples_${index}`}
+                                        {Array.from(
+                                            { length: 4 },
+                                            (_, index) => (
+                                                <div
+                                                    key={index}
+                                                    className="grid gap-2"
                                                 >
-                                                    Frase de exemplo {index + 1}
-                                                </Label>
-                                                <textarea
-                                                    id={`brand_voice_examples_${index}`}
-                                                    name="brand_voice_examples[]"
-                                                    defaultValue={
-                                                        team.brandVoiceExamples?.[index] ?? ''
-                                                    }
-                                                    maxLength={1000}
-                                                    className="border-input bg-background min-h-16 rounded-md border px-3 py-2 text-sm"
-                                                />
-                                                <InputError
-                                                    message={
-                                                        errors[
-                                                            `brand_voice_examples.${index}`
-                                                        ]
-                                                    }
-                                                />
-                                            </div>
-                                        ))}
+                                                    <Label
+                                                        htmlFor={`brand_voice_examples_${index}`}
+                                                    >
+                                                        Frase de exemplo{' '}
+                                                        {index + 1}
+                                                    </Label>
+                                                    <textarea
+                                                        id={`brand_voice_examples_${index}`}
+                                                        name="brand_voice_examples[]"
+                                                        defaultValue={
+                                                            team
+                                                                .brandVoiceExamples?.[
+                                                                index
+                                                            ] ?? ''
+                                                        }
+                                                        maxLength={1000}
+                                                        className="border-input bg-background min-h-16 rounded-md border px-3 py-2 text-sm"
+                                                    />
+                                                    <InputError
+                                                        message={
+                                                            errors[
+                                                                `brand_voice_examples.${index}`
+                                                            ]
+                                                        }
+                                                    />
+                                                </div>
+                                            ),
+                                        )}
                                         <InputError
-                                            message={errors.brand_voice_examples}
+                                            message={
+                                                errors.brand_voice_examples
+                                            }
                                         />
                                     </div>
                                 </div>
@@ -254,11 +282,15 @@ export default function Company({ team, segments, canUpdate }: Props) {
                                 <div className="grid gap-2">
                                     <Label>Prazo da Pausa da IA</Label>
                                     <p className="text-muted-foreground text-sm">
-                                        O prazo reinicia quando uma mensagem chega ou é enviada com sucesso durante o atendimento humano.
+                                        O prazo reinicia quando uma mensagem
+                                        chega ou é enviada com sucesso durante o
+                                        atendimento humano.
                                     </p>
                                     <div className="grid gap-3 sm:grid-cols-2">
                                         <div className="grid gap-2">
-                                            <Label htmlFor="agent_pause_duration_hours">Horas</Label>
+                                            <Label htmlFor="agent_pause_duration_hours">
+                                                Horas
+                                            </Label>
                                             <Input
                                                 id="agent_pause_duration_hours"
                                                 name="agent_pause_duration_hours"
@@ -266,13 +298,22 @@ export default function Company({ team, segments, canUpdate }: Props) {
                                                 min="0"
                                                 max="24"
                                                 step="1"
-                                                defaultValue={Math.floor(team.agentPauseDurationMinutes / 60)}
+                                                defaultValue={Math.floor(
+                                                    team.agentPauseDurationMinutes /
+                                                        60,
+                                                )}
                                                 required
                                             />
-                                            <InputError message={errors.agent_pause_duration_hours} />
+                                            <InputError
+                                                message={
+                                                    errors.agent_pause_duration_hours
+                                                }
+                                            />
                                         </div>
                                         <div className="grid gap-2">
-                                            <Label htmlFor="agent_pause_duration_minutes_part">Minutos</Label>
+                                            <Label htmlFor="agent_pause_duration_minutes_part">
+                                                Minutos
+                                            </Label>
                                             <Input
                                                 id="agent_pause_duration_minutes_part"
                                                 name="agent_pause_duration_minutes_part"
@@ -280,11 +321,22 @@ export default function Company({ team, segments, canUpdate }: Props) {
                                                 min="0"
                                                 max="59"
                                                 step="1"
-                                                defaultValue={team.agentPauseDurationMinutes % 60}
+                                                defaultValue={
+                                                    team.agentPauseDurationMinutes %
+                                                    60
+                                                }
                                                 required
                                             />
-                                            <InputError message={errors.agent_pause_duration_minutes_part} />
-                                            <InputError message={errors.agent_pause_duration_minutes} />
+                                            <InputError
+                                                message={
+                                                    errors.agent_pause_duration_minutes_part
+                                                }
+                                            />
+                                            <InputError
+                                                message={
+                                                    errors.agent_pause_duration_minutes
+                                                }
+                                            />
                                         </div>
                                     </div>
                                 </div>
@@ -372,6 +424,16 @@ export default function Company({ team, segments, canUpdate }: Props) {
                     </div>
                 </div>
             )}
+            <SiteReadPanel
+                website={siteRead.website}
+                canStart={siteRead.canStart}
+                canUpdate={canUpdate}
+                availableAgainAt={siteRead.availableAgainAt}
+                latest={siteRead.latest}
+            />
+            {canUpdate && siteRead.latest?.status === 'in_progress' ? (
+                <SiteReadPolling key={siteRead.latest.id} />
+            ) : null}
         </>
     );
 }

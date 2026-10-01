@@ -4,6 +4,7 @@ use App\Http\Controllers\Settings\BusinessHoursController;
 use App\Http\Controllers\Settings\CompanyController;
 use App\Http\Controllers\Settings\ProfileController;
 use App\Http\Controllers\Settings\SecurityController;
+use App\Http\Controllers\Settings\SiteReadController;
 use App\Http\Controllers\Settings\TeamController;
 use App\Http\Controllers\Teams\TeamInvitationController;
 use App\Http\Controllers\Teams\TeamMemberController;
@@ -34,6 +35,7 @@ Route::middleware(['auth', EnsureUserHasTeam::class])->group(function () {
     Route::get('settings/team', [TeamController::class, 'edit'])->name('team.edit');
     Route::get('settings/company', [CompanyController::class, 'edit'])->name('company.edit');
     Route::patch('settings/company', [CompanyController::class, 'update'])->name('company.update');
+    Route::post('settings/company/site-read', [SiteReadController::class, 'store'])->name('company.site-read.store');
     Route::get('settings/business-hours', [BusinessHoursController::class, 'edit'])->name('business-hours.edit');
     Route::patch('settings/business-hours', [BusinessHoursController::class, 'update'])->name('business-hours.update');
     Route::patch('settings/team/members/{user}', [TeamMemberController::class, 'update'])->name('team.members.update');
