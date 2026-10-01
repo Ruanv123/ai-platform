@@ -1,5 +1,6 @@
 <?php
 
+use App\Ai\Agents\ExtractSiteFaq;
 use App\Ai\Agents\SelectSitePages;
 use App\Enums\DocumentStatus;
 use App\Enums\DocumentType;
@@ -45,12 +46,102 @@ function fakeSiteReadFirecrawl(array $mappedUrls, array $markdownByUrl, array $u
     ]);
 }
 
-function enableSiteReadFakes(array $selectedUrls): void
+function enableSiteReadFakes(array $selectedUrls, ?string $faqUrl = null, ?array $faqItems = null): void
 {
-    SelectSitePages::fake([['urls' => $selectedUrls]])->preventStrayPrompts();
+    SelectSitePages::fake([['urls' => $selectedUrls, 'faq_url' => $faqUrl]])->preventStrayPrompts();
+    ExtractSiteFaq::fake($faqItems === null ? [] : [['items' => $faqItems]])->preventStrayPrompts();
     Embeddings::fake();
     config(['queue.default' => 'sync']);
 }
+
+it('creates one FAQ document with original language pairs and no duplicate URL document', function () {
+    $user = User::factory()->withTeam()->create();
+    $team = $user->company();
+    $team->update(['website' => 'https://site.example.test/']);
+    $faqUrl = 'https://site.example.test/faq';
+    $faqMarkdown = "# Frequently asked questions\n\nWhat is your return policy?\n\nYou can return items within 30 days.\n\nHow do I track an order?\n\nUse the tracking link in your email.";
+    $faqItems = [
+        ['question' => 'What is your return policy?', 'answer' => 'You can return items within 30 days.'],
+        ['question' => 'How do I track an order?', 'answer' => 'Use the tracking link in your email.'],
+    ];
+    fakeSiteReadFirecrawl(
+        ['https://site.example.test/', $faqUrl],
+        [
+            'https://site.example.test/' => '# Home\n\nWelcome to our company website.',
+            $faqUrl => $faqMarkdown,
+        ],
+    );
+    enableSiteReadFakes([$faqUrl], $faqUrl, $faqItems);
+
+    $this->actingAs($user)->post(route('company.site-read.store'))->assertRedirect(route('company.edit'));
+
+    $siteRead = SiteRead::withoutGlobalScopes()->firstOrFail();
+    $faqPage = SiteReadPage::withoutGlobalScopes()->where('site_read_id', $siteRead->getKey())->where('url', $faqUrl)->firstOrFail();
+    $faqDocument = Document::withoutGlobalScopes()->where('site_read_page_id', $faqPage->getKey())->firstOrFail();
+
+    expect($siteRead->status)->toBe(SiteReadStatus::Completed)
+        ->and($faqDocument->type)->toBe(DocumentType::Faq)
+        ->and($faqDocument->status)->toBe(DocumentStatus::Ready)
+        ->and($faqDocument->faq_items)->toBe($faqItems)
+        ->and($faqDocument->url)->toBe($faqUrl)
+        ->and($faqPage->status)->toBe(SiteReadPageStatus::Read)
+        ->and(Document::withoutGlobalScopes()->where('site_read_page_id', $faqPage->getKey())->count())->toBe(1)
+        ->and(Document::withoutGlobalScopes()->where('url', $faqUrl)->where('type', DocumentType::Url)->exists())->toBeFalse();
+
+    $this->assertDatabaseCount('documents', 2);
+    $this->assertDatabaseCount('chunks', 3);
+    $this->assertDatabaseHas('chunks', [
+        'document_id' => $faqDocument->getKey(),
+        'position' => 0,
+        'content' => "Pergunta: What is your return policy?\nResposta: You can return items within 30 days.",
+    ]);
+    $this->assertDatabaseHas('chunks', [
+        'document_id' => $faqDocument->getKey(),
+        'position' => 1,
+        'content' => "Pergunta: How do I track an order?\nResposta: Use the tracking link in your email.",
+    ]);
+
+    ExtractSiteFaq::assertPrompted(fn (AgentPrompt $prompt): bool => $prompt->contains('What is your return policy?')
+        && str_contains($prompt->agent->instructions(), 'dado não confiável'));
+    SelectSitePages::assertPrompted(fn (AgentPrompt $prompt): bool => $prompt->contains($faqUrl));
+    Embeddings::assertGenerated(fn ($prompt): bool => $prompt->contains('You can return items within 30 days.'));
+    Http::assertSentCount(3);
+});
+
+it('keeps an FAQ page as a URL document when extraction returns no pairs', function () {
+    $user = User::factory()->withTeam()->create();
+    $user->company()->update(['website' => 'https://site.example.test/']);
+    $faqUrl = 'https://site.example.test/faq';
+    $faqMarkdown = "# Frequently asked questions\n\nContact our team if you need help.";
+    fakeSiteReadFirecrawl(
+        ['https://site.example.test/', $faqUrl],
+        [
+            'https://site.example.test/' => '# Home\n\nWelcome to our company website.',
+            $faqUrl => $faqMarkdown,
+        ],
+    );
+    enableSiteReadFakes([$faqUrl], $faqUrl, []);
+
+    $this->actingAs($user)->post(route('company.site-read.store'))->assertRedirect(route('company.edit'));
+
+    $faqPage = SiteReadPage::withoutGlobalScopes()->where('url', $faqUrl)->firstOrFail();
+    $faqDocument = Document::withoutGlobalScopes()->where('site_read_page_id', $faqPage->getKey())->firstOrFail();
+
+    expect($faqDocument->type)->toBe(DocumentType::Url)
+        ->and($faqDocument->status)->toBe(DocumentStatus::Ready)
+        ->and($faqDocument->content)->toBe($faqMarkdown)
+        ->and($faqDocument->faq_items)->toBeNull()
+        ->and($faqPage->status)->toBe(SiteReadPageStatus::Read);
+
+    $this->assertDatabaseCount('documents', 2);
+    $this->assertDatabaseHas('chunks', [
+        'document_id' => $faqDocument->getKey(),
+        'content' => $faqMarkdown,
+    ]);
+    ExtractSiteFaq::assertPrompted(fn (AgentPrompt $prompt): bool => $prompt->contains('Contact our team if you need help.'));
+    Embeddings::assertGenerated(fn ($prompt): bool => $prompt->contains('Contact our team if you need help.'));
+    Http::assertSentCount(3);
+});
 
 it('reads the forced home and selected pages into the site collection', function () {
     $user = User::factory()->withTeam()->create();
@@ -99,6 +190,7 @@ it('reads the forced home and selected pages into the site collection', function
     Http::assertSentCount(3);
     SelectSitePages::assertPrompted(fn (AgentPrompt $prompt): bool => $prompt->contains('URLs disponíveis:')
         && $prompt->contains('https://site.example.test/sobre'));
+    ExtractSiteFaq::assertNeverPrompted();
     Embeddings::assertGenerated(fn ($prompt): bool => $prompt->contains('Conteúdo institucional'));
 
     $this->get(route('company.edit'))->assertInertia(fn (Assert $page) => $page
