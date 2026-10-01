@@ -121,7 +121,28 @@ it('allows an owner to quick-create an agent with a name and description', funct
         ->and($agent->tone)->toBe(AgentTone::Friendly)
         ->and($agent->response_length)->toBe(AgentResponseLength::Short)
         ->and($agent->welcome_message)->not->toBe('')
-        ->and($agent->is_active)->toBeTrue();
+        ->and($agent->is_active)->toBeTrue()
+        ->and($agent->collections()->exists())->toBeFalse();
+});
+
+it('creates new Agents with the existing site Collection linked', function () {
+    $user = User::factory()->withTeam()->create();
+    $team = $user->company();
+    $siteCollection = Collection::factory()->for($team)->create([
+        'name' => 'Site',
+        'is_site_collection' => true,
+    ]);
+
+    $response = $this->actingAs($user)->post(route('agents.store'), [
+        'name' => 'Lia',
+        'description' => 'Consultora de vendas para o site.',
+    ]);
+
+    $agent = Agent::query()->where('name', 'Lia')->firstOrFail();
+
+    $response->assertRedirect(route('agents.edit', $agent));
+    expect($agent->collections()->whereKey($siteCollection->id)->exists())->toBeTrue()
+        ->and($agent->collections()->count())->toBe(1);
 });
 
 it('ignores removed transfer triggers and never returns them', function () {

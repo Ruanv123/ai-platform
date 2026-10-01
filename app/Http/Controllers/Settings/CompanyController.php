@@ -7,6 +7,8 @@ use App\Enums\SiteReadStatus;
 use App\Enums\TeamSegment;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Teams\UpdateCompanyRequest;
+use App\Models\Agent;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
@@ -27,6 +29,23 @@ class CompanyController extends Controller
         $latestSiteRead = $team->siteReads()->with('pages')->latest('started_at')->first();
         $availableAgainAt = $latestSiteRead?->started_at?->copy()->addHours(24);
         $siteReadInProgress = $latestSiteRead?->status === SiteReadStatus::InProgress;
+        $linkableAgents = collect();
+
+        if (
+            $request->user()->can('create', Agent::class)
+            && $latestSiteRead?->status === SiteReadStatus::Completed
+            && ($siteCollection = $team->siteCollection()->first()) !== null
+        ) {
+            $linkableAgents = $team->agents()
+                ->whereDoesntHave('collections', fn (Builder $query) => $query->where('collections.id', $siteCollection->getKey()))
+                ->orderBy('name')
+                ->get(['id', 'name'])
+                ->map(static fn (Agent $agent): array => [
+                    'id' => $agent->id,
+                    'name' => $agent->name,
+                ])
+                ->values();
+        }
 
         return Inertia::render('settings/company', [
             'team' => [
@@ -64,6 +83,7 @@ class CompanyController extends Controller
                     'readPagesCount' => $latestSiteRead->pages->where('status', SiteReadPageStatus::Read)->count(),
                     'failedPagesCount' => $latestSiteRead->pages->where('status', SiteReadPageStatus::Failed)->count(),
                     'errorMessage' => $latestSiteRead->error_message,
+                    'linkableAgents' => $linkableAgents,
                     'pages' => $latestSiteRead->pages->sortBy('id')->map(static fn ($page): array => [
                         'id' => $page->getKey(),
                         'url' => $page->url,

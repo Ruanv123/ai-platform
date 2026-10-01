@@ -3,6 +3,12 @@ import Heading from '@/components/heading';
 import InputError from '@/components/input-error';
 import { Button } from '@/components/ui/button';
 import { store } from '@/actions/App/Http/Controllers/Settings/SiteReadController';
+import SiteReadAgentLinks from '@/components/site-read-agent-links';
+
+type AgentOption = {
+    id: string;
+    name: string;
+};
 
 type SiteReadPage = {
     id: number;
@@ -23,6 +29,7 @@ export type LatestSiteRead = {
     readPagesCount: number;
     failedPagesCount: number;
     errorMessage: string | null;
+    linkableAgents: AgentOption[];
     pages: SiteReadPage[];
 };
 
@@ -110,6 +117,14 @@ export default function SiteReadPanel({
                         <p className="text-muted-foreground">
                             Mapeando as páginas do site…
                         </p>
+                    ) : null}
+
+                    {latest.status === 'completed' &&
+                    latest.linkableAgents.length > 0 ? (
+                        <SiteReadAgentLinks
+                            siteReadId={latest.id}
+                            agents={latest.linkableAgents}
+                        />
                     ) : null}
                 </div>
             ) : (
