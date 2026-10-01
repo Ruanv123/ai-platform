@@ -47,7 +47,10 @@ function fakeSiteReadFirecrawl(array $mappedUrls, array $markdownByUrl, array $u
             $markdown = $markdownByUrl[$request['url']] ?? null;
 
             return is_string($markdown)
-                ? Http::response(['success' => true, 'data' => ['markdown' => $markdown]])
+                ? Http::response(['success' => true, 'data' => [
+                    'markdown' => $markdown,
+                    'metadata' => ['contentType' => 'text/html; charset=utf-8'],
+                ]])
                 : Http::response(['success' => false], 503);
         },
         'https://site.example.test/*' => function (Request $request) use ($unavailableUrls) {
