@@ -8,6 +8,7 @@ return [
     'url' => [
         'connect_timeout' => 3,
         'timeout' => 10,
+        'firecrawl_timeout' => 45,
     ],
     'embedding_provider' => env('KNOWLEDGE_EMBEDDING_PROVIDER', 'openai'),
     'embedding_model' => env('KNOWLEDGE_EMBEDDING_MODEL', 'text-embedding-3-small'),
