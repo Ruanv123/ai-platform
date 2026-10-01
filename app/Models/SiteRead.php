@@ -5,9 +5,11 @@ namespace App\Models;
 use App\Concerns\BelongsToTeam;
 use App\Enums\SiteReadStatus;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
+use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 
 #[Fillable([
     'team_id',
@@ -22,7 +24,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 ])]
 class SiteRead extends Model
 {
-    use BelongsToTeam;
+    use BelongsToTeam, HasFactory;
 
     public function team(): BelongsTo
     {
@@ -37,6 +39,11 @@ class SiteRead extends Model
     public function pages(): HasMany
     {
         return $this->hasMany(SiteReadPage::class);
+    }
+
+    public function proposal(): HasOne
+    {
+        return $this->hasOne(SiteReadProposal::class);
     }
 
     protected function casts(): array

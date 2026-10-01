@@ -3,10 +3,12 @@
 namespace App\Http\Controllers\Settings;
 
 use App\Enums\SiteReadPageStatus;
+use App\Enums\SiteReadProposalStatus;
 use App\Enums\SiteReadStatus;
 use App\Enums\TeamSegment;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Teams\UpdateCompanyRequest;
+use App\Knowledge\SiteReadProposalService;
 use App\Models\Agent;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\RedirectResponse;
@@ -19,7 +21,7 @@ class CompanyController extends Controller
     /**
      * Show the current team's company settings.
      */
-    public function edit(Request $request): Response
+    public function edit(Request $request, SiteReadProposalService $proposalService): Response
     {
         $team = $request->user()->company();
 
@@ -30,6 +32,11 @@ class CompanyController extends Controller
         $availableAgainAt = $latestSiteRead?->started_at?->copy()->addHours(24);
         $siteReadInProgress = $latestSiteRead?->status === SiteReadStatus::InProgress;
         $linkableAgents = collect();
+        $pendingProposal = $team->siteReadProposals()
+            ->where('status', SiteReadProposalStatus::Pending)
+            ->orderByDesc('created_at')
+            ->orderByDesc('id')
+            ->first();
 
         if (
             $request->user()->can('create', Agent::class)
@@ -96,6 +103,10 @@ class CompanyController extends Controller
                         'errorMessage' => $page->error_message,
                     ])->values(),
                 ],
+            ],
+            'proposal' => $pendingProposal === null ? null : [
+                'id' => $pendingProposal->getKey(),
+                'fields' => $proposalService->differences($pendingProposal, $team),
             ],
         ]);
     }
