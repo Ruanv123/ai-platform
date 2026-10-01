@@ -9,6 +9,7 @@ use App\Enums\SiteReadPageStatus;
 use App\Enums\SiteReadStatus;
 use App\Knowledge\PageReader;
 use App\Knowledge\SiteReadProgress;
+use App\Knowledge\SiteReadUsage;
 use App\Models\Chunk;
 use App\Models\Collection;
 use App\Models\Document;
@@ -33,7 +34,7 @@ class ReadSite implements ShouldQueue
         $this->onQueue('ingestion');
     }
 
-    public function handle(PageReader $pageReader, SiteReadProgress $progress): void
+    public function handle(PageReader $pageReader, SiteReadProgress $progress, SiteReadUsage $siteReadUsage): void
     {
         $siteRead = SiteRead::withoutGlobalScopes()->find($this->siteReadId);
 
@@ -41,7 +42,7 @@ class ReadSite implements ShouldQueue
             return;
         }
 
-        $website = $pageReader->resolveLinktreeUrl($siteRead->website);
+        $website = $pageReader->resolveLinktreeUrl($siteRead->website, $siteRead->getKey());
 
         if ($website === null) {
             $progress->failRead(
@@ -58,7 +59,7 @@ class ReadSite implements ShouldQueue
 
         $maximumPages = max(1, (int) config('knowledge.site_read.maximum_pages', 25));
         $homeUrl = $this->homeUrl($website);
-        $mappedUrls = $pageReader->mapUrls($website);
+        $mappedUrls = $pageReader->mapUrls($website, $siteRead->getKey());
         $candidateUrls = array_values(array_unique([$homeUrl, ...$mappedUrls]));
         $team = $siteRead->team()->first();
         $existingCollection = $team?->siteCollection()->first();
@@ -75,6 +76,7 @@ class ReadSite implements ShouldQueue
             json_encode($additionalUrls, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR),
         );
         $selection = (new SelectSitePages($maximumPages))->prompt($prompt);
+        $siteReadUsage->recordAiUsage($siteRead->getKey(), $selection->usage);
         $faqUrl = $selection['faq_url'] ?? null;
         $selectedUrls = $this->selectedUrls(
             $selection['urls'] ?? [],

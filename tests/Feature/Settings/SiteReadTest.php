@@ -6,21 +6,29 @@ use App\Ai\Agents\SelectSitePages;
 use App\Enums\DocumentStatus;
 use App\Enums\DocumentType;
 use App\Enums\SiteReadPageStatus;
+use App\Enums\SiteReadProposalStatus;
 use App\Enums\SiteReadStatus;
 use App\Enums\TeamRole;
+use App\Jobs\ExtractSiteReadProposal;
 use App\Jobs\ReadSite;
+use App\Knowledge\SiteReadProgress;
 use App\Models\Agent;
 use App\Models\Chunk;
 use App\Models\Collection;
 use App\Models\Document;
 use App\Models\SiteRead;
 use App\Models\SiteReadPage;
+use App\Models\SiteReadProposal;
 use App\Models\User;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Queue;
 use Inertia\Testing\AssertableInertia as Assert;
 use Laravel\Ai\Embeddings;
 use Laravel\Ai\Prompts\AgentPrompt;
+use Laravel\Ai\Responses\Data\Meta;
+use Laravel\Ai\Responses\Data\Usage;
+use Laravel\Ai\Responses\StructuredTextResponse;
 
 function fakeSiteReadFirecrawl(array $mappedUrls, array $markdownByUrl, array $unavailableUrls = []): void
 {
@@ -57,6 +65,16 @@ function enableSiteReadFakes(array $selectedUrls, ?string $faqUrl = null, ?array
     ExtractSiteProposal::fake(static fn (string $prompt): array => ['fields' => []])->preventStrayPrompts();
     Embeddings::fake();
     config(['queue.default' => 'sync']);
+}
+
+function fakeSiteReadStructuredResponse(array $structured, int $inputTokens, int $outputTokens): StructuredTextResponse
+{
+    return new StructuredTextResponse(
+        $structured,
+        json_encode($structured, JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR),
+        new Usage($inputTokens, $outputTokens),
+        new Meta('openai', 'test-model'),
+    );
 }
 
 it('follows the first business website on Linktree and preserves both addresses', function () {
@@ -112,6 +130,9 @@ it('follows the first business website on Linktree and preserves both addresses'
     expect($siteRead->status)->toBe(SiteReadStatus::Completed)
         ->and($siteRead->website)->toBe($linktreeUrl)
         ->and($siteRead->resolved_website)->toBe($businessWebsite)
+        ->and($siteRead->firecrawl_credits_used)->toBe(4)
+        ->and($siteRead->ai_input_tokens)->toBe(0)
+        ->and($siteRead->ai_output_tokens)->toBe(0)
         ->and($pages->pluck('url')->all())->toBe([$businessWebsite, $aboutUrl])
         ->and($pages->every(fn (SiteReadPage $page): bool => $page->status === SiteReadPageStatus::Read))->toBeTrue();
 
@@ -962,4 +983,155 @@ it('forbids Members from starting a read and does not expose another company his
         ->assertDontSee('private.example.test');
 
     expect(SiteRead::withoutGlobalScopes()->whereKey($firstRead->getKey())->exists())->toBeTrue();
+});
+
+it('records Firecrawl credits and AI tokens across map, pages and site-read agents', function () {
+    $user = User::factory()->withTeam()->create();
+    $team = $user->company();
+    $homeUrl = 'https://site.example.test/';
+    $team->update(['website' => $homeUrl]);
+    $faqItems = [
+        ['question' => 'Qual é o prazo de entrega?', 'answer' => 'O prazo é de cinco dias úteis.'],
+    ];
+    fakeSiteReadFirecrawl([$homeUrl], [$homeUrl => '# Perguntas frequentes\n\nQual é o prazo de entrega? O prazo é de cinco dias úteis.']);
+    SelectSitePages::fake([
+        fakeSiteReadStructuredResponse(['urls' => [], 'faq_url' => $homeUrl], 11, 12),
+    ])->preventStrayPrompts();
+    ExtractSiteFaq::fake([
+        fakeSiteReadStructuredResponse(['items' => $faqItems], 3, 4),
+    ])->preventStrayPrompts();
+    ExtractSiteProposal::fake([
+        fakeSiteReadStructuredResponse(['fields' => []], 5, 6),
+    ])->preventStrayPrompts();
+    Embeddings::fake();
+    config(['queue.default' => 'sync']);
+
+    $this->actingAs($user)
+        ->post(route('company.site-read.store'))
+        ->assertRedirect(route('company.edit'));
+
+    $siteRead = SiteRead::withoutGlobalScopes()->firstOrFail();
+
+    expect($siteRead->firecrawl_credits_used)->toBe(2)
+        ->and($siteRead->ai_input_tokens)->toBe(19)
+        ->and($siteRead->ai_output_tokens)->toBe(22);
+});
+
+it('keeps Firecrawl credits at zero when site reading uses the Readability fallback', function () {
+    $user = User::factory()->withTeam()->create();
+    $team = $user->company();
+    $homeUrl = 'https://site.example.test/';
+    $team->update(['website' => $homeUrl]);
+    config([
+        'services.firecrawl.key' => null,
+        'queue.default' => 'sync',
+    ]);
+    Http::preventStrayRequests();
+    Http::fake([
+        'https://site.example.test/*' => Http::response(
+            '<html><body><main><h1>Atendimento</h1><p>Atendemos empresas em todo o Brasil.</p></main></body></html>',
+            200,
+            ['Content-Type' => 'text/html; charset=UTF-8'],
+        ),
+    ]);
+    SelectSitePages::fake([['urls' => [], 'faq_url' => null]])->preventStrayPrompts();
+    ExtractSiteProposal::fake([['fields' => []]])->preventStrayPrompts();
+    Embeddings::fake();
+
+    $this->actingAs($user)
+        ->post(route('company.site-read.store'))
+        ->assertRedirect(route('company.edit'));
+
+    $siteRead = SiteRead::withoutGlobalScopes()->firstOrFail();
+
+    expect($siteRead->status)->toBe(SiteReadStatus::Completed)
+        ->and($siteRead->firecrawl_credits_used)->toBe(0)
+        ->and($siteRead->ai_input_tokens)->toBe(0)
+        ->and($siteRead->ai_output_tokens)->toBe(0);
+
+    Http::assertSentCount(2);
+});
+
+it('replaces the previous pending proposal when the latest partial site read completes', function () {
+    $user = User::factory()->withTeam()->create();
+    $team = $user->company();
+    $previousRead = SiteRead::withoutGlobalScopes()->create([
+        'team_id' => $team->getKey(),
+        'website' => 'https://site.example.test/',
+        'status' => SiteReadStatus::Completed,
+        'started_at' => now()->subDays(2),
+        'completed_at' => now()->subDays(2),
+    ]);
+    $previousProposal = SiteReadProposal::withoutGlobalScopes()->create([
+        'team_id' => $team->getKey(),
+        'site_read_id' => $previousRead->getKey(),
+        'proposed_fields' => [],
+        'status' => SiteReadProposalStatus::Pending,
+    ]);
+    $latestRead = SiteRead::withoutGlobalScopes()->create([
+        'team_id' => $team->getKey(),
+        'website' => 'https://site.example.test/',
+        'status' => SiteReadStatus::InProgress,
+        'started_at' => now()->subMinute(),
+    ]);
+    $readPage = SiteReadPage::withoutGlobalScopes()->create([
+        'team_id' => $team->getKey(),
+        'site_read_id' => $latestRead->getKey(),
+        'url' => 'https://site.example.test/',
+        'title' => 'Página inicial',
+        'status' => SiteReadPageStatus::Pending,
+    ]);
+    SiteReadPage::withoutGlobalScopes()->create([
+        'team_id' => $team->getKey(),
+        'site_read_id' => $latestRead->getKey(),
+        'url' => 'https://site.example.test/sobre',
+        'title' => 'Sobre',
+        'status' => SiteReadPageStatus::Failed,
+        'error_message' => 'A página falhou.',
+        'completed_at' => now(),
+    ]);
+    $collection = Collection::factory()->for($team)->create();
+    Document::factory()->for($collection)->create([
+        'site_read_page_id' => $readPage->getKey(),
+        'type' => DocumentType::Url,
+        'status' => DocumentStatus::Ready,
+        'title' => 'Página inicial',
+        'content' => '# Página inicial\n\nConteúdo lido.',
+        'url' => $readPage->url,
+    ]);
+    Queue::fake([ExtractSiteReadProposal::class]);
+
+    app(SiteReadProgress::class)->completePage($readPage->getKey());
+
+    expect($latestRead->fresh()->status)->toBe(SiteReadStatus::Completed)
+        ->and($previousProposal->fresh()->status)->toBe(SiteReadProposalStatus::Replaced);
+    Queue::assertPushed(ExtractSiteReadProposal::class, fn (ExtractSiteReadProposal $job): bool => $job->siteReadId === $latestRead->getKey());
+
+    (new ExtractSiteReadProposal($latestRead->getKey()))->failed(new RuntimeException('Provider indisponível.'));
+
+    expect($latestRead->fresh()->status)->toBe(SiteReadStatus::Completed)
+        ->and($latestRead->fresh()->error_message)->toBe('A leitura foi concluída, mas não foi possível montar os dados da empresa. Você pode preencher o formulário manualmente.');
+});
+
+it('does not report proposal extraction failure after a proposal was stored', function () {
+    $user = User::factory()->withTeam()->create();
+    $team = $user->company();
+    $siteRead = SiteRead::withoutGlobalScopes()->create([
+        'team_id' => $team->getKey(),
+        'website' => 'https://site.example.test/',
+        'status' => SiteReadStatus::Completed,
+        'started_at' => now()->subMinute(),
+        'completed_at' => now(),
+    ]);
+    SiteReadProposal::withoutGlobalScopes()->create([
+        'team_id' => $team->getKey(),
+        'site_read_id' => $siteRead->getKey(),
+        'proposed_fields' => [],
+        'status' => SiteReadProposalStatus::Pending,
+    ]);
+
+    (new ExtractSiteReadProposal($siteRead->getKey()))->failed(new RuntimeException('Provider indisponível.'));
+
+    expect($siteRead->fresh()->status)->toBe(SiteReadStatus::Completed)
+        ->and($siteRead->fresh()->error_message)->toBeNull();
 });

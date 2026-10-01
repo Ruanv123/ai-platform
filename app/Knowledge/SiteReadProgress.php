@@ -9,10 +9,13 @@ use App\Jobs\ExtractSiteReadProposal;
 use App\Models\Document;
 use App\Models\SiteRead;
 use App\Models\SiteReadPage;
+use App\Models\Team;
 use Illuminate\Support\Facades\DB;
 
 class SiteReadProgress
 {
+    public function __construct(private SiteReadProposalService $proposalService) {}
+
     public function completePage(int $siteReadPageId): void
     {
         $siteReadId = DB::transaction(function () use ($siteReadPageId): ?int {
@@ -150,6 +153,19 @@ class SiteReadProgress
                 : ($firstPageError ?: $fallbackMessage ?: 'Não foi possível ler nenhuma página do site. Confira se o site está acessível e tente novamente.'),
             'completed_at' => now(),
         ]);
+
+        if ($readPagesCount > 0) {
+            $team = Team::withoutGlobalScopes()->lockForUpdate()->find($siteRead->team_id);
+            $latestSiteReadId = SiteRead::withoutGlobalScopes()
+                ->where('team_id', $siteRead->team_id)
+                ->orderByDesc('started_at')
+                ->orderByDesc('id')
+                ->value('id');
+
+            if ($team !== null && (int) $latestSiteReadId === (int) $siteRead->getKey()) {
+                $this->proposalService->replacePendingProposals($team->getKey());
+            }
+        }
 
         return $readPagesCount > 0;
     }

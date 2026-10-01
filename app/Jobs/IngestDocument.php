@@ -11,6 +11,7 @@ use App\Knowledge\MarkdownChunker;
 use App\Knowledge\UrlDocumentException;
 use App\Models\Chunk;
 use App\Models\Document;
+use App\Models\SiteReadPage;
 use App\Models\Team;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
@@ -189,7 +190,11 @@ class IngestDocument implements ShouldQueue
 
         if ($document->type !== DocumentType::Text) {
             if ($document->type === DocumentType::Url && $document->url !== null) {
-                return $this->extractedUrlContent ?? $urlExtractor->extract($document->url);
+                $siteReadId = $document->site_read_page_id === null
+                    ? null
+                    : SiteReadPage::withoutGlobalScopes()->whereKey($document->site_read_page_id)->value('site_read_id');
+
+                return $this->extractedUrlContent ?? $urlExtractor->extract($document->url, $siteReadId);
             }
 
             throw new RuntimeException('Este tipo de documento ainda não está disponível.');

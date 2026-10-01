@@ -47,6 +47,9 @@ class SiteReadController extends Controller
                 'website' => $request->validated('website'),
                 'status' => SiteReadStatus::InProgress,
                 'started_at' => now(),
+                'firecrawl_credits_used' => 0,
+                'ai_input_tokens' => 0,
+                'ai_output_tokens' => 0,
             ])->getKey();
         });
 

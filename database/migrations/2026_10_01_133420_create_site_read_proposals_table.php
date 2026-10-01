@@ -8,7 +8,7 @@ return new class extends Migration
 {
     public function up(): void
     {
-        Schema::create('site_read_proposals', function (Blueprint $table) {
+        Schema::create('site_read_proposals', function (Blueprint $table): void {
             $table->id();
             $table->foreignId('team_id')->constrained()->cascadeOnDelete();
             $table->foreignId('site_read_id')->unique()->constrained()->cascadeOnDelete();

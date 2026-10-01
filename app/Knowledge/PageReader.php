@@ -13,10 +13,12 @@ use League\HTMLToMarkdown\HtmlConverter;
 
 class PageReader
 {
-    public function readMarkdown(string $url): string
+    public function __construct(private SiteReadUsage $siteReadUsage) {}
+
+    public function readMarkdown(string $url, ?int $siteReadId = null): string
     {
         if ($this->hasFirecrawlKey()) {
-            $markdown = $this->firecrawlMarkdown($url);
+            $markdown = $this->firecrawlMarkdown($url, $siteReadId);
 
             if ($markdown !== null) {
                 return $markdown;
@@ -26,13 +28,13 @@ class PageReader
         return $this->readWithReadability($url);
     }
 
-    public function resolveLinktreeUrl(string $url): ?string
+    public function resolveLinktreeUrl(string $url, ?int $siteReadId = null): ?string
     {
         if (! $this->isLinktreeUrl($url)) {
             return $url;
         }
 
-        foreach ($this->markdownLinkUrls($this->readMarkdown($url), $url) as $candidateUrl) {
+        foreach ($this->markdownLinkUrls($this->readMarkdown($url, $siteReadId), $url) as $candidateUrl) {
             if (! $this->isLinktreeUrl($candidateUrl) && ! $this->isSocialOrMessagingUrl($candidateUrl)) {
                 return $candidateUrl;
             }
@@ -58,10 +60,10 @@ class PageReader
         return array_values(array_unique($urls));
     }
 
-    public function mapUrls(string $url): array
+    public function mapUrls(string $url, ?int $siteReadId = null): array
     {
         if ($this->hasFirecrawlKey()) {
-            $urls = $this->firecrawlMap($url);
+            $urls = $this->firecrawlMap($url, $siteReadId);
 
             if ($urls !== null) {
                 return $urls;
@@ -71,7 +73,7 @@ class PageReader
         return $this->mapHtmlLinks($this->fetchHtml($url), $url);
     }
 
-    private function firecrawlMarkdown(string $url): ?string
+    private function firecrawlMarkdown(string $url, ?int $siteReadId): ?string
     {
         try {
             $response = Http::withToken((string) config('services.firecrawl.key'))
@@ -93,12 +95,16 @@ class PageReader
             return null;
         }
 
+        if ($siteReadId !== null) {
+            $this->siteReadUsage->recordFirecrawlCredit($siteReadId);
+        }
+
         $markdown = trim($markdown);
 
         return $markdown === '' ? null : $markdown;
     }
 
-    private function firecrawlMap(string $url): ?array
+    private function firecrawlMap(string $url, ?int $siteReadId): ?array
     {
         try {
             $response = Http::withToken((string) config('services.firecrawl.key'))
@@ -114,6 +120,10 @@ class PageReader
 
         if (! $response->successful() || ! is_array($payload) || ($payload['success'] ?? false) !== true || ! is_array($links)) {
             return null;
+        }
+
+        if ($siteReadId !== null) {
+            $this->siteReadUsage->recordFirecrawlCredit($siteReadId);
         }
 
         $urls = [];
