@@ -9,6 +9,7 @@ use App\Enums\SiteReadPageStatus;
 use App\Enums\SiteReadStatus;
 use App\Knowledge\PageReader;
 use App\Knowledge\SiteReadProgress;
+use App\Models\Chunk;
 use App\Models\Collection;
 use App\Models\Document;
 use App\Models\SiteRead;
@@ -59,15 +60,30 @@ class ReadSite implements ShouldQueue
         $homeUrl = $this->homeUrl($website);
         $mappedUrls = $pageReader->mapUrls($website);
         $candidateUrls = array_values(array_unique([$homeUrl, ...$mappedUrls]));
-        $additionalUrls = array_values(array_filter($candidateUrls, fn (string $url): bool => $url !== $homeUrl));
+        $team = $siteRead->team()->first();
+        $existingCollection = $team?->siteCollection()->first();
+        $ignoredUrls = $existingCollection?->ignoredSiteUrls()->pluck('url')->all() ?? [];
+        $availableUrls = array_values(array_filter(
+            $candidateUrls,
+            fn (string $url): bool => ! in_array($url, $ignoredUrls, true),
+        ));
+        $homeIsAvailable = ! in_array($homeUrl, $ignoredUrls, true);
+        $additionalUrls = array_values(array_filter($availableUrls, fn (string $url): bool => $url !== $homeUrl));
         $prompt = sprintf(
             "Escolha até %d URLs além da página inicial para uma leitura institucional. URLs disponíveis:\n%s",
-            max(0, $maximumPages - 1),
+            max(0, $maximumPages - (int) $homeIsAvailable),
             json_encode($additionalUrls, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR),
         );
         $selection = (new SelectSitePages($maximumPages))->prompt($prompt);
         $faqUrl = $selection['faq_url'] ?? null;
-        $selectedUrls = $this->selectedUrls($selection['urls'] ?? [], $additionalUrls, $homeUrl, $maximumPages, $faqUrl);
+        $selectedUrls = $this->selectedUrls(
+            $selection['urls'] ?? [],
+            $additionalUrls,
+            $homeUrl,
+            $maximumPages,
+            $faqUrl,
+            $homeIsAvailable,
+        );
         $faqUrl = is_string($faqUrl) && in_array($faqUrl, $selectedUrls, true) ? $faqUrl : null;
 
         $pages = DB::transaction(function () use ($siteRead, $candidateUrls, $selectedUrls, $faqUrl): array {
@@ -76,6 +92,7 @@ class ReadSite implements ShouldQueue
             $collection = Collection::withoutGlobalScopes()
                 ->where('team_id', $team->getKey())
                 ->where('is_site_collection', true)
+                ->lockForUpdate()
                 ->first();
 
             if ($collection === null) {
@@ -99,38 +116,84 @@ class ReadSite implements ShouldQueue
                 ]);
             }
 
+            $ignoredUrls = $collection->ignoredSiteUrls()->pluck('url')->all();
+            $selectedUrls = array_values(array_filter(
+                $selectedUrls,
+                fn (string $url): bool => ! in_array($url, $ignoredUrls, true),
+            ));
             $lockedSiteRead->update(['found_pages_count' => count($candidateUrls)]);
             $sitePages = [];
+            $existingDocumentsByUrl = $collection->documents()
+                ->whereNotNull('site_read_page_id')
+                ->orderByDesc('id')
+                ->lockForUpdate()
+                ->get()
+                ->groupBy('url');
+            $documentsToRemove = $existingDocumentsByUrl->flatten()->keyBy(fn (Document $document): int => $document->getKey());
 
             foreach ($selectedUrls as $url) {
-                $page = SiteReadPage::withoutGlobalScopes()->firstOrCreate([
+                $page = SiteReadPage::withoutGlobalScopes()->updateOrCreate([
                     'site_read_id' => $lockedSiteRead->getKey(),
                     'url' => $url,
                 ], [
                     'team_id' => $team->getKey(),
                     'title' => $this->titleForUrl($url),
                     'status' => SiteReadPageStatus::Pending,
+                    'error_message' => null,
+                    'completed_at' => null,
                 ]);
 
-                $document = Document::withoutGlobalScopes()->firstOrCreate([
-                    'site_read_page_id' => $page->getKey(),
-                ], [
-                    'team_id' => $team->getKey(),
-                    'collection_id' => $collection->getKey(),
-                    'type' => DocumentType::Url,
-                    'status' => DocumentStatus::Pending,
-                    'title' => $page->title,
-                    'content' => '',
-                    'url' => $url,
-                    'size_bytes' => 0,
-                    'ingestion_token' => (string) Str::uuid(),
-                ]);
+                $document = $existingDocumentsByUrl->get($url)?->first();
+
+                if ($document !== null) {
+                    $documentsToRemove->forget($document->getKey());
+                    Chunk::withoutGlobalScopes()->where('document_id', $document->getKey())->delete();
+                    $document->update([
+                        'site_read_page_id' => $page->getKey(),
+                        'type' => DocumentType::Url,
+                        'status' => DocumentStatus::Pending,
+                        'title' => $page->title,
+                        'content' => '',
+                        'faq_items' => null,
+                        'url' => $url,
+                        'size_bytes' => 0,
+                        'error_message' => null,
+                        'ingestion_token' => (string) Str::uuid(),
+                        'processed_at' => null,
+                    ]);
+                } else {
+                    $document = Document::withoutGlobalScopes()->create([
+                        'team_id' => $team->getKey(),
+                        'collection_id' => $collection->getKey(),
+                        'site_read_page_id' => $page->getKey(),
+                        'type' => DocumentType::Url,
+                        'status' => DocumentStatus::Pending,
+                        'title' => $page->title,
+                        'content' => '',
+                        'url' => $url,
+                        'size_bytes' => 0,
+                        'ingestion_token' => (string) Str::uuid(),
+                    ]);
+                }
 
                 $sitePages[] = [$page, $document, $url === $faqUrl];
             }
 
+            foreach ($documentsToRemove as $document) {
+                $document->delete();
+            }
+
             return $sitePages;
         });
+
+        if ($pages === []) {
+            $progress->failRead(
+                $siteRead->getKey(),
+                'Todas as páginas disponíveis já foram removidas da Coleção do site.',
+            );
+
+            return;
+        }
 
         foreach ($pages as [$page, $document, $isFaqPage]) {
             IngestSiteReadPage::dispatch($page->getKey(), $document->getKey(), $isFaqPage);
@@ -155,13 +218,19 @@ class ReadSite implements ShouldQueue
         return $scheme.'://'.$host.$port.'/';
     }
 
-    private function selectedUrls(mixed $urls, array $availableUrls, string $homeUrl, int $maximumPages, mixed $faqUrl): array
-    {
+    private function selectedUrls(
+        mixed $urls,
+        array $availableUrls,
+        string $homeUrl,
+        int $maximumPages,
+        mixed $faqUrl,
+        bool $homeIsAvailable,
+    ): array {
         if (! is_array($urls)) {
             $urls = [];
         }
 
-        $selected = [$homeUrl];
+        $selected = $homeIsAvailable ? [$homeUrl] : [];
         $faqUrl = is_string($faqUrl) && ($faqUrl === $homeUrl || in_array($faqUrl, $availableUrls, true))
             ? $faqUrl
             : null;

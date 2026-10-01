@@ -7,7 +7,9 @@ use App\Enums\DocumentType;
 use App\Enums\SiteReadPageStatus;
 use App\Enums\SiteReadStatus;
 use App\Enums\TeamRole;
+use App\Jobs\ReadSite;
 use App\Models\Agent;
+use App\Models\Chunk;
 use App\Models\Collection;
 use App\Models\Document;
 use App\Models\SiteRead;
@@ -524,42 +526,378 @@ it('marks a read as failed with a friendly reason when every selected page is un
     Embeddings::assertNothingGenerated();
 });
 
-it('reuses the company site collection for a later read', function () {
+it('reprocesses retained pages in place and removes pages no longer selected', function () {
     $user = User::factory()->withTeam()->create();
     $team = $user->company();
     $team->update(['website' => 'https://site.example.test/']);
-    config(['knowledge.site_read.maximum_pages' => 1]);
-    fakeSiteReadFirecrawl(
-        ['https://site.example.test/', 'https://site.example.test/sobre'],
-        ['https://site.example.test/' => '# Página inicial\n\nConteúdo institucional disponível para o atendimento.'],
-    );
+    config(['knowledge.site_read.maximum_pages' => 2]);
+    $homeUrl = 'https://site.example.test/';
+    $aboutUrl = 'https://site.example.test/sobre';
+    $contactUrl = 'https://site.example.test/contato';
+    $oldHomeContent = '# Página inicial\n\nConteúdo anterior da Empresa.';
+    $newHomeContent = '# Página inicial\n\nConteúdo atualizado da Empresa.';
+    $mappedUrls = [$homeUrl, $aboutUrl, $contactUrl];
+    $markdownByUrl = [
+        $homeUrl => $oldHomeContent,
+        $aboutUrl => '# Sobre\n\nPágina que deixará de ser escolhida.',
+    ];
+    config([
+        'services.firecrawl.key' => 'test-firecrawl-key',
+        'services.firecrawl.base_url' => 'https://firecrawl.example.test/v2',
+    ]);
+    Http::preventStrayRequests();
+    Http::fake([
+        'https://firecrawl.example.test/v2/map' => function (Request $request) use (&$mappedUrls) {
+            return Http::response([
+                'success' => true,
+                'links' => array_map(static fn (string $url): array => ['url' => $url], $mappedUrls),
+            ]);
+        },
+        'https://firecrawl.example.test/v2/scrape' => function (Request $request) use (&$markdownByUrl) {
+            $markdown = $markdownByUrl[$request['url']] ?? null;
+
+            return is_string($markdown)
+                ? Http::response(['success' => true, 'data' => ['markdown' => $markdown]])
+                : Http::response(['success' => false], 503);
+        },
+        'https://site.example.test/*' => Http::response('Página sem conteúdo principal', 200),
+    ]);
     SelectSitePages::fake([
-        ['urls' => ['https://site.example.test/sobre']],
-        ['urls' => ['https://site.example.test/sobre']],
+        ['urls' => [$aboutUrl]],
+        ['urls' => [$contactUrl]],
     ])->preventStrayPrompts();
     Embeddings::fake();
     config(['queue.default' => 'sync']);
 
     $this->actingAs($user)->post(route('company.site-read.store'))->assertRedirect(route('company.edit'));
-    $firstCollectionId = Collection::withoutGlobalScopes()->where('team_id', $team->getKey())
+    $collection = Collection::withoutGlobalScopes()->where('team_id', $team->getKey())
         ->where('is_site_collection', true)
-        ->value('id');
+        ->firstOrFail();
+    $originalHomeDocument = Document::withoutGlobalScopes()
+        ->where('collection_id', $collection->getKey())
+        ->where('url', $homeUrl)
+        ->firstOrFail();
+    $removedAboutDocument = Document::withoutGlobalScopes()
+        ->where('collection_id', $collection->getKey())
+        ->where('url', $aboutUrl)
+        ->firstOrFail();
     $this->travelTo(now()->addHours(25));
+    $markdownByUrl = [
+        $homeUrl => $newHomeContent,
+        $contactUrl => '# Contato\n\nFale com nossa equipe.',
+    ];
 
     $this->post(route('company.site-read.store'))->assertRedirect(route('company.edit'));
 
-    $collections = Collection::withoutGlobalScopes()
-        ->where('team_id', $team->getKey())
+    $currentSiteRead = SiteRead::withoutGlobalScopes()->latest('started_at')->firstOrFail();
+    $currentDocuments = Document::withoutGlobalScopes()
+        ->where('collection_id', $collection->getKey())
+        ->whereNotNull('site_read_page_id')
+        ->orderBy('url')
+        ->get();
+    $updatedHomeDocument = $originalHomeDocument->fresh();
+    $chunkContent = Chunk::withoutGlobalScopes()
+        ->where('document_id', $updatedHomeDocument->getKey())
+        ->pluck('content')
+        ->implode("\n");
+
+    expect($currentDocuments->pluck('url')->all())->toBe([$homeUrl, $contactUrl])
+        ->and($updatedHomeDocument->getKey())->toBe($originalHomeDocument->getKey())
+        ->and($updatedHomeDocument->content)->toBe($newHomeContent)
+        ->and($currentSiteRead->pages()->where('url', $homeUrl)->value('id'))->toBe($updatedHomeDocument->site_read_page_id)
+        ->and($currentDocuments->firstWhere('url', $contactUrl)->status)->toBe(DocumentStatus::Ready)
+        ->and($currentDocuments->firstWhere('url', $contactUrl)->content)->toBe('# Contato\n\nFale com nossa equipe.')
+        ->and($collection->ignoredSiteUrls()->exists())->toBeFalse()
+        ->and($chunkContent)->toContain('Conteúdo atualizado da Empresa.')
+        ->and($chunkContent)->not->toContain('Conteúdo anterior da Empresa.');
+
+    $this->assertModelMissing($removedAboutDocument);
+    $this->assertDatabaseCount('site_reads', 2);
+    Http::assertSent(fn (Request $request): bool => $request->url() === 'https://firecrawl.example.test/v2/scrape'
+        && $request['url'] === $homeUrl);
+});
+
+it('reprocesses completed page documents when a site read job is retried', function () {
+    $user = User::factory()->withTeam()->create();
+    $team = $user->company();
+    $homeUrl = 'https://site.example.test/';
+    $team->update(['website' => $homeUrl]);
+    fakeSiteReadFirecrawl(
+        [$homeUrl],
+        [$homeUrl => '# Página inicial\n\nConteúdo do site.'],
+    );
+    SelectSitePages::fake([
+        ['urls' => []],
+        ['urls' => []],
+    ])->preventStrayPrompts();
+    Embeddings::fake();
+    config(['queue.default' => 'sync']);
+
+    $this->actingAs($user)->post(route('company.site-read.store'))->assertRedirect(route('company.edit'));
+    $siteRead = SiteRead::withoutGlobalScopes()->firstOrFail();
+    $page = SiteReadPage::withoutGlobalScopes()->firstOrFail();
+    $document = Document::withoutGlobalScopes()->where('site_read_page_id', $page->getKey())->firstOrFail();
+    $siteRead->update([
+        'status' => SiteReadStatus::InProgress,
+        'completed_at' => null,
+    ]);
+
+    ReadSite::dispatchSync($siteRead->getKey());
+
+    expect($siteRead->fresh()->status)->toBe(SiteReadStatus::Completed)
+        ->and($page->fresh()->status)->toBe(SiteReadPageStatus::Read)
+        ->and($document->fresh()->status)->toBe(DocumentStatus::Ready)
+        ->and($document->fresh()->getKey())->toBe($document->getKey())
+        ->and($siteRead->pages()->count())->toBe(1)
+        ->and($document->collection()->first()->documents()->where('site_read_page_id', $page->getKey())->count())->toBe(1);
+});
+
+it('leaves manually added documents untouched while reconciling site pages', function () {
+    $this->travelTo('2026-01-01 10:00:00');
+    $user = User::factory()->withTeam()->create();
+    $team = $user->company();
+    $team->update(['website' => 'https://site.example.test/']);
+    config(['knowledge.site_read.maximum_pages' => 2]);
+    $homeUrl = 'https://site.example.test/';
+    $aboutUrl = 'https://site.example.test/sobre';
+    fakeSiteReadFirecrawl(
+        [$homeUrl, $aboutUrl],
+        [
+            $homeUrl => '# Página inicial\n\nConteúdo do site.',
+            $aboutUrl => '# Sobre\n\nConteúdo antigo do site.',
+        ],
+    );
+    SelectSitePages::fake([
+        ['urls' => [$aboutUrl]],
+        ['urls' => []],
+    ])->preventStrayPrompts();
+    Embeddings::fake();
+    config(['queue.default' => 'sync']);
+
+    $this->actingAs($user)->post(route('company.site-read.store'))->assertRedirect(route('company.edit'));
+    $collection = Collection::withoutGlobalScopes()->where('team_id', $team->getKey())
         ->where('is_site_collection', true)
+        ->firstOrFail();
+    $siteAboutDocument = Document::withoutGlobalScopes()
+        ->where('collection_id', $collection->getKey())
+        ->where('url', $aboutUrl)
+        ->whereNotNull('site_read_page_id')
+        ->firstOrFail();
+    $manualHomeDocument = Document::factory()->for($collection)->create([
+        'type' => DocumentType::Url,
+        'status' => DocumentStatus::Ready,
+        'title' => 'URL manual igual à página inicial',
+        'content' => 'Texto manual da página inicial.',
+        'url' => $homeUrl,
+    ]);
+    $manualAboutDocument = Document::factory()->for($collection)->create([
+        'type' => DocumentType::Url,
+        'status' => DocumentStatus::Ready,
+        'title' => 'URL manual igual à página sobre',
+        'content' => 'Texto manual da página sobre.',
+        'url' => $aboutUrl,
+    ]);
+    $manualHomeUpdatedAt = $manualHomeDocument->updated_at;
+    $manualAboutUpdatedAt = $manualAboutDocument->updated_at;
+    $this->travelTo(now()->addHours(25));
+    fakeSiteReadFirecrawl(
+        [$homeUrl, $aboutUrl],
+        [$homeUrl => '# Página inicial\n\nConteúdo atualizado do site.'],
+    );
+
+    $this->post(route('company.site-read.store'))->assertRedirect(route('company.edit'));
+
+    expect($manualHomeDocument->fresh()->content)->toBe('Texto manual da página inicial.')
+        ->and($manualHomeDocument->fresh()->updated_at->equalTo($manualHomeUpdatedAt))->toBeTrue()
+        ->and($manualHomeDocument->fresh()->site_read_page_id)->toBeNull()
+        ->and($manualAboutDocument->fresh()->content)->toBe('Texto manual da página sobre.')
+        ->and($manualAboutDocument->fresh()->updated_at->equalTo($manualAboutUpdatedAt))->toBeTrue()
+        ->and($manualAboutDocument->fresh()->site_read_page_id)->toBeNull()
+        ->and($collection->ignoredSiteUrls()->exists())->toBeFalse();
+
+    $this->assertModelExists($manualHomeDocument);
+    $this->assertModelExists($manualAboutDocument);
+    $this->assertModelMissing($siteAboutDocument);
+});
+
+it('keeps a manually deleted site URL ignored during later reads', function () {
+    $this->travelTo('2026-01-01 10:00:00');
+    $user = User::factory()->withTeam()->create();
+    $team = $user->company();
+    $team->update(['website' => 'https://site.example.test/']);
+    config(['knowledge.site_read.maximum_pages' => 2]);
+    $homeUrl = 'https://site.example.test/';
+    $aboutUrl = 'https://site.example.test/sobre';
+    fakeSiteReadFirecrawl(
+        [$homeUrl, $aboutUrl],
+        [
+            $homeUrl => '# Página inicial\n\nConteúdo principal do site.',
+            $aboutUrl => '# Sobre\n\nConteúdo institucional.',
+        ],
+    );
+    SelectSitePages::fake([
+        ['urls' => [$aboutUrl]],
+        ['urls' => [$aboutUrl]],
+    ])->preventStrayPrompts();
+    Embeddings::fake();
+    config(['queue.default' => 'sync']);
+
+    $this->actingAs($user)->post(route('company.site-read.store'))->assertRedirect(route('company.edit'));
+    $collection = Collection::withoutGlobalScopes()->where('team_id', $team->getKey())
+        ->where('is_site_collection', true)
+        ->firstOrFail();
+    $aboutDocument = Document::withoutGlobalScopes()
+        ->where('collection_id', $collection->getKey())
+        ->where('url', $aboutUrl)
+        ->firstOrFail();
+
+    $this->delete(route('documents.destroy', $aboutDocument))
+        ->assertRedirect(route('documents.index', $collection));
+    $this->travelTo(now()->addHours(25));
+    fakeSiteReadFirecrawl(
+        [$homeUrl, $aboutUrl],
+        [$homeUrl => '# Página inicial\n\nConteúdo principal atualizado.'],
+    );
+
+    $this->post(route('company.site-read.store'))->assertRedirect(route('company.edit'));
+
+    $latestSiteRead = SiteRead::withoutGlobalScopes()->latest('started_at')->firstOrFail();
+    $siteDocuments = Document::withoutGlobalScopes()
+        ->where('collection_id', $collection->getKey())
+        ->whereNotNull('site_read_page_id')
         ->get();
 
-    expect($collections)->toHaveCount(1)
-        ->and($collections->first()->getKey())->toBe($firstCollectionId)
-        ->and(SiteRead::withoutGlobalScopes()->where('team_id', $team->getKey())->count())->toBe(2)
-        ->and(Document::withoutGlobalScopes()->where('collection_id', $firstCollectionId)->count())->toBe(2)
-        ->and(SiteRead::withoutGlobalScopes()->where('team_id', $team->getKey())->get()
-            ->every(fn (SiteRead $siteRead): bool => $siteRead->pages()->count() === 1
-                && $siteRead->pages()->first()->url === 'https://site.example.test/'))->toBeTrue();
+    expect($collection->ignoredSiteUrls()->where('url', $aboutUrl)->exists())->toBeTrue()
+        ->and($latestSiteRead->pages()->pluck('url')->all())->toBe([$homeUrl])
+        ->and($siteDocuments->pluck('url')->all())->toBe([$homeUrl]);
+
+    $this->assertModelMissing($aboutDocument);
+});
+
+it('recreates the site collection when the team deleted it', function () {
+    $this->travelTo('2026-01-01 10:00:00');
+    $user = User::factory()->withTeam()->create();
+    $team = $user->company();
+    $team->update(['website' => 'https://site.example.test/']);
+    config(['knowledge.site_read.maximum_pages' => 1]);
+    $homeUrl = 'https://site.example.test/';
+    fakeSiteReadFirecrawl(
+        [$homeUrl],
+        [$homeUrl => '# Página inicial\n\nConteúdo institucional.'],
+    );
+    SelectSitePages::fake([
+        ['urls' => []],
+        ['urls' => []],
+    ])->preventStrayPrompts();
+    Embeddings::fake();
+    config(['queue.default' => 'sync']);
+
+    $this->actingAs($user)->post(route('company.site-read.store'))->assertRedirect(route('company.edit'));
+    $originalCollection = Collection::withoutGlobalScopes()->where('team_id', $team->getKey())
+        ->where('is_site_collection', true)
+        ->firstOrFail();
+    $originalCollectionId = $originalCollection->getKey();
+    $this->delete(route('collections.destroy', $originalCollection))
+        ->assertRedirect(route('collections.index'));
+    $this->travelTo(now()->addHours(25));
+    fakeSiteReadFirecrawl(
+        [$homeUrl],
+        [$homeUrl => '# Página inicial\n\nConteúdo institucional atualizado.'],
+    );
+
+    $this->post(route('company.site-read.store'))->assertRedirect(route('company.edit'));
+
+    $recreatedCollection = Collection::withoutGlobalScopes()->where('team_id', $team->getKey())
+        ->where('is_site_collection', true)
+        ->firstOrFail();
+
+    expect($recreatedCollection->getKey())->not->toBe($originalCollectionId)
+        ->and($recreatedCollection->documents()->where('url', $homeUrl)->exists())->toBeTrue()
+        ->and($recreatedCollection->ignoredSiteUrls()->exists())->toBeFalse()
+        ->and(Collection::withoutGlobalScopes()->where('team_id', $team->getKey())->where('is_site_collection', true)->count())->toBe(1);
+});
+
+it('offers an explicit read when the saved website changes and removes the old domain after the next read', function () {
+    $this->travelTo('2026-01-01 10:00:00');
+    $user = User::factory()->withTeam()->create();
+    $team = $user->company();
+    $oldHomeUrl = 'https://old.example.test/';
+    $oldAboutUrl = 'https://old.example.test/sobre';
+    $newHomeUrl = 'https://new.example.test/';
+    $newContactUrl = 'https://new.example.test/contato';
+    $team->update(['website' => $oldHomeUrl, 'timezone' => 'UTC']);
+    config(['knowledge.site_read.maximum_pages' => 2]);
+    $mappedUrls = [$oldHomeUrl, $oldAboutUrl];
+    $markdownByUrl = [
+        $oldHomeUrl => '# Site antigo\n\nConteúdo antigo.',
+        $oldAboutUrl => '# Sobre\n\nConteúdo institucional antigo.',
+    ];
+    config([
+        'services.firecrawl.key' => 'test-firecrawl-key',
+        'services.firecrawl.base_url' => 'https://firecrawl.example.test/v2',
+    ]);
+    Http::preventStrayRequests();
+    Http::fake([
+        'https://firecrawl.example.test/v2/map' => function (Request $request) use (&$mappedUrls) {
+            return Http::response([
+                'success' => true,
+                'links' => array_map(static fn (string $url): array => ['url' => $url], $mappedUrls),
+            ]);
+        },
+        'https://firecrawl.example.test/v2/scrape' => function (Request $request) use (&$markdownByUrl) {
+            $markdown = $markdownByUrl[$request['url']] ?? null;
+
+            return is_string($markdown)
+                ? Http::response(['success' => true, 'data' => ['markdown' => $markdown]])
+                : Http::response(['success' => false], 503);
+        },
+        'https://old.example.test/*' => Http::response('Página antiga sem conteúdo principal', 200),
+        'https://new.example.test/*' => Http::response('Página nova sem conteúdo principal', 200),
+    ]);
+    SelectSitePages::fake([
+        ['urls' => [$oldAboutUrl]],
+        ['urls' => [$newContactUrl]],
+    ])->preventStrayPrompts();
+    Embeddings::fake();
+    config(['queue.default' => 'sync']);
+
+    $this->actingAs($user)->post(route('company.site-read.store'))->assertRedirect(route('company.edit'));
+    $collection = Collection::withoutGlobalScopes()->where('team_id', $team->getKey())
+        ->where('is_site_collection', true)
+        ->firstOrFail();
+    $this->patch(route('company.update'), ['website' => $newHomeUrl])
+        ->assertRedirect(route('company.edit'));
+
+    $this->assertDatabaseCount('site_reads', 1);
+    $this->get(route('company.edit'))->assertInertia(fn (Assert $page) => $page
+        ->where('siteRead.website', $newHomeUrl)
+        ->where('siteRead.hasNewWebsite', true)
+        ->where('siteRead.canStart', false)
+        ->where('siteRead.latest.website', $oldHomeUrl)
+        ->where('siteRead.availableAgainAt', '02/01/2026 às 10:00'));
+
+    $this->travelTo(now()->addHours(25));
+
+    $this->get(route('company.edit'))->assertInertia(fn (Assert $page) => $page
+        ->where('siteRead.hasNewWebsite', true)
+        ->where('siteRead.canStart', true));
+
+    $mappedUrls = [$newHomeUrl, $newContactUrl];
+    $markdownByUrl = [
+        $newHomeUrl => '# Site novo\n\nConteúdo atualizado.',
+        $newContactUrl => '# Contato\n\nFale com a equipe.',
+    ];
+
+    $this->post(route('company.site-read.store'))->assertRedirect(route('company.edit'));
+
+    $siteDocuments = Document::withoutGlobalScopes()
+        ->where('collection_id', $collection->getKey())
+        ->whereNotNull('site_read_page_id')
+        ->orderBy('url')
+        ->get();
+
+    expect($siteDocuments->pluck('url')->all())->toBe([$newHomeUrl, $newContactUrl])
+        ->and(SiteRead::withoutGlobalScopes()->count())->toBe(2);
 });
 
 it('forbids Members from starting a read and does not expose another company history', function () {

@@ -303,7 +303,23 @@ class DocumentController extends Controller
         Gate::authorize('delete', $document);
         $collectionId = $document->collection_id;
         $this->fileStorage->delete($document->file_path);
-        $document->delete();
+
+        DB::transaction(function () use ($document): void {
+            $collection = $document->collection()->lockForUpdate()->first();
+
+            if (
+                $document->site_read_page_id !== null
+                && $document->url !== null
+                && $collection?->is_site_collection
+            ) {
+                $collection->ignoredSiteUrls()->firstOrCreate(
+                    ['url' => $document->url],
+                    ['team_id' => $document->team_id],
+                );
+            }
+
+            $document->delete();
+        });
 
         Inertia::flash('toast', [
             'type' => 'success',

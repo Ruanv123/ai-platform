@@ -34,6 +34,7 @@ type Props = {
     canUpdate: boolean;
     siteRead: {
         website: string | null;
+        hasNewWebsite: boolean;
         canStart: boolean;
         availableAgainAt: string | null;
         latest: LatestSiteRead | null;
@@ -426,6 +427,7 @@ export default function Company({
             )}
             <SiteReadPanel
                 website={siteRead.website}
+                hasNewWebsite={siteRead.hasNewWebsite}
                 canStart={siteRead.canStart}
                 canUpdate={canUpdate}
                 availableAgainAt={siteRead.availableAgainAt}
