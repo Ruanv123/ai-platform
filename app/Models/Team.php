@@ -179,6 +179,11 @@ class Team extends Model
         return $this->hasMany(SiteRead::class);
     }
 
+    public function siteReadProposals(): HasMany
+    {
+        return $this->hasMany(SiteReadProposal::class);
+    }
+
     /**
      * Get the Agents for this Empresa.
      *

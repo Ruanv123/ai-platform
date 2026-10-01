@@ -1,6 +1,7 @@
 import { Form, Head } from '@inertiajs/react';
 import Heading from '@/components/heading';
 import CompanyDetail from '@/components/company-detail';
+import SiteReadProposalReview from '@/components/site-read-proposal-review';
 import SiteReadPanel, {
     type LatestSiteRead,
 } from '@/components/site-read-panel';
@@ -38,6 +39,18 @@ type Props = {
         availableAgainAt: string | null;
         latest: LatestSiteRead | null;
     };
+    proposal: {
+        id: number;
+        fields: Record<
+            string,
+            {
+                label: string;
+                current: unknown;
+                proposed: unknown;
+                sourceUrl: string;
+            }
+        >;
+    } | null;
 };
 
 export default function Company({
@@ -45,6 +58,7 @@ export default function Company({
     segments,
     canUpdate,
     siteRead,
+    proposal,
 }: Props) {
     return (
         <>
@@ -424,6 +438,7 @@ export default function Company({
                     </div>
                 </div>
             )}
+            <SiteReadProposalReview proposal={proposal} canUpdate={canUpdate} />
             <SiteReadPanel
                 website={siteRead.website}
                 canStart={siteRead.canStart}

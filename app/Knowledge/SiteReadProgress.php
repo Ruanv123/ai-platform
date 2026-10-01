@@ -5,6 +5,7 @@ namespace App\Knowledge;
 use App\Enums\DocumentStatus;
 use App\Enums\SiteReadPageStatus;
 use App\Enums\SiteReadStatus;
+use App\Jobs\ExtractSiteReadProposal;
 use App\Models\Document;
 use App\Models\SiteRead;
 use App\Models\SiteReadPage;
@@ -14,11 +15,11 @@ class SiteReadProgress
 {
     public function completePage(int $siteReadPageId): void
     {
-        DB::transaction(function () use ($siteReadPageId): void {
+        $siteReadId = DB::transaction(function () use ($siteReadPageId): ?int {
             $page = SiteReadPage::withoutGlobalScopes()->lockForUpdate()->find($siteReadPageId);
 
             if ($page === null || $page->status !== SiteReadPageStatus::Pending) {
-                return;
+                return null;
             }
 
             $document = Document::withoutGlobalScopes()
@@ -39,17 +40,23 @@ class SiteReadProgress
                 ]);
             }
 
-            $this->finishReadWhenReady($page->site_read_id);
+            return $this->finishReadWhenReady($page->site_read_id)
+                ? $page->site_read_id
+                : null;
         });
+
+        if ($siteReadId !== null) {
+            ExtractSiteReadProposal::dispatch($siteReadId);
+        }
     }
 
     public function failPage(int $siteReadPageId, string $message): void
     {
-        DB::transaction(function () use ($siteReadPageId, $message): void {
+        $siteReadId = DB::transaction(function () use ($siteReadPageId, $message): ?int {
             $page = SiteReadPage::withoutGlobalScopes()->lockForUpdate()->find($siteReadPageId);
 
             if ($page === null || $page->status !== SiteReadPageStatus::Pending) {
-                return;
+                return null;
             }
 
             Document::withoutGlobalScopes()
@@ -66,17 +73,23 @@ class SiteReadProgress
                 'completed_at' => now(),
             ]);
 
-            $this->finishReadWhenReady($page->site_read_id);
+            return $this->finishReadWhenReady($page->site_read_id)
+                ? $page->site_read_id
+                : null;
         });
+
+        if ($siteReadId !== null) {
+            ExtractSiteReadProposal::dispatch($siteReadId);
+        }
     }
 
     public function failRead(int $siteReadId, string $message): void
     {
-        DB::transaction(function () use ($siteReadId, $message): void {
+        $completedSiteReadId = DB::transaction(function () use ($siteReadId, $message): ?int {
             $siteRead = SiteRead::withoutGlobalScopes()->lockForUpdate()->find($siteReadId);
 
             if ($siteRead === null || $siteRead->status !== SiteReadStatus::InProgress) {
-                return;
+                return null;
             }
 
             $pendingPageIds = SiteReadPage::withoutGlobalScopes()
@@ -102,22 +115,28 @@ class SiteReadProgress
                     ]);
             }
 
-            $this->finishReadWhenReady($siteRead->getKey(), $message);
+            return $this->finishReadWhenReady($siteRead->getKey(), $message)
+                ? $siteRead->getKey()
+                : null;
         });
+
+        if ($completedSiteReadId !== null) {
+            ExtractSiteReadProposal::dispatch($completedSiteReadId);
+        }
     }
 
-    private function finishReadWhenReady(int $siteReadId, ?string $fallbackMessage = null): void
+    private function finishReadWhenReady(int $siteReadId, ?string $fallbackMessage = null): bool
     {
         $siteRead = SiteRead::withoutGlobalScopes()->lockForUpdate()->find($siteReadId);
 
         if ($siteRead === null || $siteRead->status !== SiteReadStatus::InProgress) {
-            return;
+            return false;
         }
 
         $pages = SiteReadPage::withoutGlobalScopes()->where('site_read_id', $siteReadId);
 
         if ((clone $pages)->where('status', SiteReadPageStatus::Pending)->exists()) {
-            return;
+            return false;
         }
 
         $readPagesCount = (clone $pages)->where('status', SiteReadPageStatus::Read)->count();
@@ -131,5 +150,7 @@ class SiteReadProgress
                 : ($firstPageError ?: $fallbackMessage ?: 'Não foi possível ler nenhuma página do site. Confira se o site está acessível e tente novamente.'),
             'completed_at' => now(),
         ]);
+
+        return $readPagesCount > 0;
     }
 }
