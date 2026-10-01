@@ -2,6 +2,7 @@
 
 use App\Enums\SiteReadStatus;
 use App\Knowledge\PageReader;
+use App\Knowledge\SiteReadUsage;
 use App\Models\SiteRead;
 use App\Models\User;
 use Illuminate\Support\Facades\Http;
@@ -91,4 +92,139 @@ it('falls back to page links when Firecrawl returns an empty site map', function
         ->and($siteRead->fresh()->firecrawl_credits_used)->toBe(1);
     Http::assertSent(fn ($request): bool => $request->url() === 'https://firecrawl.example.test/v2/map');
     Http::assertSentCount(2);
+});
+
+it('counts a PDF scrape base credit and each parsed PDF page', function () {
+    $user = User::factory()->withTeam()->create();
+    $siteRead = SiteRead::withoutGlobalScopes()->create([
+        'team_id' => $user->company()->getKey(),
+        'website' => 'https://docs.example.test/handbook.pdf',
+        'status' => SiteReadStatus::InProgress,
+        'started_at' => now(),
+        'firecrawl_credits_used' => 0,
+    ]);
+    config([
+        'services.firecrawl.key' => 'test-firecrawl-key',
+        'services.firecrawl.base_url' => 'https://firecrawl.example.test/v2',
+    ]);
+    Http::preventStrayRequests();
+    Http::fake([
+        'https://firecrawl.example.test/v2/scrape' => Http::response([
+            'success' => true,
+            'data' => [
+                'markdown' => '# Handbook',
+                'pages' => [
+                    ['pageNumber' => 1, 'markdown' => '# Handbook'],
+                    ['pageNumber' => 2, 'markdown' => 'Policies'],
+                    ['pageNumber' => 3, 'markdown' => 'Contact'],
+                ],
+                'metadata' => [
+                    'contentType' => 'application/pdf',
+                    'totalPages' => 4,
+                ],
+            ],
+        ]),
+    ]);
+
+    $markdown = app(PageReader::class)->readMarkdown('https://docs.example.test/handbook.pdf', $siteRead->getKey());
+
+    expect($markdown)->toBe('# Handbook')
+        ->and($siteRead->fresh()->firecrawl_credits_used)->toBe(4);
+});
+
+it('uses Firecrawl PDF page metadata when parsed pages are not returned', function () {
+    $user = User::factory()->withTeam()->create();
+    $siteRead = SiteRead::withoutGlobalScopes()->create([
+        'team_id' => $user->company()->getKey(),
+        'website' => 'https://docs.example.test/handbook.pdf',
+        'status' => SiteReadStatus::InProgress,
+        'started_at' => now(),
+        'firecrawl_credits_used' => 0,
+    ]);
+    config([
+        'services.firecrawl.key' => 'test-firecrawl-key',
+        'services.firecrawl.base_url' => 'https://firecrawl.example.test/v2',
+    ]);
+    Http::preventStrayRequests();
+    Http::fake([
+        'https://firecrawl.example.test/v2/scrape' => Http::response([
+            'success' => true,
+            'data' => [
+                'markdown' => '# Handbook',
+                'metadata' => [
+                    'contentType' => 'application/pdf',
+                    'numPages' => 3,
+                    'totalPages' => 4,
+                ],
+            ],
+        ]),
+    ]);
+
+    app(PageReader::class)->readMarkdown('https://docs.example.test/handbook.pdf', $siteRead->getKey());
+
+    expect($siteRead->fresh()->firecrawl_credits_used)->toBe(4);
+});
+
+it('counts only the base scrape credit for non-PDF responses', function () {
+    $user = User::factory()->withTeam()->create();
+    $siteRead = SiteRead::withoutGlobalScopes()->create([
+        'team_id' => $user->company()->getKey(),
+        'website' => 'https://docs.example.test/handbook',
+        'status' => SiteReadStatus::InProgress,
+        'started_at' => now(),
+        'firecrawl_credits_used' => 0,
+    ]);
+    config([
+        'services.firecrawl.key' => 'test-firecrawl-key',
+        'services.firecrawl.base_url' => 'https://firecrawl.example.test/v2',
+    ]);
+    Http::preventStrayRequests();
+    Http::fake([
+        'https://firecrawl.example.test/v2/scrape' => Http::response([
+            'success' => true,
+            'data' => [
+                'markdown' => '# Handbook',
+                'metadata' => [
+                    'contentType' => 'text/html; charset=utf-8',
+                    'numPages' => 4,
+                    'totalPages' => 4,
+                ],
+            ],
+        ]),
+    ]);
+
+    $markdown = app(PageReader::class)->readMarkdown('https://docs.example.test/handbook', $siteRead->getKey());
+
+    expect($markdown)->toBe('# Handbook')
+        ->and($siteRead->fresh()->firecrawl_credits_used)->toBe(1);
+});
+
+it('marks PDF credit usage unknown when Firecrawl omits its page count', function () {
+    $user = User::factory()->withTeam()->create();
+    $siteRead = SiteRead::withoutGlobalScopes()->create([
+        'team_id' => $user->company()->getKey(),
+        'website' => 'https://docs.example.test/handbook.pdf',
+        'status' => SiteReadStatus::InProgress,
+        'started_at' => now(),
+        'firecrawl_credits_used' => 0,
+    ]);
+    config([
+        'services.firecrawl.key' => 'test-firecrawl-key',
+        'services.firecrawl.base_url' => 'https://firecrawl.example.test/v2',
+    ]);
+    Http::preventStrayRequests();
+    Http::fake([
+        'https://firecrawl.example.test/v2/scrape' => Http::response([
+            'success' => true,
+            'data' => [
+                'markdown' => '# Handbook',
+                'metadata' => ['contentType' => 'application/pdf'],
+            ],
+        ]),
+    ]);
+
+    app(PageReader::class)->readMarkdown('https://docs.example.test/handbook.pdf', $siteRead->getKey());
+    app(SiteReadUsage::class)->recordFirecrawlCredits($siteRead->getKey(), 1);
+
+    expect($siteRead->fresh()->firecrawl_credits_used)->toBeNull();
 });

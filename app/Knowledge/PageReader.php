@@ -96,12 +96,43 @@ class PageReader
         }
 
         if ($siteReadId !== null) {
-            $this->siteReadUsage->recordFirecrawlCredit($siteReadId);
+            $credits = $this->firecrawlCreditsForScrape($data);
+
+            if ($credits === null) {
+                $this->siteReadUsage->markFirecrawlCreditsUnknown($siteReadId);
+            } else {
+                $this->siteReadUsage->recordFirecrawlCredits($siteReadId, $credits);
+            }
         }
 
         $markdown = trim($markdown);
 
         return $markdown === '' ? null : $markdown;
+    }
+
+    private function firecrawlCreditsForScrape(array $data): ?int
+    {
+        $metadata = is_array($data['metadata'] ?? null) ? $data['metadata'] : [];
+        $contentType = strtolower((string) ($metadata['contentType'] ?? ''));
+        $pageCount = is_array($data['pages'] ?? null) ? count($data['pages']) : null;
+        $pageCount = $pageCount > 0
+            ? $pageCount
+            : $this->positivePageCount($metadata['numPages'] ?? null);
+        $pageCount ??= $this->positivePageCount($metadata['totalPages'] ?? null);
+        $isPdf = str_contains($contentType, 'pdf') || ($contentType === '' && $pageCount !== null);
+
+        if ($isPdf) {
+            return $pageCount === null ? null : 1 + $pageCount;
+        }
+
+        return $contentType === '' ? null : 1;
+    }
+
+    private function positivePageCount(mixed $value): ?int
+    {
+        $pageCount = filter_var($value, FILTER_VALIDATE_INT);
+
+        return $pageCount !== false && $pageCount > 0 ? $pageCount : null;
     }
 
     private function firecrawlMap(string $url, ?int $siteReadId): ?array
@@ -123,7 +154,7 @@ class PageReader
         }
 
         if ($siteReadId !== null) {
-            $this->siteReadUsage->recordFirecrawlCredit($siteReadId);
+            $this->siteReadUsage->recordFirecrawlCredits($siteReadId, 1);
         }
 
         $urls = [];

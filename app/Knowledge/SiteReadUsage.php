@@ -7,13 +7,20 @@ use Laravel\Ai\Responses\Data\Usage;
 
 class SiteReadUsage
 {
-    public function recordFirecrawlCredit(int $siteReadId): void
+    public function recordFirecrawlCredits(int $siteReadId, int $credits): void
     {
         DB::table('site_reads')
             ->where('id', $siteReadId)
             ->update([
-                'firecrawl_credits_used' => DB::raw('COALESCE(firecrawl_credits_used, 0) + 1'),
+                'firecrawl_credits_used' => DB::raw('CASE WHEN firecrawl_credits_used IS NULL THEN NULL ELSE firecrawl_credits_used + '.max(0, $credits).' END'),
             ]);
+    }
+
+    public function markFirecrawlCreditsUnknown(int $siteReadId): void
+    {
+        DB::table('site_reads')
+            ->where('id', $siteReadId)
+            ->update(['firecrawl_credits_used' => null]);
     }
 
     public function recordAiUsage(int $siteReadId, Usage $usage): void
