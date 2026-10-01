@@ -6,6 +6,7 @@ use App\Enums\DocumentType;
 use App\Enums\SiteReadPageStatus;
 use App\Enums\SiteReadStatus;
 use App\Enums\TeamRole;
+use App\Models\Agent;
 use App\Models\Collection;
 use App\Models\Document;
 use App\Models\SiteRead;
@@ -108,6 +109,32 @@ it('reads the forced home and selected pages into the site collection', function
         ->where('siteRead.latest.readPagesCount', 2)
         ->where('siteRead.latest.failedPagesCount', 0)
         ->has('siteRead.latest.pages', 2));
+});
+
+it('offers a completed site Collection to existing Agents without linking it automatically', function () {
+    $user = User::factory()->withTeam()->create();
+    $team = $user->company();
+    $team->update(['website' => 'https://site.example.test/']);
+    $existingAgent = Agent::factory()->for($team)->create(['name' => 'Lia']);
+    fakeSiteReadFirecrawl(
+        ['https://site.example.test/'],
+        ['https://site.example.test/' => '# Página inicial\n\nConteúdo institucional disponível para o atendimento.'],
+    );
+    enableSiteReadFakes(['https://site.example.test/']);
+
+    $this->actingAs($user)->post(route('company.site-read.store'))->assertRedirect(route('company.edit'));
+
+    $siteCollection = Collection::query()->where('is_site_collection', true)->firstOrFail();
+    $siteRead = SiteRead::query()->firstOrFail();
+
+    expect($existingAgent->fresh()->collections()->whereKey($siteCollection->id)->exists())->toBeFalse();
+
+    $this->get(route('company.edit'))->assertInertia(fn (Assert $page) => $page
+        ->where('siteRead.latest.id', $siteRead->id)
+        ->has('siteRead.latest.linkableAgents', 1)
+        ->where('siteRead.latest.linkableAgents.0.id', $existingAgent->id)
+        ->where('siteRead.latest.linkableAgents.0.name', 'Lia'),
+    );
 });
 
 it('refuses Instagram WhatsApp and invalid schemes before any outbound request', function (string $website, string $expectedMessage) {

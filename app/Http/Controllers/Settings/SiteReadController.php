@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Settings;
 
 use App\Enums\SiteReadStatus;
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Settings\LinkSiteCollectionAgentsRequest;
 use App\Http\Requests\StartSiteReadRequest;
 use App\Jobs\ReadSite;
 use App\Models\SiteRead;
@@ -11,7 +12,9 @@ use App\Models\Team;
 use Carbon\CarbonInterface;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Gate;
 use Illuminate\Validation\ValidationException;
+use Inertia\Inertia;
 
 class SiteReadController extends Controller
 {
@@ -48,6 +51,37 @@ class SiteReadController extends Controller
         });
 
         ReadSite::dispatch($siteReadId);
+
+        return to_route('company.edit');
+    }
+
+    public function linkAgents(LinkSiteCollectionAgentsRequest $request, SiteRead $siteRead): RedirectResponse
+    {
+        $team = $request->user()->company();
+
+        abort_if($team === null || $siteRead->team_id !== $team->getKey(), 404);
+        abort_if($siteRead->status !== SiteReadStatus::Completed, 404);
+
+        $siteCollection = $team->siteCollection()->firstOrFail();
+        $agentIds = $request->validated('agent_ids');
+        $agents = $team->agents()->whereKey($agentIds)->get();
+
+        abort_if($agents->count() !== count($agentIds), 404);
+
+        DB::transaction(function () use ($agents, $siteCollection): void {
+            foreach ($agents as $agent) {
+                Gate::authorize('update', $agent);
+            }
+
+            foreach ($agents as $agent) {
+                $agent->collections()->syncWithoutDetaching([$siteCollection->getKey()]);
+            }
+        });
+
+        Inertia::flash('toast', [
+            'type' => 'success',
+            'message' => 'Coleção do site ligada aos Agentes escolhidos.',
+        ]);
 
         return to_route('company.edit');
     }

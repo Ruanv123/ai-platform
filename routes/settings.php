@@ -36,6 +36,8 @@ Route::middleware(['auth', EnsureUserHasTeam::class])->group(function () {
     Route::get('settings/company', [CompanyController::class, 'edit'])->name('company.edit');
     Route::patch('settings/company', [CompanyController::class, 'update'])->name('company.update');
     Route::post('settings/company/site-read', [SiteReadController::class, 'store'])->name('company.site-read.store');
+    Route::post('settings/company/site-read/{siteRead}/agents', [SiteReadController::class, 'linkAgents'])
+        ->name('company.site-read.agents');
     Route::get('settings/business-hours', [BusinessHoursController::class, 'edit'])->name('business-hours.edit');
     Route::patch('settings/business-hours', [BusinessHoursController::class, 'update'])->name('business-hours.update');
     Route::patch('settings/team/members/{user}', [TeamMemberController::class, 'update'])->name('team.members.update');
