@@ -9,7 +9,7 @@ use fivefilters\Readability\ParseException;
 use fivefilters\Readability\Readability;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Support\Facades\Http;
-use League\HtmlToMarkdown\HtmlConverter;
+use League\HTMLToMarkdown\HtmlConverter;
 
 class PageReader
 {
