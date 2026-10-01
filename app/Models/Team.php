@@ -65,6 +65,8 @@ use Illuminate\Support\Carbon;
     'phone',
     'public_email',
     'address',
+    'brand_voice',
+    'brand_voice_examples',
     'agent_pause_duration_minutes',
     'slug',
 ])]
@@ -275,6 +277,7 @@ class Team extends Model
     {
         return [
             'business_hours' => 'array',
+            'brand_voice_examples' => 'array',
             'agent_pause_duration_minutes' => 'integer',
         ];
     }

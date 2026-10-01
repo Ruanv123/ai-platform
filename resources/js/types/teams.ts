@@ -21,6 +21,8 @@ export type Team = {
     phone?: string | null;
     publicEmail?: string | null;
     address?: string | null;
+    brandVoice?: string | null;
+    brandVoiceExamples?: string[] | null;
     role?: TeamRole;
     roleLabel?: string;
     isCurrent?: boolean;
