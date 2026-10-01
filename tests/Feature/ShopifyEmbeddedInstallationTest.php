@@ -185,7 +185,16 @@ it('accepts a handoff URL only once while preserving its hashed context through 
     $this->assertAuthenticated();
     $this->assertSame(hash('sha256', $handoffToken), session('shopify_install.pending.handoff_hash'));
 
-    $this->post(route('onboarding.company.store'), shopifyInstallationCompanyDetails())
+    $companyDetails = shopifyInstallationCompanyDetails();
+
+    $this->post(route('onboarding.company.store'), [
+        'path' => 'manual',
+        'name' => $companyDetails['name'],
+    ])->assertRedirect(route('onboarding.company'));
+
+    unset($companyDetails['name']);
+
+    $this->post(route('onboarding.company.manual'), $companyDetails)
         ->assertRedirect(route('shopify.install.resume'));
 
     $this->get(route('shopify.install.resume'))

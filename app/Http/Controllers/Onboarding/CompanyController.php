@@ -4,50 +4,211 @@ namespace App\Http\Controllers\Onboarding;
 
 use App\Actions\Teams\CreateTeam;
 use App\Ecommerce\ShopifyInstallationFlow;
+use App\Enums\CompanyOnboardingStep;
+use App\Enums\SiteReadPageStatus;
+use App\Enums\SiteReadProposalStatus;
+use App\Enums\SiteReadStatus;
 use App\Enums\TeamSegment;
 use App\Enums\Weekday;
 use App\Http\Controllers\Controller;
-use App\Http\Requests\Teams\SaveCompanyRequest;
+use App\Http\Requests\Onboarding\CompleteManualCompanyOnboardingRequest;
+use App\Http\Requests\Onboarding\ConfirmSiteProposalOnboardingRequest;
+use App\Http\Requests\Onboarding\StartCompanyOnboardingRequest;
+use App\Jobs\ReadSite;
+use App\Models\SiteRead;
+use App\Models\SiteReadProposal;
+use App\Models\Team;
+use App\Models\User;
 use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
 use Inertia\Response;
 
 class CompanyController extends Controller
 {
-    /**
-     * Show the company onboarding form.
-     */
-    public function create(): Response
+    public function create(Request $request): Response|RedirectResponse
     {
+        $user = $request->user();
+        $team = $user?->company();
+        $siteRead = null;
+        $proposal = null;
+        $manualError = null;
+        $step = CompanyOnboardingStep::NameAndWebsite;
+
+        if ($team instanceof Team) {
+            if ($team->isOnboardingComplete()) {
+                return to_route('dashboard');
+            }
+
+            $step = $team->onboarding_step ?? CompanyOnboardingStep::NameAndWebsite;
+            $siteRead = $team->siteReads()->latest('started_at')->first();
+
+            if ($step === CompanyOnboardingStep::SiteRead) {
+                if ($siteRead === null || $siteRead->status === SiteReadStatus::Failed) {
+                    $manualError = $siteRead?->error_message;
+                    $step = CompanyOnboardingStep::ManualCompanyDetails;
+                    $team->update(['onboarding_step' => $step]);
+                } elseif ($siteRead->status === SiteReadStatus::Completed) {
+                    $proposal = $siteRead->proposal()
+                        ->where('status', SiteReadProposalStatus::Pending->value)
+                        ->first();
+
+                    if ($proposal instanceof SiteReadProposal) {
+                        $step = CompanyOnboardingStep::ProposalReview;
+                        $team->update(['onboarding_step' => $step]);
+                    } elseif (filled($siteRead->error_message)) {
+                        $manualError = $siteRead->error_message;
+                        $step = CompanyOnboardingStep::ManualCompanyDetails;
+                        $team->update(['onboarding_step' => $step]);
+                    }
+                }
+            }
+
+            if ($step === CompanyOnboardingStep::ProposalReview && $proposal === null) {
+                $proposal = $team->siteReadProposals()
+                    ->where('status', SiteReadProposalStatus::Pending->value)
+                    ->latest('id')
+                    ->first();
+
+                if (! $proposal instanceof SiteReadProposal) {
+                    $manualError = 'Não foi possível preparar a proposta da Leitura. Preencha os dados da Empresa manualmente.';
+                    $step = CompanyOnboardingStep::ManualCompanyDetails;
+                    $team->update(['onboarding_step' => $step]);
+                }
+            }
+
+            if ($step === CompanyOnboardingStep::ManualCompanyDetails && $manualError === null && $siteRead?->status === SiteReadStatus::Failed) {
+                $manualError = $siteRead->error_message;
+            }
+        }
+
         return Inertia::render('onboarding/company', [
+            'step' => $step->value,
+            'team' => $team instanceof Team ? [
+                'name' => $team->name,
+                'website' => $team->website,
+            ] : null,
             'segments' => TeamSegment::options(),
             'timezones' => timezone_identifiers_list(),
             'weekdays' => Weekday::options(),
+            'siteRead' => $this->siteReadData($siteRead),
+            'proposal' => $this->proposalData($proposal),
+            'manualError' => $manualError,
         ]);
     }
 
-    /**
-     * Create the company and make the authenticated user its owner.
-     */
-    public function store(
-        SaveCompanyRequest $request,
-        CreateTeam $createTeam,
-        ShopifyInstallationFlow $shopifyInstallationFlow,
-    ): RedirectResponse {
+    public function store(StartCompanyOnboardingRequest $request, CreateTeam $createTeam): RedirectResponse
+    {
         $user = $request->user();
-
-        abort_if($user?->company() !== null, 403, 'Você já pertence a uma Empresa.');
+        abort_unless($user instanceof User, 404);
 
         $validated = $request->validated();
-        $createTeam->handle($user, $validated['name'], $validated);
+        $hasWebsite = $validated['path'] === 'site';
+        $team = $createTeam->handle($user, $validated['name'], [
+            'website' => $hasWebsite ? $validated['website'] : null,
+            'timezone' => 'America/Sao_Paulo',
+            'onboarding_step' => $hasWebsite
+                ? CompanyOnboardingStep::SiteRead
+                : CompanyOnboardingStep::ManualCompanyDetails,
+        ]);
 
-        Inertia::flash('toast', ['type' => 'success', 'message' => 'Empresa criada com sucesso.']);
+        if ($hasWebsite) {
+            $siteRead = $team->siteReads()->create([
+                'requested_by_id' => $user->getKey(),
+                'website' => $validated['website'],
+                'status' => SiteReadStatus::InProgress,
+                'started_at' => now(),
+            ]);
 
-        $installationRedirect = $shopifyInstallationFlow->redirectAfterAuthentication($request);
-        if ($installationRedirect !== null) {
-            return $installationRedirect;
+            ReadSite::dispatch($siteRead->getKey());
         }
 
-        return to_route('dashboard');
+        return to_route('onboarding.company');
+    }
+
+    public function completeManual(
+        CompleteManualCompanyOnboardingRequest $request,
+        ShopifyInstallationFlow $shopifyInstallationFlow,
+    ): RedirectResponse {
+        $team = $request->user()?->company();
+        abort_unless($team instanceof Team, 404);
+
+        $team->update([
+            ...$request->validated(),
+            'onboarding_step' => CompanyOnboardingStep::Completed,
+            'onboarding_completed_at' => now(),
+        ]);
+
+        return $this->afterOnboarding($request, $shopifyInstallationFlow);
+    }
+
+    public function confirmProposal(
+        ConfirmSiteProposalOnboardingRequest $request,
+        ShopifyInstallationFlow $shopifyInstallationFlow,
+    ): RedirectResponse {
+        $team = $request->user()?->company();
+        abort_unless($team instanceof Team, 404);
+
+        DB::transaction(function () use ($request, $team): void {
+            $lockedTeam = Team::query()->lockForUpdate()->findOrFail($team->getKey());
+            $proposal = $lockedTeam->siteReadProposals()
+                ->where('status', SiteReadProposalStatus::Pending->value)
+                ->lockForUpdate()
+                ->latest('id')
+                ->firstOrFail();
+
+            $lockedTeam->update([
+                ...$request->validated(),
+                'onboarding_step' => CompanyOnboardingStep::Completed,
+                'onboarding_completed_at' => now(),
+            ]);
+            $proposal->update(['status' => SiteReadProposalStatus::Confirmed]);
+        });
+
+        return $this->afterOnboarding($request, $shopifyInstallationFlow);
+    }
+
+    private function siteReadData(?SiteRead $siteRead): ?array
+    {
+        if ($siteRead === null) {
+            return null;
+        }
+
+        return [
+            'status' => $siteRead->status->value,
+            'statusLabel' => $siteRead->status->label(),
+            'foundPagesCount' => $siteRead->found_pages_count,
+            'readPagesCount' => $siteRead->pages()->where('status', SiteReadPageStatus::Read->value)->count(),
+            'failedPagesCount' => $siteRead->pages()->where('status', SiteReadPageStatus::Failed->value)->count(),
+            'errorMessage' => $siteRead->error_message,
+        ];
+    }
+
+    private function proposalData(?SiteReadProposal $proposal): ?array
+    {
+        if ($proposal === null) {
+            return null;
+        }
+
+        $fields = [];
+
+        foreach ($proposal->proposed_fields ?? [] as $name => $field) {
+            if (! is_array($field) || ! is_string($field['source_url'] ?? null)) {
+                continue;
+            }
+
+            $fields[$name] = [
+                'value' => $field['value'] ?? null,
+                'sourceUrl' => $field['source_url'],
+            ];
+        }
+
+        return ['fields' => $fields];
+    }
+
+    private function afterOnboarding(Request $request, ShopifyInstallationFlow $shopifyInstallationFlow): RedirectResponse
+    {
+        return $shopifyInstallationFlow->redirectAfterAuthentication($request) ?? to_route('dashboard');
     }
 }

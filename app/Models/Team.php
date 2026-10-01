@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Concerns\GeneratesUniqueTeamSlugs;
+use App\Enums\CompanyOnboardingStep;
 use App\Enums\TeamRole;
 use App\Models\Collection as TeamCollection;
 use Database\Factories\TeamFactory;
@@ -68,6 +69,8 @@ use Illuminate\Support\Carbon;
     'address',
     'brand_voice',
     'brand_voice_examples',
+    'onboarding_step',
+    'onboarding_completed_at',
     'agent_pause_duration_minutes',
     'slug',
 ])]
@@ -184,6 +187,12 @@ class Team extends Model
         return $this->hasMany(SiteReadProposal::class);
     }
 
+    public function isOnboardingComplete(): bool
+    {
+        return $this->onboarding_step === null
+            || $this->onboarding_step === CompanyOnboardingStep::Completed;
+    }
+
     /**
      * Get the Agents for this Empresa.
      *
@@ -295,6 +304,8 @@ class Team extends Model
             'business_hours' => 'array',
             'brand_voice_examples' => 'array',
             'agent_pause_duration_minutes' => 'integer',
+            'onboarding_step' => CompanyOnboardingStep::class,
+            'onboarding_completed_at' => 'datetime',
         ];
     }
 
