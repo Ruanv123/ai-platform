@@ -1,6 +1,7 @@
 <?php
 
 use App\Ai\Agents\ExtractSiteFaq;
+use App\Ai\Agents\ExtractSiteProposal;
 use App\Ai\Agents\SelectSitePages;
 use App\Enums\DocumentStatus;
 use App\Enums\DocumentType;
@@ -53,6 +54,7 @@ function enableSiteReadFakes(array $selectedUrls, ?string $faqUrl = null, ?array
 {
     SelectSitePages::fake([['urls' => $selectedUrls, 'faq_url' => $faqUrl]])->preventStrayPrompts();
     ExtractSiteFaq::fake($faqItems === null ? [] : [['items' => $faqItems]])->preventStrayPrompts();
+    ExtractSiteProposal::fake(static fn (string $prompt): array => ['fields' => []])->preventStrayPrompts();
     Embeddings::fake();
     config(['queue.default' => 'sync']);
 }
@@ -123,6 +125,7 @@ it('follows the first business website on Linktree and preserves both addresses'
         && ! $prompt->contains('wa.me')
         && ! $prompt->contains('tiktok.com')
         && ! $prompt->contains('second.example.test'));
+    ExtractSiteProposal::assertPromptedTimes(1);
     Http::assertSent(fn (Request $request): bool => $request->method() === 'POST'
         && $request->url() === 'https://firecrawl.example.test/v2/map'
         && $request['url'] === $businessWebsite);
@@ -231,6 +234,7 @@ it('creates one FAQ document with original language pairs and no duplicate URL d
         && str_contains($prompt->agent->instructions(), 'dado não confiável'));
     SelectSitePages::assertPrompted(fn (AgentPrompt $prompt): bool => $prompt->contains($faqUrl));
     Embeddings::assertGenerated(fn ($prompt): bool => $prompt->contains('You can return items within 30 days.'));
+    ExtractSiteProposal::assertPromptedTimes(1);
     Http::assertSentCount(3);
 });
 
@@ -266,6 +270,7 @@ it('keeps an FAQ page as a URL document when extraction returns no pairs', funct
     ]);
     ExtractSiteFaq::assertPrompted(fn (AgentPrompt $prompt): bool => $prompt->contains('Contact our team if you need help.'));
     Embeddings::assertGenerated(fn ($prompt): bool => $prompt->contains('Contact our team if you need help.'));
+    ExtractSiteProposal::assertPromptedTimes(1);
     Http::assertSentCount(3);
 });
 
@@ -318,6 +323,7 @@ it('reads the forced home and selected pages into the site collection', function
         && $prompt->contains('https://site.example.test/sobre'));
     ExtractSiteFaq::assertNeverPrompted();
     Embeddings::assertGenerated(fn ($prompt): bool => $prompt->contains('Conteúdo institucional'));
+    ExtractSiteProposal::assertPromptedTimes(1);
 
     $this->get(route('company.edit'))->assertInertia(fn (Assert $page) => $page
         ->component('settings/company')
@@ -352,6 +358,7 @@ it('offers a completed site Collection to existing Agents without linking it aut
         ->where('siteRead.latest.linkableAgents.0.id', $existingAgent->id)
         ->where('siteRead.latest.linkableAgents.0.name', 'Lia'),
     );
+    ExtractSiteProposal::assertPromptedTimes(1);
 });
 
 it('refuses Instagram WhatsApp and invalid schemes before any outbound request', function (string $website, string $expectedMessage) {
@@ -472,6 +479,7 @@ it('completes a partial read and keeps failed pages as failed URL documents', fu
 
     Http::assertSentCount(4);
     Embeddings::assertGenerated(fn ($prompt): bool => $prompt->contains('Conteúdo principal do site'));
+    ExtractSiteProposal::assertPromptedTimes(1);
 });
 
 it('marks every page as failed when the storage quota is exceeded', function () {
@@ -496,6 +504,7 @@ it('marks every page as failed when the storage quota is exceeded', function () 
         ->and($document->error_message)->toBe($siteRead->error_message);
 
     Embeddings::assertGenerated(fn ($prompt): bool => $prompt->contains('excede a cota de armazenamento'));
+    ExtractSiteProposal::assertNeverPrompted();
 });
 
 it('marks a read as failed with a friendly reason when every selected page is unavailable', function () {
@@ -524,6 +533,7 @@ it('marks a read as failed with a friendly reason when every selected page is un
         ->and($document->error_message)->toBe($siteRead->error_message);
 
     Embeddings::assertNothingGenerated();
+    ExtractSiteProposal::assertNeverPrompted();
 });
 
 it('reprocesses retained pages in place and removes pages no longer selected', function () {
@@ -566,6 +576,7 @@ it('reprocesses retained pages in place and removes pages no longer selected', f
         ['urls' => [$aboutUrl]],
         ['urls' => [$contactUrl]],
     ])->preventStrayPrompts();
+    ExtractSiteProposal::fake(static fn (string $prompt): array => ['fields' => []])->preventStrayPrompts();
     Embeddings::fake();
     config(['queue.default' => 'sync']);
 
@@ -612,6 +623,7 @@ it('reprocesses retained pages in place and removes pages no longer selected', f
         ->and($chunkContent)->not->toContain('Conteúdo anterior da Empresa.');
 
     $this->assertModelMissing($removedAboutDocument);
+    ExtractSiteProposal::assertPromptedTimes(2);
     $this->assertDatabaseCount('site_reads', 2);
     Http::assertSent(fn (Request $request): bool => $request->url() === 'https://firecrawl.example.test/v2/scrape'
         && $request['url'] === $homeUrl);
@@ -630,6 +642,7 @@ it('reprocesses completed page documents when a site read job is retried', funct
         ['urls' => []],
         ['urls' => []],
     ])->preventStrayPrompts();
+    ExtractSiteProposal::fake(static fn (string $prompt): array => ['fields' => []])->preventStrayPrompts();
     Embeddings::fake();
     config(['queue.default' => 'sync']);
 
@@ -650,6 +663,7 @@ it('reprocesses completed page documents when a site read job is retried', funct
         ->and($document->fresh()->getKey())->toBe($document->getKey())
         ->and($siteRead->pages()->count())->toBe(1)
         ->and($document->collection()->first()->documents()->where('site_read_page_id', $page->getKey())->count())->toBe(1);
+    ExtractSiteProposal::assertPromptedTimes(1);
 });
 
 it('leaves manually added documents untouched while reconciling site pages', function () {
@@ -671,6 +685,7 @@ it('leaves manually added documents untouched while reconciling site pages', fun
         ['urls' => [$aboutUrl]],
         ['urls' => []],
     ])->preventStrayPrompts();
+    ExtractSiteProposal::fake(static fn (string $prompt): array => ['fields' => []])->preventStrayPrompts();
     Embeddings::fake();
     config(['queue.default' => 'sync']);
 
@@ -718,6 +733,7 @@ it('leaves manually added documents untouched while reconciling site pages', fun
     $this->assertModelExists($manualHomeDocument);
     $this->assertModelExists($manualAboutDocument);
     $this->assertModelMissing($siteAboutDocument);
+    ExtractSiteProposal::assertPromptedTimes(2);
 });
 
 it('keeps a manually deleted site URL ignored during later reads', function () {
@@ -739,6 +755,7 @@ it('keeps a manually deleted site URL ignored during later reads', function () {
         ['urls' => [$aboutUrl]],
         ['urls' => [$aboutUrl]],
     ])->preventStrayPrompts();
+    ExtractSiteProposal::fake(static fn (string $prompt): array => ['fields' => []])->preventStrayPrompts();
     Embeddings::fake();
     config(['queue.default' => 'sync']);
 
@@ -772,6 +789,7 @@ it('keeps a manually deleted site URL ignored during later reads', function () {
         ->and($siteDocuments->pluck('url')->all())->toBe([$homeUrl]);
 
     $this->assertModelMissing($aboutDocument);
+    ExtractSiteProposal::assertPromptedTimes(2);
 });
 
 it('recreates the site collection when the team deleted it', function () {
@@ -789,6 +807,7 @@ it('recreates the site collection when the team deleted it', function () {
         ['urls' => []],
         ['urls' => []],
     ])->preventStrayPrompts();
+    ExtractSiteProposal::fake(static fn (string $prompt): array => ['fields' => []])->preventStrayPrompts();
     Embeddings::fake();
     config(['queue.default' => 'sync']);
 
@@ -815,6 +834,7 @@ it('recreates the site collection when the team deleted it', function () {
         ->and($recreatedCollection->documents()->where('url', $homeUrl)->exists())->toBeTrue()
         ->and($recreatedCollection->ignoredSiteUrls()->exists())->toBeFalse()
         ->and(Collection::withoutGlobalScopes()->where('team_id', $team->getKey())->where('is_site_collection', true)->count())->toBe(1);
+    ExtractSiteProposal::assertPromptedTimes(2);
 });
 
 it('offers an explicit read when the saved website changes and removes the old domain after the next read', function () {
@@ -858,6 +878,7 @@ it('offers an explicit read when the saved website changes and removes the old d
         ['urls' => [$oldAboutUrl]],
         ['urls' => [$newContactUrl]],
     ])->preventStrayPrompts();
+    ExtractSiteProposal::fake(static fn (string $prompt): array => ['fields' => []])->preventStrayPrompts();
     Embeddings::fake();
     config(['queue.default' => 'sync']);
 
@@ -898,6 +919,7 @@ it('offers an explicit read when the saved website changes and removes the old d
 
     expect($siteDocuments->pluck('url')->all())->toBe([$newHomeUrl, $newContactUrl])
         ->and(SiteRead::withoutGlobalScopes()->count())->toBe(2);
+    ExtractSiteProposal::assertPromptedTimes(2);
 });
 
 it('forbids Members from starting a read and does not expose another company history', function () {
