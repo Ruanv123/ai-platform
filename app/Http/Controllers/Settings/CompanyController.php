@@ -75,6 +75,7 @@ class CompanyController extends Controller
                 'latest' => $latestSiteRead === null ? null : [
                     'id' => $latestSiteRead->getKey(),
                     'website' => $latestSiteRead->website,
+                    'resolvedWebsite' => $latestSiteRead->resolved_website,
                     'status' => $latestSiteRead->status->value,
                     'statusLabel' => $latestSiteRead->status->label(),
                     'startedAt' => $latestSiteRead->started_at->timezone($team->timezone ?: config('app.timezone'))->format('d/m/Y H:i'),

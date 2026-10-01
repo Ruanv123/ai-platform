@@ -55,6 +55,129 @@ function enableSiteReadFakes(array $selectedUrls, ?string $faqUrl = null, ?array
     config(['queue.default' => 'sync']);
 }
 
+it('follows the first business website on Linktree and preserves both addresses', function () {
+    $user = User::factory()->withTeam()->create();
+    $team = $user->company();
+    $linktreeUrl = 'https://linktr.ee/loja-aurora';
+    $businessWebsite = 'https://business.example.test/';
+    $aboutUrl = 'https://business.example.test/sobre';
+    $team->update(['website' => $linktreeUrl]);
+    $markdownByUrl = [
+        $linktreeUrl => <<<'MARKDOWN'
+            [Instagram](https://instagram.com/loja-aurora)
+            [Facebook](https://www.facebook.com/loja-aurora)
+            [WhatsApp](https://wa.me/5511999999999)
+            [TikTok](https://www.tiktok.com/@loja-aurora)
+            [Site](https://business.example.test/)
+            [Outro site](https://second.example.test/)
+            MARKDOWN,
+        $businessWebsite => '# Loja Aurora\n\nInformações sobre a empresa e seus serviços.',
+        $aboutUrl => '# Sobre a Loja Aurora\n\nNossa equipe atende clientes em todo o Brasil.',
+    ];
+
+    config([
+        'services.firecrawl.key' => 'test-firecrawl-key',
+        'services.firecrawl.base_url' => 'https://firecrawl.example.test/v2',
+    ]);
+    Http::preventStrayRequests();
+    Http::fake([
+        'https://firecrawl.example.test/v2/map' => Http::response([
+            'success' => true,
+            'links' => [
+                ['url' => $businessWebsite],
+                ['url' => $aboutUrl],
+            ],
+        ]),
+        'https://firecrawl.example.test/v2/scrape' => function (Request $request) use ($markdownByUrl) {
+            $markdown = $markdownByUrl[$request['url']] ?? null;
+
+            return is_string($markdown)
+                ? Http::response(['success' => true, 'data' => ['markdown' => $markdown]])
+                : Http::response(['success' => false], 503);
+        },
+    ]);
+    enableSiteReadFakes([$aboutUrl]);
+
+    $this->actingAs($user)
+        ->post(route('company.site-read.store'))
+        ->assertRedirect(route('company.edit'));
+
+    $siteRead = SiteRead::withoutGlobalScopes()->firstOrFail();
+    $pages = $siteRead->pages()->orderBy('url')->get();
+
+    expect($siteRead->status)->toBe(SiteReadStatus::Completed)
+        ->and($siteRead->website)->toBe($linktreeUrl)
+        ->and($siteRead->resolved_website)->toBe($businessWebsite)
+        ->and($pages->pluck('url')->all())->toBe([$businessWebsite, $aboutUrl])
+        ->and($pages->every(fn (SiteReadPage $page): bool => $page->status === SiteReadPageStatus::Read))->toBeTrue();
+
+    $this->get(route('company.edit'))->assertInertia(fn (Assert $page) => $page
+        ->where('siteRead.latest.website', $linktreeUrl)
+        ->where('siteRead.latest.resolvedWebsite', $businessWebsite));
+
+    SelectSitePages::assertPrompted(fn (AgentPrompt $prompt): bool => $prompt->contains($aboutUrl)
+        && ! $prompt->contains('instagram.com')
+        && ! $prompt->contains('facebook.com')
+        && ! $prompt->contains('wa.me')
+        && ! $prompt->contains('tiktok.com')
+        && ! $prompt->contains('second.example.test'));
+    Http::assertSent(fn (Request $request): bool => $request->method() === 'POST'
+        && $request->url() === 'https://firecrawl.example.test/v2/map'
+        && $request['url'] === $businessWebsite);
+    Http::assertSentCount(4);
+});
+
+it('fails a Linktree read when it has no own website link', function () {
+    $user = User::factory()->withTeam()->create();
+    $team = $user->company();
+    $linktreeUrl = 'https://linktr.ee/loja-aurora';
+    $team->update(['website' => $linktreeUrl]);
+    config([
+        'services.firecrawl.key' => 'test-firecrawl-key',
+        'services.firecrawl.base_url' => 'https://firecrawl.example.test/v2',
+        'queue.default' => 'sync',
+    ]);
+    Http::preventStrayRequests();
+    Http::fake([
+        'https://firecrawl.example.test/v2/scrape' => Http::response([
+            'success' => true,
+            'data' => [
+                'markdown' => <<<'MARKDOWN'
+                    [Instagram](https://instagram.com/loja-aurora)
+                    [Facebook](https://www.facebook.com/loja-aurora)
+                    [WhatsApp](https://wa.me/5511999999999)
+                    [TikTok](https://www.tiktok.com/@loja-aurora)
+                    MARKDOWN,
+            ],
+        ]),
+    ]);
+    SelectSitePages::fake()->preventStrayPrompts();
+    ExtractSiteFaq::fake()->preventStrayPrompts();
+    Embeddings::fake();
+
+    $this->actingAs($user)
+        ->post(route('company.site-read.store'))
+        ->assertRedirect(route('company.edit'));
+
+    $siteRead = SiteRead::withoutGlobalScopes()->firstOrFail();
+
+    expect($siteRead->status)->toBe(SiteReadStatus::Failed)
+        ->and($siteRead->website)->toBe($linktreeUrl)
+        ->and($siteRead->resolved_website)->toBeNull()
+        ->and($siteRead->error_message)->toBe('O Linktree não contém um link para um site próprio. Informe o site direto ou preencha os dados manualmente.')
+        ->and($siteRead->pages()->count())->toBe(0);
+
+    $this->get(route('company.edit'))->assertInertia(fn (Assert $page) => $page
+        ->where('siteRead.latest.website', $linktreeUrl)
+        ->where('siteRead.latest.resolvedWebsite', null)
+        ->where('siteRead.latest.errorMessage', 'O Linktree não contém um link para um site próprio. Informe o site direto ou preencha os dados manualmente.'));
+
+    SelectSitePages::assertNeverPrompted();
+    ExtractSiteFaq::assertNeverPrompted();
+    Embeddings::assertNothingGenerated();
+    Http::assertSentCount(1);
+});
+
 it('creates one FAQ document with original language pairs and no duplicate URL document', function () {
     $user = User::factory()->withTeam()->create();
     $team = $user->company();
