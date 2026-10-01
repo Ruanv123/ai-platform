@@ -26,6 +26,38 @@ class PageReader
         return $this->readWithReadability($url);
     }
 
+    public function resolveLinktreeUrl(string $url): ?string
+    {
+        if (! $this->isLinktreeUrl($url)) {
+            return $url;
+        }
+
+        foreach ($this->markdownLinkUrls($this->readMarkdown($url), $url) as $candidateUrl) {
+            if (! $this->isLinktreeUrl($candidateUrl) && ! $this->isSocialOrMessagingUrl($candidateUrl)) {
+                return $candidateUrl;
+            }
+        }
+
+        return null;
+    }
+
+    private function markdownLinkUrls(string $markdown, string $baseUrl): array
+    {
+        preg_match_all('/(?<!!)\[[^\]]*\]\((?<url><[^>]+>|[^)\s]+)(?:\s+[^)]*)?\)/u', $markdown, $matches);
+        $urls = [];
+
+        foreach ($matches['url'] ?? [] as $linkUrl) {
+            $linkUrl = html_entity_decode(trim($linkUrl, '<>'), ENT_QUOTES | ENT_HTML5, 'UTF-8');
+            $resolvedUrl = $this->resolveUrl($baseUrl, $linkUrl);
+
+            if ($resolvedUrl !== null) {
+                $urls[] = $resolvedUrl;
+            }
+        }
+
+        return array_values(array_unique($urls));
+    }
+
     public function mapUrls(string $url): array
     {
         if ($this->hasFirecrawlKey()) {
@@ -173,6 +205,14 @@ class PageReader
 
     private function mapHtmlLinks(string $html, string $baseUrl): array
     {
+        return array_values(array_filter(
+            $this->anchorUrls($html, $baseUrl),
+            fn (string $url): bool => $this->isSameSiteWebUrl($baseUrl, $url),
+        ));
+    }
+
+    private function anchorUrls(string $html, string $baseUrl): array
+    {
         $document = new DOMDocument;
         $previousErrorState = libxml_use_internal_errors(true);
 
@@ -191,13 +231,60 @@ class PageReader
             foreach ($links as $link) {
                 $resolvedUrl = $this->resolveUrl($baseUrl, $link->getAttribute('href'));
 
-                if ($resolvedUrl !== null && $this->isSameSiteWebUrl($baseUrl, $resolvedUrl)) {
+                if ($resolvedUrl !== null) {
                     $urls[] = $resolvedUrl;
                 }
             }
         }
 
         return array_values(array_unique($urls));
+    }
+
+    private function isLinktreeUrl(string $url): bool
+    {
+        return $this->hasHost($url, ['linktr.ee']);
+    }
+
+    private function isSocialOrMessagingUrl(string $url): bool
+    {
+        return $this->hasHost($url, [
+            'instagram.com',
+            'facebook.com',
+            'fb.com',
+            'fb.me',
+            'tiktok.com',
+            'x.com',
+            'twitter.com',
+            'youtube.com',
+            'youtu.be',
+            'pinterest.com',
+            'pin.it',
+            'linkedin.com',
+            'threads.net',
+            'snapchat.com',
+            'twitch.tv',
+            'reddit.com',
+            'discord.com',
+            'discord.gg',
+            'telegram.me',
+            't.me',
+            'whatsapp.com',
+            'wa.me',
+        ]);
+    }
+
+    private function hasHost(string $url, array $domains): bool
+    {
+        $host = strtolower(rtrim((string) parse_url($url, PHP_URL_HOST), '.'));
+        $host = preg_replace('/^www\./', '', $host) ?? $host;
+
+        foreach ($domains as $domain) {
+            if ($host === $domain || str_ends_with($host, '.'.$domain)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private function resolveUrl(string $baseUrl, string $href): ?string

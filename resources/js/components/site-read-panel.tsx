@@ -21,6 +21,7 @@ type SiteReadPage = {
 export type LatestSiteRead = {
     id: number;
     website: string;
+    resolvedWebsite: string | null;
     status: 'in_progress' | 'completed' | 'failed';
     statusLabel: string;
     startedAt: string;
@@ -67,6 +68,16 @@ export default function SiteReadPanel({
                     <div className="flex flex-wrap items-center justify-between gap-3">
                         <div>
                             <p className="font-medium">{latest.statusLabel}</p>
+                            <p className="text-muted-foreground break-all">
+                                <span className="font-medium">
+                                    Endereço informado:{' '}
+                                </span>
+                                {latest.website}
+                            </p>
+                            <p className="text-muted-foreground break-all">
+                                <span className="font-medium">Site lido: </span>
+                                {latest.resolvedWebsite ?? latest.website}
+                            </p>
                             <p className="text-muted-foreground">
                                 Iniciada em {latest.startedAt}
                                 {latest.completedAt

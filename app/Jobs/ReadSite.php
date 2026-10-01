@@ -32,7 +32,7 @@ class ReadSite implements ShouldQueue
         $this->onQueue('ingestion');
     }
 
-    public function handle(PageReader $pageReader): void
+    public function handle(PageReader $pageReader, SiteReadProgress $progress): void
     {
         $siteRead = SiteRead::withoutGlobalScopes()->find($this->siteReadId);
 
@@ -40,9 +40,24 @@ class ReadSite implements ShouldQueue
             return;
         }
 
+        $website = $pageReader->resolveLinktreeUrl($siteRead->website);
+
+        if ($website === null) {
+            $progress->failRead(
+                $siteRead->getKey(),
+                'O Linktree não contém um link para um site próprio. Informe o site direto ou preencha os dados manualmente.',
+            );
+
+            return;
+        }
+
+        if ($website !== $siteRead->website) {
+            $siteRead->update(['resolved_website' => $website]);
+        }
+
         $maximumPages = max(1, (int) config('knowledge.site_read.maximum_pages', 25));
-        $homeUrl = $this->homeUrl($siteRead->website);
-        $mappedUrls = $pageReader->mapUrls($siteRead->website);
+        $homeUrl = $this->homeUrl($website);
+        $mappedUrls = $pageReader->mapUrls($website);
         $candidateUrls = array_values(array_unique([$homeUrl, ...$mappedUrls]));
         $additionalUrls = array_values(array_filter($candidateUrls, fn (string $url): bool => $url !== $homeUrl));
         $prompt = sprintf(
