@@ -36,6 +36,7 @@ export type LatestSiteRead = {
 
 type Props = {
     website: string | null;
+    hasNewWebsite: boolean;
     canStart: boolean;
     canUpdate: boolean;
     availableAgainAt: string | null;
@@ -50,6 +51,7 @@ const pageStatusLabels: Record<SiteReadPage['status'], string> = {
 
 export default function SiteReadPanel({
     website,
+    hasNewWebsite,
     canStart,
     canUpdate,
     availableAgainAt,
@@ -146,6 +148,11 @@ export default function SiteReadPanel({
 
             {canUpdate ? (
                 <div className="space-y-2">
+                    {hasNewWebsite ? (
+                        <p className="text-muted-foreground text-sm">
+                            O site salvo mudou desde a última Leitura.
+                        </p>
+                    ) : null}
                     <Form {...store.form()}>
                         {({ errors, processing }) => (
                             <div className="space-y-2">
@@ -157,7 +164,9 @@ export default function SiteReadPanel({
                                     {latest?.status === 'in_progress' ||
                                     processing
                                         ? 'Leitura em andamento'
-                                        : 'Ler o site'}
+                                        : hasNewWebsite
+                                          ? 'Ler o novo site'
+                                          : 'Ler o site'}
                                 </Button>
                                 <InputError
                                     message={errors.site_read ?? errors.website}

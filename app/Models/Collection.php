@@ -51,6 +51,11 @@ class Collection extends Model
         return $this->hasMany(Document::class);
     }
 
+    public function ignoredSiteUrls(): HasMany
+    {
+        return $this->hasMany(SiteCollectionIgnoredUrl::class);
+    }
+
     /**
      * Get the Agents that can consult this collection.
      *

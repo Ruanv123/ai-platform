@@ -67,6 +67,9 @@ class CompanyController extends Controller
             'canUpdate' => $canUpdate,
             'siteRead' => [
                 'website' => $team->website,
+                'hasNewWebsite' => filled($team->website)
+                    && $latestSiteRead !== null
+                    && $team->website !== $latestSiteRead->website,
                 'canStart' => $canUpdate
                     && filled($team->website)
                     && ! $siteReadInProgress
