@@ -117,7 +117,10 @@ it('follows the first business website on Linktree and preserves both addresses'
             $markdown = $markdownByUrl[$request['url']] ?? null;
 
             return is_string($markdown)
-                ? Http::response(['success' => true, 'data' => ['markdown' => $markdown]])
+                ? Http::response(['success' => true, 'data' => [
+                    'markdown' => $markdown,
+                    'metadata' => ['contentType' => 'text/html; charset=utf-8'],
+                ]])
                 : Http::response(['success' => false], 503);
         },
     ]);
