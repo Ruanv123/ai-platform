@@ -58,6 +58,17 @@ class Agent extends Model
     /** @use HasFactory<AgentFactory> */
     use BelongsToTeam, HasFactory, HasUuids;
 
+    protected static function booted(): void
+    {
+        static::created(function (Agent $agent): void {
+            $siteCollection = $agent->team()->first()?->siteCollection()->first();
+
+            if ($siteCollection !== null) {
+                $agent->collections()->attach($siteCollection);
+            }
+        });
+    }
+
     public function shouldSearchProducts(bool $shopConnected): bool
     {
         return $shopConnected && ($this->search_products ?? $this->objective === AgentObjective::Sales);

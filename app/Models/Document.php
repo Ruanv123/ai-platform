@@ -39,6 +39,7 @@ use Illuminate\Support\Carbon;
 #[Fillable([
     'team_id',
     'collection_id',
+    'site_read_page_id',
     'type',
     'status',
     'title',
@@ -76,6 +77,11 @@ class Document extends Model
     public function collection(): BelongsTo
     {
         return $this->belongsTo(Collection::class);
+    }
+
+    public function siteReadPage(): BelongsTo
+    {
+        return $this->belongsTo(SiteReadPage::class);
     }
 
     /**

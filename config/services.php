@@ -70,4 +70,9 @@ return [
         'api_version' => env('SHOPIFY_API_VERSION', '2026-07'),
     ],
 
+    'firecrawl' => [
+        'key' => env('FIRECRAWL_API_KEY'),
+        'base_url' => env('FIRECRAWL_API_URL', 'https://api.firecrawl.dev/v2'),
+    ],
+
 ];
