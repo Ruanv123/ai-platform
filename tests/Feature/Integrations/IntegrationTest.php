@@ -5,6 +5,10 @@ use App\Models\Integration;
 use App\Models\User;
 use Inertia\Testing\AssertableInertia as Assert;
 
+beforeEach(function () {
+    $this->withoutVite();
+});
+
 it('redirects guests to login when they visit integrations', function () {
     $response = $this->get(route('integrations.index'));
 
@@ -38,7 +42,7 @@ it('renders the complete CRM catalog for a company member', function () {
         ->where('crmCatalog.0.value', 'rd_station')
         ->where('crmCatalog.0.name', 'RD Station CRM')
         ->where('crmCatalog.0.logo', 'RD')
-        ->where('crmCatalog.0.capabilities.0', 'Criar e atualizar contatos')
+        ->where('crmCatalog.0.capabilities.0', 'Carregar metadados do CRM')
         ->where('crmCatalog.1.value', 'hubspot')
         ->where('crmCatalog.1.name', 'HubSpot')
         ->where('crmCatalog.2.value', 'pipedrive')
@@ -50,7 +54,9 @@ it('renders the complete CRM catalog for a company member', function () {
         ->where('crmCatalog.5.value', 'ploomes')
         ->where('crmCatalog.5.name', 'Ploomes')
         ->has('crmCatalog.0.description')
-        ->has('crmCatalog.0.capabilities', 3)
+        ->has('crmCatalog.0.capabilities', 1)
+        ->where('crmCatalog.1.description', 'Em breve.')
+        ->has('crmCatalog.1.capabilities', 0)
         ->where('ecommerceCatalog.0.value', 'shopify')
         ->where('ecommerceCatalog.0.name', 'Shopify')
         ->where('ecommerceCatalog.1.value', 'nuvemshop')

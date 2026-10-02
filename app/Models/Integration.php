@@ -26,12 +26,19 @@ use Illuminate\Support\Carbon;
  * @property Carbon|null $last_tested_at
  * @property-read Team $team
  */
-#[Fillable(['team_id', 'name', 'type', 'provider', 'credentials', 'status', 'status_message', 'last_tested_at'])]
+#[Fillable(['team_id', 'name', 'type', 'provider', 'credentials', 'status', 'status_message', 'last_tested_at', 'crm_metadata', 'crm_metadata_loaded_at', 'crm_settings', 'crm_singleton_key'])]
 #[Hidden(['credentials'])]
 class Integration extends Model
 {
     /** @use HasFactory<IntegrationFactory> */
     use BelongsToTeam, HasFactory, HasUuids, SoftDeletes;
+
+    protected static function booted(): void
+    {
+        static::saving(function (Integration $integration): void {
+            $integration->crm_singleton_key = $integration->type === 'crm' ? 'crm' : null;
+        });
+    }
 
     public function credential(string $key, mixed $default = null): mixed
     {
@@ -56,11 +63,31 @@ class Integration extends Model
         return $this->hasOne(Shop::class);
     }
 
+    public function crmContactLinks(): HasMany
+    {
+        return $this->hasMany(CrmContactLink::class);
+    }
+
+    /** @return HasMany<CrmOperation, $this> */
+    public function crmOperations(): HasMany
+    {
+        return $this->hasMany(CrmOperation::class);
+    }
+
+    /** @return HasMany<CrmLinkedDeal, $this> */
+    public function crmLinkedDeals(): HasMany
+    {
+        return $this->hasMany(CrmLinkedDeal::class);
+    }
+
     protected function casts(): array
     {
         return [
             'credentials' => 'encrypted:array',
             'last_tested_at' => 'immutable_datetime',
+            'crm_metadata' => 'array',
+            'crm_metadata_loaded_at' => 'immutable_datetime',
+            'crm_settings' => 'array',
             'deleted_at' => 'immutable_datetime',
         ];
     }

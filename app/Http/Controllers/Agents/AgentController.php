@@ -11,6 +11,7 @@ use App\Http\Requests\Agents\SaveAgentRequest;
 use App\Models\Agent;
 use App\Models\Channel;
 use App\Models\Collection;
+use App\Models\Integration;
 use App\Models\SchedulableCalendar;
 use App\Models\Team;
 use Illuminate\Http\RedirectResponse;
@@ -87,6 +88,7 @@ class AgentController extends Controller
                 ])
                 ->values(),
             'agendaConnected' => $team->integrations()->where('type', 'agenda')->where('status', 'connected')->exists(),
+            'crmConnected' => $team->integrations()->where('type', 'crm')->where('status', 'connected')->exists(),
             'permissions' => $user->toTeamPermissions($team),
             'objectives' => AgentObjective::options(),
             'tones' => AgentTone::options(),
@@ -174,6 +176,11 @@ class AgentController extends Controller
                     'search_products' => $lockedAgent->search_products,
                     'send_purchase_link' => $lockedAgent->send_purchase_link,
                 ],
+                'crm_tools' => [
+                    'ensure_deal_enabled' => $lockedAgent->crm_ensure_deal_enabled ?? in_array($lockedAgent->objective, [AgentObjective::Sales, AgentObjective::Qualification], true),
+                    'pipeline_id' => $lockedAgent->crm_pipeline_id,
+                    'initial_stage_id' => $lockedAgent->crm_initial_stage_id,
+                ],
                 'published_at' => now(),
             ]);
 
@@ -236,6 +243,16 @@ class AgentController extends Controller
         string $initialPanel = 'config',
     ): array {
         $shopConnected = $team->shops()->exists();
+        $crmIntegration = $team->integrations()->where('type', 'crm')->where('status', 'connected')->first();
+        $crmConnected = $crmIntegration !== null;
+        $crmPipelines = $this->crmPipelineOptions($crmIntegration);
+        $firstPipeline = $crmPipelines[0] ?? null;
+        $crmPipelineId = $agent->crm_pipeline_id ?? ($firstPipeline['id'] ?? '');
+        $selectedPipeline = collect($crmPipelines)->firstWhere('id', $crmPipelineId);
+        $crmInitialStageId = $agent->crm_initial_stage_id;
+        if (! collect($selectedPipeline['stages'] ?? [])->contains('id', $crmInitialStageId)) {
+            $crmInitialStageId = $selectedPipeline['stages'][0]['id'] ?? '';
+        }
         $publishedVersion = $agent->publishedVersion();
 
         return [
@@ -254,6 +271,12 @@ class AgentController extends Controller
                 'rules' => $agent->rules,
                 'collectionIds' => $agent->collections->modelKeys(),
                 'schedulableCalendarIds' => $agent->schedulableCalendars->modelKeys(),
+                'crmLookupEnabled' => $agent->crm_lookup_enabled ?? ($crmConnected && in_array($agent->objective, [AgentObjective::Sales, AgentObjective::Qualification], true)),
+                'crmLookupConfigured' => $agent->crm_lookup_enabled !== null,
+                'crmEnsureDealEnabled' => $agent->crm_ensure_deal_enabled ?? ($crmConnected && in_array($agent->objective, [AgentObjective::Sales, AgentObjective::Qualification], true)),
+                'crmEnsureDealConfigured' => $agent->crm_ensure_deal_enabled !== null,
+                'crmPipelineId' => $crmPipelineId,
+                'crmInitialStageId' => $crmInitialStageId,
             ],
             'initialPanel' => $initialPanel,
             'collections' => $team->collections()
@@ -275,6 +298,8 @@ class AgentController extends Controller
                 ])
                 ->values(),
             'agendaConnected' => $team->integrations()->where('type', 'agenda')->where('status', 'connected')->exists(),
+            'crmConnected' => $crmConnected,
+            'crmPipelines' => $crmPipelines,
             'shopConnected' => $shopConnected,
             'productSearchConfigured' => $agent->search_products !== null,
             'purchaseLinkConfigured' => $agent->send_purchase_link !== null,
@@ -299,5 +324,28 @@ class AgentController extends Controller
         $agent->update($validated);
         $agent->collections()->sync($collectionIds);
         $agent->schedulableCalendars()->sync($calendarIds);
+    }
+
+    /**
+     * @return list<array{id: string, name: string, stages: list<array{id: string, name: string}>}>
+     */
+    private function crmPipelineOptions(?Integration $integration): array
+    {
+        return collect($integration?->crm_metadata['pipelines'] ?? [])
+            ->filter(fn (array $pipeline): bool => is_string($pipeline['id'] ?? null))
+            ->map(fn (array $pipeline): array => [
+                'id' => $pipeline['id'],
+                'name' => (string) ($pipeline['name'] ?? $pipeline['id']),
+                'stages' => collect($pipeline['stages'] ?? [])
+                    ->filter(fn (array $stage): bool => is_string($stage['id'] ?? null))
+                    ->map(fn (array $stage): array => [
+                        'id' => $stage['id'],
+                        'name' => (string) ($stage['name'] ?? $stage['id']),
+                    ])
+                    ->values()
+                    ->all(),
+            ])
+            ->values()
+            ->all();
     }
 }

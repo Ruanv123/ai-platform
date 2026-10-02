@@ -28,6 +28,7 @@ class PlaygroundRequest extends SaveAgentRequest
             'history.*.role' => ['required', Rule::in(['user', 'assistant'])],
             'history.*.content' => ['required', 'string', 'max:10000'],
             'message' => ['required', 'string', 'max:4000'],
+            'crm_lookup_phone' => ['nullable', 'string', 'max:64'],
         ]);
     }
 

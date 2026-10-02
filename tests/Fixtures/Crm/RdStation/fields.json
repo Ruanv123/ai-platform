@@ -1,0 +1,4 @@
+{
+  "data": [{"id": "field-1", "label": "Origem", "slug": "origin", "entity": "contact", "type": "select", "options": ["Site", "Indicação"]}],
+  "pagination": {"total_pages": 1}
+}

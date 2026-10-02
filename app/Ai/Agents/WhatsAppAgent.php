@@ -2,16 +2,10 @@
 
 namespace App\Ai\Agents;
 
-use App\Ai\Tools\BookAppointment;
-use App\Ai\Tools\CancelAppointment;
-use App\Ai\Tools\ConsultAvailableTimes;
-use App\Ai\Tools\ListAppointments;
+use App\Ai\AgentToolFactory;
+use App\Ai\AgentToolMode;
 use App\Ai\Tools\ReturnToFlow;
-use App\Ai\Tools\SearchKnowledgeBase;
-use App\Ai\Tools\SearchProducts;
-use App\Ai\Tools\SendPurchaseLink;
 use App\Ecommerce\ProductCatalogSearch;
-use App\Ecommerce\ProductCatalogTriage;
 use App\Enums\MessageDirection;
 use App\Knowledge\AgentInstructionTemplate;
 use App\Knowledge\KnowledgeBaseSearch;
@@ -79,48 +73,17 @@ class WhatsAppAgent implements Agent, Conversational, HasTools
      */
     public function tools(): iterable
     {
-        $collections = $this->configuredAgent->collections;
-
-        $tools = [];
-        if ($collections->isNotEmpty()) {
-            $tools[] = new SearchKnowledgeBase(
-                $this->configuredAgent->team,
-                $collections->modelKeys(),
-                $this->knowledgeBaseSearch,
-            );
-        }
-        $team = $this->configuredAgent->team;
-        $publishedVersion = $this->configuredAgent->publishedVersion();
-        $shopConnected = $team->shops()->exists();
-        $shopToolsEnabled = $this->configuredAgent->shop_tools_enabled;
-        if ($publishedVersion?->shouldSearchProducts($shopConnected, $shopToolsEnabled)) {
-            $tools[] = new SearchProducts(
-                $team,
-                $this->productCatalogSearch,
-                new ProductCatalogTriage,
-                $this->configuredAgent,
-                $this->contact,
-                $this->conversationMessages,
-            );
-        }
-        if ($publishedVersion?->shouldSendPurchaseLink($shopConnected, $shopToolsEnabled)) {
-            $tools[] = new SendPurchaseLink($team, $this->configuredAgent, $this->contact, $this->channel);
-        }
-        $calendars = $this->configuredAgent->schedulableCalendars;
-        if ($calendars->isNotEmpty()) {
-            $scheduling = $this->scheduling ?? app(SchedulingService::class);
-            $tools = [
-                ...$tools,
-                new ConsultAvailableTimes($this->configuredAgent->team, $calendars, $scheduling),
-                new BookAppointment($this->contact, $calendars, $scheduling),
-                new ListAppointments($this->contact, $scheduling),
-                new CancelAppointment($this->contact, $scheduling),
-            ];
-        }
-        if ($this->returnToFlow !== null) {
-            $tools[] = $this->returnToFlow;
-        }
-
-        return $tools;
+        return (new AgentToolFactory(
+            $this->knowledgeBaseSearch,
+            $this->productCatalogSearch,
+            $this->scheduling,
+        ))->make(
+            $this->configuredAgent,
+            $this->contact,
+            AgentToolMode::Real,
+            $this->conversationMessages,
+            $this->channel,
+            $this->returnToFlow,
+        );
     }
 }
