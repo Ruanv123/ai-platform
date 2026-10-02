@@ -8,6 +8,7 @@ use App\Ecommerce\ProductCatalogSearch;
 use App\Knowledge\AgentInstructionTemplate;
 use App\Knowledge\KnowledgeBaseSearch;
 use App\Models\Agent as ConfiguredAgent;
+use App\Models\Contact;
 use App\Scheduling\SchedulingService;
 use Illuminate\Support\Collection;
 use Laravel\Ai\Contracts\Agent;
@@ -36,6 +37,7 @@ class PlaygroundAgent implements Agent, Conversational, HasTools
         private ProductCatalogSearch $productCatalogSearch,
         private ?SchedulingService $scheduling = null,
         private ?string $crmLookupPhone = null,
+        private ?Contact $contact = null,
     ) {}
 
     /**
@@ -43,7 +45,7 @@ class PlaygroundAgent implements Agent, Conversational, HasTools
      */
     public function instructions(): Stringable|string
     {
-        return $this->instructionTemplate->render($this->configuredAgent);
+        return $this->instructionTemplate->render($this->configuredAgent, $this->contact);
     }
 
     /**

@@ -50,7 +50,7 @@ class WhatsAppAgent implements Agent, Conversational, HasTools
      */
     public function instructions(): Stringable|string
     {
-        return $this->instructionTemplate->render($this->configuredAgent);
+        return $this->instructionTemplate->render($this->configuredAgent, $this->contact);
     }
 
     /**
