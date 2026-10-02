@@ -7,6 +7,7 @@ use App\Ai\Tools\RegisterCrmNote;
 use App\Crm\Adapters\RdStationCrmAdapter;
 use App\Crm\Contracts\CrmProviderAdapter;
 use App\Crm\CrmCardLookup;
+use App\Crm\CrmFieldMappingService;
 use App\Crm\CrmOperationDispatcher;
 use App\Crm\CrmOperationProcessor;
 use App\Ecommerce\ProductCatalogSearch;
@@ -108,7 +109,7 @@ function crmStageNoteDeal(array $attributes = []): array
 
 function processCrmStageNoteOperation(CrmOperation $operation, CrmProviderAdapter $adapter): void
 {
-    (new ProcessCrmOperation($operation->getKey()))->handle(new CrmOperationProcessor($adapter), $adapter);
+    (new ProcessCrmOperation($operation->getKey()))->handle(new CrmOperationProcessor($adapter, app(CrmFieldMappingService::class)), $adapter);
 }
 
 function crmStageNoteFixture(string $name): array

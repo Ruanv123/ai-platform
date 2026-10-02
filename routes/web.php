@@ -25,6 +25,7 @@ use App\Http\Controllers\Integrations\CrmAttendedContactSettingsController;
 use App\Http\Controllers\Integrations\CrmCommercialStagesController;
 use App\Http\Controllers\Integrations\CrmConnectionController;
 use App\Http\Controllers\Integrations\CrmDefaultOwnerController;
+use App\Http\Controllers\Integrations\CrmFieldMappingController;
 use App\Http\Controllers\Integrations\CrmFieldVisibilityController;
 use App\Http\Controllers\Integrations\CrmOperationController;
 use App\Http\Controllers\Integrations\IntegrationController;
@@ -213,6 +214,12 @@ Route::middleware(['auth', EnsureUserHasTeam::class])->group(function () {
         ->name('integrations.crm.rd-station.callback');
     Route::put('integrations/crm/fields/visible-to-agent', [CrmFieldVisibilityController::class, 'update'])
         ->name('integrations.crm.fields.visible-to-agent.update');
+    Route::post('integrations/crm/field-mappings', [CrmFieldMappingController::class, 'store'])
+        ->name('integrations.crm.field-mappings.store');
+    Route::put('integrations/crm/field-mappings/{crmFieldMapping}', [CrmFieldMappingController::class, 'update'])
+        ->name('integrations.crm.field-mappings.update');
+    Route::delete('integrations/crm/field-mappings/{crmFieldMapping}', [CrmFieldMappingController::class, 'destroy'])
+        ->name('integrations.crm.field-mappings.destroy');
     Route::put('integrations/crm/default-owner', [CrmDefaultOwnerController::class, 'update'])
         ->name('integrations.crm.default-owner.update');
     Route::put('integrations/crm/attended-contact-registration', [CrmAttendedContactSettingsController::class, 'update'])

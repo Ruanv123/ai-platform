@@ -167,11 +167,15 @@ class ProcessCrmOperation implements ShouldQueue
                 'value' => $linkedDeal->value,
                 'owner_id' => $linkedDeal->owner_id,
             ];
-        } elseif ($operation->type === 'ensure_person') {
-            $summary['person_linked'] = true;
         }
         if ($operation->type === 'register_note') {
             $summary['note_registered'] = true;
+        }
+        if ($operation->type === 'ensure_person') {
+            $summary['person_linked'] = true;
+        }
+        if ($operation->type === 'update_person_fields') {
+            $summary['fields_updated'] = true;
         }
 
         $operation->forceFill([

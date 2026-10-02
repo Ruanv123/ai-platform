@@ -18,6 +18,7 @@ import type { TeamPermissions } from '@/types';
 import defaultOwner from '@/routes/integrations/crm/default-owner';
 import crmOperations from '@/routes/integrations/crm/operations';
 import CrmAttendedContactSettings from '@/components/integrations/crm-attended-contact-settings';
+import CrmFieldMappingsSettings from '@/components/integrations/crm-field-mappings-settings';
 import commercialStages from '@/routes/integrations/crm/commercial-stages';
 import {
     Select,
@@ -43,6 +44,9 @@ type Props = {
     crmError: string | null;
     crmSuccess: string | null;
     crmFields: { id: string; name: string }[];
+    crmContactFields: { id: string; name: string; type: string; options: string[] }[];
+    contactFields: { id: string; name: string; type: string; options: string[]; sensitive: boolean }[];
+    crmFieldMappings: { id: string; contactFieldId: string; crmFieldId: string; direction: 'to_crm' | 'from_crm'; optionMappings: Record<string, string> }[];
     crmOwners: { id: string; name: string }[];
     crmPipelines: { id: string; name: string; stages: { id: string; name: string }[] }[];
     commercialCrmStageIds: string[];
@@ -58,6 +62,9 @@ export default function CrmConnectionPanel({
     crmError,
     crmSuccess,
     crmFields,
+    crmContactFields,
+    contactFields,
+    crmFieldMappings,
     crmOwners,
     crmPipelines,
     commercialCrmStageIds,
@@ -307,6 +314,13 @@ export default function CrmConnectionPanel({
                 <CrmAttendedContactSettings
                     enabled={registerAttendedContacts}
                     minimumMessages={minimumAttendedContactMessages}
+                />
+            )}
+            {connected && permissions.canManageIntegrations && (
+                <CrmFieldMappingsSettings
+                    contactFields={contactFields}
+                    crmFields={crmContactFields}
+                    mappings={crmFieldMappings}
                 />
             )}
             {connected && permissions.canManageIntegrations && (

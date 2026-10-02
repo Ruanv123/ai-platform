@@ -10,14 +10,11 @@ use App\Models\CrmContactLink;
 use App\Models\CrmLinkedDeal;
 use App\Models\Integration;
 use App\Models\User;
-use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
 use Tests\TestCase;
-
-uses(TestCase::class, RefreshDatabase::class);
 
 function crmWebhookFixture(string $name): array
 {

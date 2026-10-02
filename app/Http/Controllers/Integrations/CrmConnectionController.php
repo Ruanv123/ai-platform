@@ -107,7 +107,8 @@ class CrmConnectionController extends Controller
                 $pipelineId = is_array($firstPipeline) && is_string($firstPipeline['id'] ?? null)
                     ? $firstPipeline['id']
                     : null;
-                $firstStage = is_array($firstPipeline) ? ($firstPipeline['stages'][0] ?? null) : null;
+                $firstStage = collect(is_array($firstPipeline) ? ($firstPipeline['stages'] ?? []) : [])
+                    ->first(fn (array $stage): bool => ! in_array(strtolower((string) ($stage['status'] ?? '')), ['won', 'lost'], true));
                 $stageId = is_array($firstStage) && is_string($firstStage['id'] ?? null)
                     ? $firstStage['id']
                     : null;

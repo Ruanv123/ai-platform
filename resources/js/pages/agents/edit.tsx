@@ -1051,6 +1051,11 @@ function AgentForm({
                                                     error={errors.crm_initial_stage_id}
                                                 />
                                             </div>
+                                            {crmPipelines.some((pipeline) => pipeline.stages.some((stage) => stage.commercial)) && (
+                                                <p className="text-muted-foreground text-xs">
+                                                    Negócios movidos pelo Agente para uma etapa comercial pausam a IA em todas as conversas da Pessoa.
+                                                </p>
+                                            )}
                                             <section className="grid gap-2">
                                                 <div className="grid gap-1">
                                                     <Label>Etapas liberadas para mover o Negócio</Label>
