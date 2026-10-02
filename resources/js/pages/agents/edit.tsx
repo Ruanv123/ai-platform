@@ -45,7 +45,7 @@ type SchedulableCalendarOption = {
 type CrmPipelineOption = {
     id: string;
     name: string;
-    stages: { id: string; name: string; status: string | null }[];
+    stages: { id: string; name: string; status: string | null; commercial: boolean }[];
 };
 
 type CrmAllowedStage = {
@@ -1045,7 +1045,7 @@ function AgentForm({
                                                     options={
                                                         crmPipelines.find((pipeline) => pipeline.id === crmPipelineId)?.stages.map((stage) => ({
                                                             value: stage.id,
-                                                            label: stage.name,
+                                                            label: stage.commercial ? `${stage.name} · comercial: pausa a IA` : stage.name,
                                                         })) ?? []
                                                     }
                                                     error={errors.crm_initial_stage_id}
@@ -1099,6 +1099,11 @@ function AgentForm({
                                                     })}
                                                 <InputError message={nestedError(errors, 'crm_allowed_stages')} />
                                             </section>
+                                            {crmPipelines.some((pipeline) => pipeline.stages.some((stage) => stage.commercial)) && (
+                                                <p className="text-muted-foreground text-xs">
+                                                    Negócios movidos pelo Agente para uma etapa comercial pausam a IA em todas as conversas da Pessoa.
+                                                </p>
+                                            )}
                                         </section>
                                     )}
 

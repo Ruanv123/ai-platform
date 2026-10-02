@@ -295,6 +295,8 @@ class CrmOperationProcessor
             ],
         );
 
+        app(CrmCommercialStageService::class)->reconcileDealChange($linkedDeal, null, $deal['loss_reason_id'] ?? null);
+
         return $linkedDeal;
     }
 }

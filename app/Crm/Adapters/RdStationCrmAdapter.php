@@ -12,6 +12,7 @@ use Illuminate\Http\Client\PendingRequest;
 use Illuminate\Http\Client\Response;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Str;
 use RuntimeException;
 
 /**
@@ -31,6 +32,16 @@ class RdStationCrmAdapter extends AbstractCrmProviderAdapter
     private const API_URL = 'https://api.rd.services/crm/v2';
 
     private const REFRESH_WINDOW_SECONDS = 300;
+
+    private const WEBHOOK_AUTH_HEADER = 'X-RDStation-CRM-Webhook-Key';
+
+    private const WEBHOOK_EVENTS = [
+        'crm_contact_updated',
+        'crm_contact_deleted',
+        'crm_deal_created',
+        'crm_deal_updated',
+        'crm_deal_deleted',
+    ];
 
     public function provider(): string
     {
@@ -221,6 +232,165 @@ class RdStationCrmAdapter extends AbstractCrmProviderAdapter
         ];
     }
 
+    public function registerWebhooks(Integration $integration, string $callbackUrl): array
+    {
+        $secret = Str::random(64);
+        $secretHash = hash('sha256', $secret);
+        $existingSecretHashes = $this->webhookSecretHashes($integration);
+        $integration->forceFill([
+            'credentials' => [
+                ...$integration->credentials,
+                'webhook_secret_hash' => $secretHash,
+                'webhook_secret_hashes' => array_values(array_unique([...$existingSecretHashes, $secretHash])),
+            ],
+        ])->save();
+
+        $subscriptions = $this->subscriptionsForUrl($integration, $callbackUrl);
+        $registered = [];
+
+        foreach (self::WEBHOOK_EVENTS as $event) {
+            $matching = array_values(array_filter(
+                $subscriptions,
+                fn (array $subscription): bool => ($subscription['event_name'] ?? null) === $event,
+            ));
+            $existing = array_shift($matching);
+            $data = [
+                'name' => 'Plataforma '.$event,
+                'event_name' => $event,
+                'http_method' => 'POST',
+                'url' => $callbackUrl,
+                'status' => 'active',
+                'auth_header' => self::WEBHOOK_AUTH_HEADER,
+                'auth_key' => $secret,
+            ];
+
+            if (is_array($existing) && is_string($existing['id'] ?? null) && $existing['id'] !== '') {
+                $response = $this->api($integration)->put('/webhooks/'.rawurlencode($existing['id']), [
+                    'data' => $data,
+                ]);
+            } else {
+                $response = $this->api($integration)->post('/webhooks', ['data' => $data]);
+            }
+
+            $this->throwIfFailed($response);
+            $record = $response->json('data');
+            $subscriptionId = is_array($record) && is_string($record['id'] ?? null)
+                ? $record['id']
+                : (is_array($existing) && is_string($existing['id'] ?? null) ? $existing['id'] : null);
+
+            if ($subscriptionId === null) {
+                throw new CrmProviderException(CrmErrorCategory::Definitive, 'O RD Station CRM não retornou o identificador do webhook.');
+            }
+
+            $registered[] = [
+                'id' => $subscriptionId,
+                'event' => $event,
+                'callback_url' => $callbackUrl,
+                'secret_hash' => $secretHash,
+            ];
+
+            foreach ($matching as $duplicate) {
+                $duplicateId = $duplicate['id'] ?? null;
+                if (is_string($duplicateId) && $duplicateId !== '') {
+                    $duplicateResponse = $this->api($integration)->delete('/webhooks/'.rawurlencode($duplicateId));
+                    $this->throwIfFailed($duplicateResponse);
+                }
+            }
+        }
+
+        $integration->forceFill([
+            'credentials' => [
+                ...$integration->credentials,
+                'webhook_secret_hash' => $secretHash,
+                'webhook_secret_hashes' => [$secretHash],
+            ],
+        ])->save();
+
+        return $registered;
+    }
+
+    public function checkWebhooks(Integration $integration): array
+    {
+        $callbackUrl = $this->webhookCallbackUrl();
+        $secretHash = $integration->credential('webhook_secret_hash');
+
+        return array_values(array_map(
+            fn (array $subscription): array => [
+                'id' => (string) ($subscription['id'] ?? ''),
+                'event' => (string) ($subscription['event_name'] ?? ''),
+                'callback_url' => (string) ($subscription['url'] ?? ''),
+                'secret_hash' => is_string($secretHash) ? $secretHash : null,
+            ],
+            array_filter(
+                $this->subscriptionsForUrl($integration, $callbackUrl),
+                fn (array $subscription): bool => in_array($subscription['event_name'] ?? null, self::WEBHOOK_EVENTS, true),
+            ),
+        ));
+    }
+
+    public function removeWebhooks(Integration $integration): void
+    {
+        foreach ($this->subscriptionsForUrl($integration, $this->webhookCallbackUrl()) as $subscription) {
+            $id = $subscription['id'] ?? null;
+            if (! is_string($id) || $id === '' || ! in_array($subscription['event_name'] ?? null, self::WEBHOOK_EVENTS, true)) {
+                continue;
+            }
+
+            $response = $this->api($integration)->delete('/webhooks/'.rawurlencode($id));
+            $this->throwIfFailed($response);
+        }
+    }
+
+    public function authenticateWebhook(array $headers, string $body): bool
+    {
+        return $this->identifyWebhook($headers) !== null;
+    }
+
+    public function identifyWebhook(array $headers): ?string
+    {
+        $secret = $this->webhookSecretFromHeaders($headers);
+        if ($secret === null) {
+            return null;
+        }
+
+        $presentedHash = hash('sha256', $secret);
+        $integrations = Integration::withoutGlobalScopes()
+            ->withTrashed()
+            ->where('type', 'crm')
+            ->get(['id', 'credentials']);
+
+        foreach ($integrations as $integration) {
+            foreach ($this->webhookSecretHashes($integration) as $storedHash) {
+                if (hash_equals($storedHash, $presentedHash)) {
+                    return (string) $integration->getKey();
+                }
+            }
+        }
+
+        return null;
+    }
+
+    public function translateWebhook(array $payload): ?array
+    {
+        $event = $payload['event_name'] ?? null;
+        $documentId = data_get($payload, 'document.id');
+        if (! is_string($event) || ! is_scalar($documentId) || (string) $documentId === '') {
+            return null;
+        }
+
+        $notice = match ($event) {
+            'crm_contact_updated' => ['resource' => 'person', 'deleted' => false],
+            'crm_contact_deleted' => ['resource' => 'person', 'deleted' => true],
+            'crm_deal_created', 'crm_deal_updated' => ['resource' => 'deal', 'deleted' => false],
+            'crm_deal_deleted' => ['resource' => 'deal', 'deleted' => true],
+            default => null,
+        };
+
+        return $notice === null
+            ? null
+            : [...$notice, 'external_id' => (string) $documentId];
+    }
+
     /** @return CrmCapabilities */
     public function capabilities(): array
     {
@@ -228,7 +398,7 @@ class RdStationCrmAdapter extends AbstractCrmProviderAdapter
             'metadata' => true,
             'loss_reason_required' => true,
             'won_and_lost_stages' => false,
-            'webhooks' => false,
+            'webhooks' => true,
             'operations' => ['lookup', 'person_create', 'person_update', 'deal_create', 'deal_update', 'deal_move', 'note'],
         ];
     }
@@ -542,6 +712,51 @@ class RdStationCrmAdapter extends AbstractCrmProviderAdapter
             ->timeout($remainingSeconds)
             ->acceptJson()
             ->withToken($token);
+    }
+
+    /** @return list<array<string, mixed>> */
+    private function subscriptionsForUrl(Integration $integration, string $callbackUrl): array
+    {
+        return array_values(array_filter(
+            $this->allPages($integration, '/webhooks'),
+            fn (array $subscription): bool => ($subscription['url'] ?? null) === $callbackUrl,
+        ));
+    }
+
+    private function webhookCallbackUrl(): string
+    {
+        return route('webhooks.crm.rd-station');
+    }
+
+    /** @return list<string> */
+    private function webhookSecretHashes(Integration $integration): array
+    {
+        $hashes = $integration->credential('webhook_secret_hashes', []);
+        $currentHash = $integration->credential('webhook_secret_hash');
+        if (is_string($currentHash)) {
+            $hashes = [...(is_array($hashes) ? $hashes : []), $currentHash];
+        }
+
+        return array_values(array_unique(array_filter(
+            is_array($hashes) ? $hashes : [],
+            fn (mixed $hash): bool => is_string($hash) && preg_match('/\A[a-f0-9]{64}\z/i', $hash) === 1,
+        )));
+    }
+
+    /** @param array<string, string|list<string>|null> $headers */
+    private function webhookSecretFromHeaders(array $headers): ?string
+    {
+        foreach ($headers as $name => $value) {
+            if (strcasecmp((string) $name, self::WEBHOOK_AUTH_HEADER) !== 0) {
+                continue;
+            }
+
+            $secret = is_array($value) ? ($value[0] ?? null) : $value;
+
+            return is_string($secret) && $secret !== '' ? $secret : null;
+        }
+
+        return null;
     }
 
     private function consumeRequestQuota(Integration $integration): void

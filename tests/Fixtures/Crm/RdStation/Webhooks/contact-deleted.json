@@ -1,0 +1,8 @@
+{
+  "event_name": "crm_contact_deleted",
+  "event_timestamp": "2025-01-01T00:00:00.000Z",
+  "transaction_uuid": "00000000-0052-4400-B753-746174696F6E",
+  "document": {
+    "id": "67c000000000000000000002"
+  }
+}

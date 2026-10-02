@@ -1,0 +1,16 @@
+{
+  "event_name": "crm_deal_updated",
+  "event_timestamp": "2025-01-01T00:00:00.000Z",
+  "transaction_uuid": "00000000-0052-4400-B753-746174696F6E",
+  "document": {
+    "id": "65b000000000000000000001",
+    "name": "Renovação premium",
+    "contact_ids": ["67c000000000000000000002"],
+    "status": "ongoing",
+    "pipeline_id": "65a000000000000000000001",
+    "stage_id": "65a000000000000000000002",
+    "total_price": 2800,
+    "owner_id": "65a000000000000000000003",
+    "updated_at": "2026-09-29T10:02:00Z"
+  }
+}

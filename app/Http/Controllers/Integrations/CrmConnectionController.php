@@ -79,7 +79,7 @@ class CrmConnectionController extends Controller
             ]);
             $metadata = $adapter->loadMetadata($integration);
 
-            DB::transaction(function () use ($team, $adapter, $tokens, $metadata): void {
+            $integration = DB::transaction(function () use ($team, $adapter, $tokens, $metadata): Integration {
                 $integration = Integration::withoutGlobalScopes()
                     ->withTrashed()
                     ->where('team_id', $team->getKey())
@@ -126,7 +126,20 @@ class CrmConnectionController extends Controller
                             'crm_allowed_stages' => $agent->crm_allowed_stages ?? [],
                         ])->save();
                     });
+
+                return $integration;
             });
+
+            try {
+                $adapter->registerWebhooks($integration, route('webhooks.crm.rd-station'));
+            } catch (Throwable $exception) {
+                $integration->forceFill([
+                    'status' => 'error',
+                    'status_message' => 'Não foi possível registrar os webhooks do RD Station CRM. Tente conectar novamente.',
+                ])->save();
+
+                throw $exception;
+            }
 
             return to_route('integrations.show', 'crm')->with('crm_success', 'RD Station CRM conectado.');
         } catch (Throwable $exception) {

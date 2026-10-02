@@ -22,12 +22,14 @@ use App\Http\Controllers\InboxController;
 use App\Http\Controllers\InboxMediaController;
 use App\Http\Controllers\Integrations\AgendaCalendarController;
 use App\Http\Controllers\Integrations\CrmAttendedContactSettingsController;
+use App\Http\Controllers\Integrations\CrmCommercialStagesController;
 use App\Http\Controllers\Integrations\CrmConnectionController;
 use App\Http\Controllers\Integrations\CrmDefaultOwnerController;
 use App\Http\Controllers\Integrations\CrmFieldVisibilityController;
 use App\Http\Controllers\Integrations\CrmOperationController;
 use App\Http\Controllers\Integrations\IntegrationController;
 use App\Http\Controllers\Integrations\IntegrationWebhookFailureController;
+use App\Http\Controllers\Integrations\RdStationCrmWebhookController;
 use App\Http\Controllers\Integrations\ShopifyConnectionController;
 use App\Http\Controllers\Integrations\ShopifyEmbeddedController;
 use App\Http\Controllers\Integrations\ShopifyInstallationController;
@@ -59,6 +61,10 @@ Route::post('webhooks/whatsapp-test', [WhatsAppTestWebhookController::class, 'ha
 Route::post('webhooks/shopify', [ShopifyWebhookController::class, 'handle'])
     ->middleware('throttle:shopify-webhook')
     ->name('webhooks.shopify');
+
+Route::post('webhooks/crm/rd-station', [RdStationCrmWebhookController::class, 'handle'])
+    ->middleware('throttle:crm-webhook')
+    ->name('webhooks.crm.rd-station');
 
 Route::get('shopify/embedded', [ShopifyEmbeddedController::class, 'bootstrap'])
     ->middleware(SetShopifyEmbeddedSecurityHeaders::class)
@@ -215,6 +221,8 @@ Route::middleware(['auth', EnsureUserHasTeam::class])->group(function () {
         ->name('integrations.crm.operations.index');
     Route::post('integrations/crm/operations/{operation}/retry', [CrmOperationController::class, 'retry'])
         ->name('integrations.crm.operations.retry');
+    Route::put('integrations/crm/commercial-stages', [CrmCommercialStagesController::class, 'update'])
+        ->name('integrations.crm.commercial-stages.update');
     Route::post('integrations', [IntegrationController::class, 'store'])
         ->name('integrations.store');
     Route::post('integrations/agenda/calendars', [AgendaCalendarController::class, 'store'])

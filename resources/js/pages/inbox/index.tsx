@@ -57,6 +57,7 @@ type Conversation = {
     waitingSeconds: number;
     state: 'agent' | 'flow';
     agentPaused: boolean;
+    agentPauseOrigin: 'crm' | 'manual' | null;
     reason: { code: string; label: string } | null;
     channel: {
         id: string;
@@ -136,6 +137,7 @@ type SelectedConversation = {
     };
     state: 'agent' | 'flow';
     agentPaused: boolean;
+    agentPauseOrigin: 'crm' | 'manual' | null;
     agentPauseExpiresAt: string | null;
     assignee: { id: number; name: string } | null;
     reason: { code: string; label: string } | null;
@@ -612,7 +614,7 @@ function ConversationsPanel({
                                     {conversation.state === 'agent' ? (
                                         <span className="bg-signal-live/10 text-signal-live rounded-md px-1.5 py-0.5 text-[10px] font-semibold">
                                             {conversation.agentPaused
-                                                ? 'Pausa da IA'
+                                                ? conversation.agentPauseOrigin === 'crm' ? 'Pausa pelo CRM' : 'Pausa da IA'
                                                 : 'Agente ativo'}
                                         </span>
                                     ) : (
@@ -1005,7 +1007,7 @@ function ConversationThread({
                     {selected.state === 'flow'
                         ? 'Fluxo transferido'
                         : selected.agentPaused
-                          ? 'Pausa da IA'
+                          ? selected.agentPauseOrigin === 'crm' ? 'Pausa pelo CRM' : 'Pausa da IA'
                           : 'Agente ativo'}
                 </span>
                 {selected.canPause && (
@@ -1070,7 +1072,9 @@ function ConversationThread({
                         selected.execution !== null
                             ? `O Fluxo ${selected.execution.flowName} transferiu esta conversa para atendimento humano`
                             : selected.agentPaused
-                              ? 'O Agente está pausado nesta conversa'
+                              ? selected.agentPauseOrigin === 'crm'
+                                  ? 'O CRM pausou o Agente em todas as conversas desta Pessoa'
+                                  : 'O Agente está pausado nesta conversa'
                               : 'O Agente está conduzindo esta conversa'}
                     </span>
                 </div>
@@ -1702,7 +1706,9 @@ function ContactPanel({ selected }: { selected: SelectedConversation }) {
                     </div>
                     <div className="border-border/70 rounded-lg border p-3 text-xs">
                         {selected.agentPaused
-                            ? 'Pausa da IA ativa neste Canal.'
+                            ? selected.agentPauseOrigin === 'crm'
+                                ? 'Pausa do CRM ativa em todas as conversas desta Pessoa.'
+                                : 'Pausa da IA ativa neste Canal.'
                             : 'Agente ativo neste Canal.'}
                     </div>
                 </div>

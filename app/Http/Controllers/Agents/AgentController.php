@@ -373,6 +373,9 @@ class AgentController extends Controller
         $agent->schedulableCalendars()->sync($calendarIds);
     }
 
+    /**
+     * @return list<array{id: string, name: string, stages: list<array{id: string, name: string, status: ?string, commercial: bool}>}>
+     */
     private function crmPipelineOptions(?Integration $integration): array
     {
         return collect($integration?->crm_metadata['pipelines'] ?? [])
@@ -386,6 +389,7 @@ class AgentController extends Controller
                         'id' => $stage['id'],
                         'name' => (string) ($stage['name'] ?? $stage['id']),
                         'status' => is_string($stage['status'] ?? null) ? $stage['status'] : null,
+                        'commercial' => in_array($stage['id'], data_get($integration?->crm_settings, 'commercial_stage_ids', []), true),
                     ])
                     ->values()
                     ->all(),

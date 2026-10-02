@@ -268,6 +268,8 @@ final class InboxController extends Controller
                 } elseif ($userId !== null) {
                     $subquery->where('agent_conversation_states.assigned_user_id', $userId);
                 }
+            })->when($unassigned, function (Builder $query): void {
+                $query->orWhereExists(fn (QueryBuilder $subquery) => $this->crmPauseSubquery($subquery));
             });
         });
 
@@ -407,6 +409,15 @@ final class InboxController extends Controller
             ->where('agent_conversation_states.is_paused', true);
     }
 
+    private function crmPauseSubquery(QueryBuilder $query): void
+    {
+        $query->selectRaw('1')
+            ->from('contacts')
+            ->whereColumn('contacts.team_id', 'messages.team_id')
+            ->whereColumn('contacts.id', 'messages.contact_id')
+            ->where('contacts.crm_agent_paused', true);
+    }
+
     /** @param Builder<Message> $query */
     private function applyFilters(Builder $query, Request $request): void
     {
@@ -433,13 +444,20 @@ final class InboxController extends Controller
                 })
                 ->whereNotExists(function (QueryBuilder $subquery): void {
                     $this->agentPauseSubquery($subquery);
+                })
+                ->whereNotExists(function (QueryBuilder $subquery): void {
+                    $this->crmPauseSubquery($subquery);
                 }),
             'paused' => $query
                 ->whereNotExists(function (QueryBuilder $subquery): void {
                     $this->waitingExecutionSubquery($subquery);
                 })
-                ->whereExists(function (QueryBuilder $subquery): void {
-                    $this->agentPauseSubquery($subquery);
+                ->where(function (Builder $query): void {
+                    $query->whereExists(function (QueryBuilder $subquery): void {
+                        $this->agentPauseSubquery($subquery);
+                    })->orWhereExists(function (QueryBuilder $subquery): void {
+                        $this->crmPauseSubquery($subquery);
+                    });
                 }),
             'flow' => $query->whereExists(function (QueryBuilder $subquery): void {
                 $this->waitingExecutionSubquery($subquery);
@@ -469,6 +487,8 @@ final class InboxController extends Controller
                 })->orWhereExists(function (QueryBuilder $subquery): void {
                     $this->agentPauseSubquery($subquery);
                     $subquery->whereNull('agent_conversation_states.assigned_user_id');
+                })->orWhereExists(function (QueryBuilder $subquery): void {
+                    $this->crmPauseSubquery($subquery);
                 });
             }),
         };
@@ -486,6 +506,8 @@ final class InboxController extends Controller
                 })->orWhereExists(function (QueryBuilder $subquery): void {
                     $this->agentPauseSubquery($subquery);
                     $subquery->whereNull('agent_conversation_states.assigned_user_id');
+                })->orWhereExists(function (QueryBuilder $subquery): void {
+                    $this->crmPauseSubquery($subquery);
                 });
             });
         } elseif (is_numeric($assignedTo)) {
@@ -522,7 +544,8 @@ final class InboxController extends Controller
             'waitingSince' => $execution?->created_at?->toIso8601String(),
             'waitingSeconds' => $latestMessage->created_at === null ? 0 : max(0, (int) $latestMessage->created_at->diffInSeconds(now())),
             'state' => $execution === null ? 'agent' : 'flow',
-            'agentPaused' => $execution === null && $agentState?->is_paused === true,
+            'agentPaused' => $contact->crm_agent_paused || ($execution === null && $agentState?->is_paused === true),
+            'agentPauseOrigin' => $contact->crm_agent_paused ? 'crm' : ($agentState?->is_paused === true ? 'manual' : null),
             'reason' => $execution === null ? null : $this->reason($execution->human_transfer_reason),
             'channel' => [
                 'id' => $channel->id,
@@ -671,8 +694,9 @@ final class InboxController extends Controller
             ],
             'templates' => $this->templatesForChannel($channel),
             'state' => $execution === null ? 'agent' : 'flow',
-            'agentPaused' => $execution === null && $agentState?->is_paused === true,
-            'agentPauseExpiresAt' => $agentState?->expires_at?->toIso8601String(),
+            'agentPaused' => $contact->crm_agent_paused || ($execution === null && $agentState?->is_paused === true),
+            'agentPauseOrigin' => $contact->crm_agent_paused ? 'crm' : ($agentState?->is_paused === true ? 'manual' : null),
+            'agentPauseExpiresAt' => $contact->crm_agent_paused ? null : $agentState?->expires_at?->toIso8601String(),
             'agentPauseDurationMinutes' => $agentState?->pause_duration_minutes,
             'assignee' => $execution?->humanAssignee !== null ? [
                 'id' => $execution->humanAssignee->id,
@@ -699,12 +723,12 @@ final class InboxController extends Controller
                 'expiresAt' => $expiresAt?->toIso8601String(),
                 'remainingSeconds' => $window->remainingSeconds($channel, $lastIncoming),
             ],
-            'canPause' => $execution === null && ! ($agentState?->is_paused ?? false)
+            'canPause' => $execution === null && ! $contact->crm_agent_paused && ! ($agentState?->is_paused ?? false)
                 && app(AgentConversationService::class)->canPause($contact, $channel),
             'canTakeOver' => $execution === null && ($agentState?->is_paused ?? false)
                 && $agentState?->assigned_user_id !== $request->user()->getKey(),
-            'canReturn' => $execution === null && ($agentState?->is_paused ?? false)
-                && $agentState?->assigned_user_id === $request->user()->getKey(),
+            'canReturn' => $execution === null && (($contact->crm_agent_paused && ! ($agentState?->is_paused ?? false))
+                || (($agentState?->is_paused ?? false) && $agentState?->assigned_user_id === $request->user()->getKey())),
             'canWrite' => $execution !== null
                 ? $execution->human_assigned_user_id === $request->user()->getKey()
                 : app(AgentConversationService::class)->canPause($contact, $channel)

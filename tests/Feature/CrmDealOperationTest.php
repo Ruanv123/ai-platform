@@ -26,6 +26,7 @@ use App\Models\Team;
 use App\Models\User;
 use Illuminate\Contracts\Cache\Lock;
 use Illuminate\Contracts\Cache\LockTimeoutException;
+use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request as HttpRequest;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
@@ -33,9 +34,13 @@ use Illuminate\Support\Facades\Queue;
 use Inertia\Testing\AssertableInertia as Assert;
 use Laravel\Ai\Tools\Request as ToolRequest;
 use Tests\Support\Crm\Fakes\FakeCrmProviderAdapter;
+use Tests\TestCase;
+
+uses(TestCase::class, RefreshDatabase::class);
 
 beforeEach(function (): void {
     config(['app.key' => 'base64:'.base64_encode(str_repeat('x', 32))]);
+    $this->withoutVite();
     Queue::fake();
 });
 
@@ -112,6 +117,19 @@ it('registers the tool request as a pending queued operation without calling the
         ->and($adapter->createPersonCalls)->toBe([]);
 
     Queue::assertPushedOn('crm-operations', ProcessCrmOperation::class);
+});
+
+it('pauses the contact when a CRM operation creates a deal in a commercial stage', function () {
+    $scenario = crmDealScenario(crmSettings: ['commercial_stage_ids' => ['stage-1']]);
+    $adapter = new FakeCrmProviderAdapter;
+    $result = crmDealToolResult($scenario['tool'], ['title' => 'Plano anual']);
+    $operation = CrmOperation::query()->findOrFail($result['operation_id']);
+
+    processCrmDealOperation($operation, $adapter);
+
+    expect($scenario['contact']->fresh()->crm_agent_paused)->toBeTrue()
+        ->and($scenario['contact']->fresh()->human_waiting)->toBeTrue()
+        ->and(CrmLinkedDeal::query()->where('stage_id', 'stage-1')->where('status', 'open')->exists())->toBeTrue();
 });
 
 it('returns safe messages for dispatcher errors and hides unexpected exception details', function () {
