@@ -38,6 +38,7 @@ class SaveAgentRequest extends FormRequest
         $stageIds = collect($pipelines)
             ->filter(fn (array $pipeline): bool => (string) ($pipeline['id'] ?? '') === (string) $selectedPipelineId)
             ->flatMap(fn (array $pipeline): array => $pipeline['stages'] ?? [])
+            ->filter(fn (array $stage): bool => ! in_array(strtolower((string) ($stage['status'] ?? '')), ['won', 'lost'], true))
             ->pluck('id')
             ->filter()
             ->map(fn (mixed $id): string => (string) $id)
@@ -51,8 +52,13 @@ class SaveAgentRequest extends FormRequest
             'send_purchase_link' => ['sometimes', 'nullable', 'boolean'],
             'crm_lookup_enabled' => ['sometimes', 'boolean'],
             'crm_ensure_deal_enabled' => ['sometimes', 'boolean'],
+            'crm_move_deal_enabled' => ['sometimes', 'boolean'],
+            'crm_register_note_enabled' => ['sometimes', 'boolean'],
             'crm_pipeline_id' => ['sometimes', 'nullable', 'string', 'max:128', Rule::in($pipelineIds)],
             'crm_initial_stage_id' => ['sometimes', 'nullable', 'string', 'max:128', Rule::in($stageIds)],
+            'crm_allowed_stages' => ['sometimes', 'array', 'max:100'],
+            'crm_allowed_stages.*.stage_id' => ['required', 'string', 'max:128', 'distinct', Rule::in($stageIds)],
+            'crm_allowed_stages.*.description' => ['required', 'string', 'max:1000'],
             'tone' => ['required', Rule::enum(AgentTone::class)],
             'uses_emojis' => ['required', 'boolean'],
             'response_length' => ['required', Rule::enum(AgentResponseLength::class)],
@@ -97,6 +103,13 @@ class SaveAgentRequest extends FormRequest
             'response_length.enum' => 'Selecione um tamanho de resposta válido.',
             'welcome_message.required' => 'Informe a mensagem de boas-vindas.',
             'welcome_message.max' => 'A mensagem de boas-vindas deve ter no máximo 2.000 caracteres.',
+            'crm_allowed_stages.array' => 'As Etapas liberadas para o Agente são inválidas.',
+            'crm_allowed_stages.max' => 'Libere no máximo 100 Etapas do funil.',
+            'crm_allowed_stages.*.stage_id.required' => 'Selecione uma Etapa do funil liberada.',
+            'crm_allowed_stages.*.stage_id.distinct' => 'Não libere a mesma Etapa do funil mais de uma vez.',
+            'crm_allowed_stages.*.stage_id.in' => 'Selecione apenas Etapas abertas do Funil de vendas escolhido.',
+            'crm_allowed_stages.*.description.required' => 'Descreva quando o Agente deve mover o Negócio para esta Etapa.',
+            'crm_allowed_stages.*.description.max' => 'A descrição da Etapa deve ter no máximo 1.000 caracteres.',
             'instructions.array' => 'As instruções devem ser uma lista.',
             'instructions.max' => 'Adicione no máximo 50 instruções.',
             'instructions.*.required' => 'Informe cada instrução ou remova o item vazio.',

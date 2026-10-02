@@ -45,7 +45,12 @@ type SchedulableCalendarOption = {
 type CrmPipelineOption = {
     id: string;
     name: string;
-    stages: { id: string; name: string }[];
+    stages: { id: string; name: string; status: string | null }[];
+};
+
+type CrmAllowedStage = {
+    stage_id: string;
+    description: string;
 };
 
 type Agent = AgentDraft & {
@@ -53,6 +58,11 @@ type Agent = AgentDraft & {
     description: string | null;
     crmLookupConfigured: boolean;
     crmEnsureDealConfigured: boolean;
+    crmMoveDealEnabled: boolean;
+    crmMoveDealConfigured: boolean;
+    crmRegisterNoteEnabled: boolean;
+    crmRegisterNoteConfigured: boolean;
+    crmAllowedStages: CrmAllowedStage[];
 };
 
 type Props = {
@@ -314,6 +324,20 @@ function AgentForm({
     const [crmEnsureDealConfigured, setCrmEnsureDealConfigured] = useState(
         agent.crmEnsureDealConfigured,
     );
+    const [crmMoveDealEnabled, setCrmMoveDealEnabled] = useState(
+        agent.crmMoveDealEnabled,
+    );
+    const [crmMoveDealConfigured, setCrmMoveDealConfigured] = useState(
+        agent.crmMoveDealConfigured,
+    );
+    const [crmRegisterNoteEnabled, setCrmRegisterNoteEnabled] = useState(
+        agent.crmRegisterNoteEnabled,
+    );
+    const [crmRegisterNoteConfigured, setCrmRegisterNoteConfigured] =
+        useState(agent.crmRegisterNoteConfigured);
+    const [crmAllowedStages, setCrmAllowedStages] = useState(
+        agent.crmAllowedStages,
+    );
     const [crmPipelineId, setCrmPipelineId] = useState(agent.crmPipelineId);
     const [crmInitialStageId, setCrmInitialStageId] = useState(
         agent.crmInitialStageId,
@@ -336,8 +360,11 @@ function AgentForm({
         schedulableCalendarIds: selectedSchedulableCalendarIds,
         crmLookupEnabled,
         crmEnsureDealEnabled,
+        crmMoveDealEnabled,
+        crmRegisterNoteEnabled,
         crmPipelineId,
         crmInitialStageId,
+        crmAllowedStages,
         searchProducts,
         sendPurchaseLink,
     };
@@ -362,6 +389,20 @@ function AgentForm({
 
         if (!crmEnsureDealConfigured) {
             setCrmEnsureDealEnabled(
+                crmConnected &&
+                    ['sales', 'qualification'].includes(nextObjective),
+            );
+        }
+
+        if (!crmMoveDealConfigured) {
+            setCrmMoveDealEnabled(
+                crmConnected &&
+                    ['sales', 'qualification'].includes(nextObjective),
+            );
+        }
+
+        if (!crmRegisterNoteConfigured) {
+            setCrmRegisterNoteEnabled(
                 crmConnected &&
                     ['sales', 'qualification'].includes(nextObjective),
             );
@@ -398,8 +439,11 @@ function AgentForm({
                     ? {
                           crm_lookup_enabled: crmLookupEnabled,
                           crm_ensure_deal_enabled: crmEnsureDealEnabled,
+                          crm_move_deal_enabled: crmMoveDealEnabled,
+                          crm_register_note_enabled: crmRegisterNoteEnabled,
                           crm_pipeline_id: crmPipelineId || null,
                           crm_initial_stage_id: crmInitialStageId || null,
+                          crm_allowed_stages: crmAllowedStages,
                       }
                     : {}),
             },
@@ -524,6 +568,16 @@ function AgentForm({
                                             />
                                             <input
                                                 type="hidden"
+                                                name="crm_move_deal_enabled"
+                                                value={crmMoveDealEnabled ? '1' : '0'}
+                                            />
+                                            <input
+                                                type="hidden"
+                                                name="crm_register_note_enabled"
+                                                value={crmRegisterNoteEnabled ? '1' : '0'}
+                                            />
+                                            <input
+                                                type="hidden"
                                                 name="crm_pipeline_id"
                                                 value={crmPipelineId}
                                             />
@@ -532,6 +586,20 @@ function AgentForm({
                                                 name="crm_initial_stage_id"
                                                 value={crmInitialStageId}
                                             />
+                                            {crmAllowedStages.map((stage, index) => (
+                                                <div key={stage.stage_id}>
+                                                    <input
+                                                        type="hidden"
+                                                        name={`crm_allowed_stages[${index}][stage_id]`}
+                                                        value={stage.stage_id}
+                                                    />
+                                                    <input
+                                                        type="hidden"
+                                                        name={`crm_allowed_stages[${index}][description]`}
+                                                        value={stage.description}
+                                                    />
+                                                </div>
+                                            ))}
                                         </>
                                     )}
                                     {selectedCollectionIds.map(
@@ -927,6 +995,30 @@ function AgentForm({
                                                 />
                                                 <span>Garantir Negócio no CRM</span>
                                             </label>
+                                            <label className="border-input hover:bg-muted/50 flex cursor-pointer items-start gap-3 rounded-md border px-3 py-2 text-sm">
+                                                <input
+                                                    type="checkbox"
+                                                    checked={crmMoveDealEnabled}
+                                                    onChange={(event) => {
+                                                        setCrmMoveDealConfigured(true);
+                                                        setCrmMoveDealEnabled(event.target.checked);
+                                                    }}
+                                                    className="accent-primary mt-0.5 size-4"
+                                                />
+                                                <span>Mover Negócio de Etapa</span>
+                                            </label>
+                                            <label className="border-input hover:bg-muted/50 flex cursor-pointer items-start gap-3 rounded-md border px-3 py-2 text-sm">
+                                                <input
+                                                    type="checkbox"
+                                                    checked={crmRegisterNoteEnabled}
+                                                    onChange={(event) => {
+                                                        setCrmRegisterNoteConfigured(true);
+                                                        setCrmRegisterNoteEnabled(event.target.checked);
+                                                    }}
+                                                    className="accent-primary mt-0.5 size-4"
+                                                />
+                                                <span>Registrar nota no CRM</span>
+                                            </label>
                                             <div className="grid gap-3 sm:grid-cols-2">
                                                 <SelectField
                                                     id="crm-pipeline"
@@ -934,6 +1026,7 @@ function AgentForm({
                                                     value={crmPipelineId}
                                                     onValueChange={(pipelineId) => {
                                                         setCrmPipelineId(pipelineId);
+                                                        setCrmAllowedStages([]);
                                                         setCrmInitialStageId(
                                                             crmPipelines.find((pipeline) => pipeline.id === pipelineId)?.stages[0]?.id ?? '',
                                                         );
@@ -958,6 +1051,54 @@ function AgentForm({
                                                     error={errors.crm_initial_stage_id}
                                                 />
                                             </div>
+                                            <section className="grid gap-2">
+                                                <div className="grid gap-1">
+                                                    <Label>Etapas liberadas para mover o Negócio</Label>
+                                                    <p className="text-muted-foreground text-sm">
+                                                        Libere etapas abertas e descreva quando o Agente deve mover o Negócio. Uma etapa comercial pode encaminhar o atendimento ao time.
+                                                    </p>
+                                                </div>
+                                                {(
+                                                    crmPipelines.find((pipeline) => pipeline.id === crmPipelineId)?.stages ?? []
+                                                )
+                                                    .filter((stage) => !['won', 'lost'].includes((stage.status ?? '').toLowerCase()))
+                                                    .map((stage) => {
+                                                        const stageIndex = crmAllowedStages.findIndex((allowedStage) => allowedStage.stage_id === stage.id);
+                                                        const allowedStage = stageIndex < 0 ? null : crmAllowedStages[stageIndex];
+
+                                                        return (
+                                                            <div key={stage.id} className="grid gap-2 rounded-md border px-3 py-2">
+                                                                <label className="flex cursor-pointer items-center gap-3 text-sm">
+                                                                    <input
+                                                                        type="checkbox"
+                                                                        checked={allowedStage !== null}
+                                                                        onChange={(event) => {
+                                                                            setCrmAllowedStages((current) => event.target.checked
+                                                                                ? [...current, { stage_id: stage.id, description: '' }]
+                                                                                : current.filter((item) => item.stage_id !== stage.id));
+                                                                        }}
+                                                                        className="accent-primary size-4"
+                                                                    />
+                                                                    <span>{stage.name}</span>
+                                                                </label>
+                                                                {allowedStage !== null && (
+                                                                    <textarea
+                                                                        value={allowedStage.description}
+                                                                        onChange={(event) => setCrmAllowedStages((current) => current.map((item) => item.stage_id === stage.id
+                                                                            ? { ...item, description: event.target.value }
+                                                                            : item))}
+                                                                        placeholder="Ex.: mover depois de confirmar que o Contato quer receber uma proposta."
+                                                                        className="border-input bg-background min-h-20 rounded-md border px-3 py-2 text-sm"
+                                                                    />
+                                                                )}
+                                                                {stageIndex >= 0 && (
+                                                                    <InputError message={errors[`crm_allowed_stages.${stageIndex}.description`]} />
+                                                                )}
+                                                            </div>
+                                                        );
+                                                    })}
+                                                <InputError message={nestedError(errors, 'crm_allowed_stages')} />
+                                            </section>
                                         </section>
                                     )}
 

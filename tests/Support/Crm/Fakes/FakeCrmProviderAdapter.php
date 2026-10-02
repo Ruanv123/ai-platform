@@ -58,6 +58,10 @@ class FakeCrmProviderAdapter extends AbstractCrmProviderAdapter
 
     public array $updateDealCalls = [];
 
+    public array $moveDealCalls = [];
+
+    public array $createNoteCalls = [];
+
     public function provider(): string
     {
         return 'fake';
@@ -138,7 +142,7 @@ class FakeCrmProviderAdapter extends AbstractCrmProviderAdapter
     /** @return CrmDeal */
     public function findDeal(Integration $integration, string $dealId): array
     {
-        return $this->deal($dealId);
+        return collect($this->openDeals)->firstWhere('id', $dealId) ?? $this->deal($dealId);
     }
 
     /** @return list<CrmDeal> */
@@ -230,16 +234,31 @@ class FakeCrmProviderAdapter extends AbstractCrmProviderAdapter
     /** @return CrmDeal */
     public function moveDeal(Integration $integration, string $dealId, string $stageId): array
     {
+        $this->moveDealCalls[] = ['id' => $dealId, 'stage_id' => $stageId];
+        foreach ($this->openDeals as $index => $deal) {
+            if (($deal['id'] ?? null) === $dealId) {
+                $this->openDeals[$index] = $this->deal($dealId, array_merge($deal, ['stage_id' => $stageId]));
+
+                return $this->openDeals[$index];
+            }
+        }
+
         return $this->deal($dealId, ['stage_id' => $stageId]);
     }
 
     /** @return CrmActivity */
-    public function createNote(Integration $integration, string $personId, string $body): array
+    public function createNote(Integration $integration, string $personId, string $body, ?string $dealId = null): array
     {
+        $this->createNoteCalls[] = [
+            'person_id' => $personId,
+            'body' => $body,
+            'deal_id' => $dealId,
+        ];
+
         return [
             'id' => 'activity-1',
             'person_id' => $personId,
-            'deal_id' => null,
+            'deal_id' => $dealId,
             'type' => 'note',
             'body' => $body,
             'created_at' => now()->toIso8601String(),

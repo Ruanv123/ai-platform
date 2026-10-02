@@ -3,8 +3,10 @@
 namespace App\Http\Controllers\Integrations;
 
 use App\Crm\Contracts\CrmProviderAdapter;
+use App\Enums\AgentObjective;
 use App\Enums\TeamPermission;
 use App\Http\Controllers\Controller;
+use App\Models\Agent;
 use App\Models\Integration;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -100,6 +102,30 @@ class CrmConnectionController extends Controller
                     'status_message' => null,
                     'last_tested_at' => now(),
                 ])->save();
+
+                $firstPipeline = $metadata['pipelines'][0] ?? null;
+                $pipelineId = is_array($firstPipeline) && is_string($firstPipeline['id'] ?? null)
+                    ? $firstPipeline['id']
+                    : null;
+                $firstStage = is_array($firstPipeline) ? ($firstPipeline['stages'][0] ?? null) : null;
+                $stageId = is_array($firstStage) && is_string($firstStage['id'] ?? null)
+                    ? $firstStage['id']
+                    : null;
+
+                $team->agents()
+                    ->whereIn('objective', [AgentObjective::Sales->value, AgentObjective::Qualification->value])
+                    ->get()
+                    ->each(function (Agent $agent) use ($pipelineId, $stageId): void {
+                        $agent->forceFill([
+                            'crm_lookup_enabled' => $agent->crm_lookup_enabled ?? true,
+                            'crm_ensure_deal_enabled' => $agent->crm_ensure_deal_enabled ?? true,
+                            'crm_move_deal_enabled' => $agent->crm_move_deal_enabled ?? true,
+                            'crm_register_note_enabled' => $agent->crm_register_note_enabled ?? true,
+                            'crm_pipeline_id' => $agent->crm_pipeline_id ?? $pipelineId,
+                            'crm_initial_stage_id' => $agent->crm_initial_stage_id ?? $stageId,
+                            'crm_allowed_stages' => $agent->crm_allowed_stages ?? [],
+                        ])->save();
+                    });
             });
 
             return to_route('integrations.show', 'crm')->with('crm_success', 'RD Station CRM conectado.');

@@ -229,7 +229,7 @@ class RdStationCrmAdapter extends AbstractCrmProviderAdapter
             'loss_reason_required' => true,
             'won_and_lost_stages' => false,
             'webhooks' => false,
-            'operations' => ['lookup', 'person_create', 'person_update', 'deal_create', 'deal_update'],
+            'operations' => ['lookup', 'person_create', 'person_update', 'deal_create', 'deal_update', 'deal_move', 'note'],
         ];
     }
 
@@ -371,6 +371,47 @@ class RdStationCrmAdapter extends AbstractCrmProviderAdapter
         return is_array($record)
             ? $this->normalizeDeal($record, isset($attributes['person_id']) ? (string) $attributes['person_id'] : null)
             : throw new CrmProviderException(CrmErrorCategory::Definitive, 'O RD Station CRM retornou uma negociação inválida.');
+    }
+
+    public function moveDeal(Integration $integration, string $dealId, string $stageId): array
+    {
+        $response = $this->api($integration)->put('/deals/'.rawurlencode($dealId), [
+            'data' => ['stage_id' => $stageId],
+        ]);
+        $this->throwIfFailed($response);
+        $record = $response->json('data');
+
+        return is_array($record)
+            ? $this->normalizeDeal($record)
+            : throw new CrmProviderException(CrmErrorCategory::Definitive, 'O RD Station CRM retornou uma negociação inválida.');
+    }
+
+    public function createNote(Integration $integration, string $personId, string $body, ?string $dealId = null): array
+    {
+        if ($dealId === null) {
+            throw new CrmProviderException(
+                CrmErrorCategory::Definitive,
+                'O RD Station CRM só permite registrar anotações pela API v2 em uma Negociação.',
+            );
+        }
+
+        $response = $this->api($integration)->post('/deals/'.rawurlencode($dealId).'/notes', [
+            'data' => ['description' => $body],
+        ]);
+        $this->throwIfFailed($response);
+        $record = $response->json('data');
+        if (! is_array($record)) {
+            throw new CrmProviderException(CrmErrorCategory::Definitive, 'O RD Station CRM retornou uma anotação inválida.');
+        }
+
+        return [
+            'id' => (string) ($record['id'] ?? ''),
+            'person_id' => $personId,
+            'deal_id' => $dealId,
+            'type' => 'note',
+            'body' => is_string($record['description'] ?? null) ? $record['description'] : $body,
+            'created_at' => is_string($record['registered_at'] ?? null) ? $record['registered_at'] : now()->toIso8601String(),
+        ];
     }
 
     /** @param CrmPersonAttributes $attributes

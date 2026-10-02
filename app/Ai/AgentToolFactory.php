@@ -8,6 +8,8 @@ use App\Ai\Tools\ConsultAvailableTimes;
 use App\Ai\Tools\ConsultCrmCard;
 use App\Ai\Tools\GuaranteeCrmDeal;
 use App\Ai\Tools\ListAppointments;
+use App\Ai\Tools\MoveCrmDealStage;
+use App\Ai\Tools\RegisterCrmNote;
 use App\Ai\Tools\ReturnToFlow;
 use App\Ai\Tools\SearchKnowledgeBase;
 use App\Ai\Tools\SearchProducts;
@@ -84,7 +86,15 @@ class AgentToolFactory
             $tools[] = new CancelAppointment($contact, $scheduling, $simulate);
         }
 
-        $crmConnected = $team->integrations()->where('type', 'crm')->where('status', 'connected')->exists();
+        $crmIntegration = $team->integrations()->where('type', 'crm')->where('status', 'connected')->first();
+        $crmConnected = $crmIntegration !== null;
+        $crmActionsDefaultEnabled = $crmConnected && ($mode === AgentToolMode::Real
+            ? $publishedVersion !== null && in_array(
+                $publishedVersion->objectiveValue(),
+                [AgentObjective::Sales, AgentObjective::Qualification],
+                true,
+            )
+            : in_array($agent->objective, [AgentObjective::Sales, AgentObjective::Qualification], true));
         $crmLookupEnabled = $agent->crm_lookup_enabled ?? (
             $crmConnected && in_array($agent->objective, [AgentObjective::Sales, AgentObjective::Qualification], true)
         );
@@ -101,13 +111,28 @@ class AgentToolFactory
         $crmTools = $mode === AgentToolMode::Real
             ? ($publishedVersion?->crm_tools ?? [])
             : [
-                'ensure_deal_enabled' => $agent->crm_ensure_deal_enabled ?? in_array($agent->objective, [AgentObjective::Sales, AgentObjective::Qualification], true),
+                'ensure_deal_enabled' => $agent->crm_ensure_deal_enabled,
+                'move_deal_enabled' => $agent->crm_move_deal_enabled,
+                'register_note_enabled' => $agent->crm_register_note_enabled,
                 'pipeline_id' => $agent->crm_pipeline_id,
                 'initial_stage_id' => $agent->crm_initial_stage_id,
+                'allowed_stages' => $agent->crm_allowed_stages ?? [],
             ];
-        $ensureDealEnabled = $crmConnected && ($crmTools['ensure_deal_enabled'] ?? false) === true;
-        $pipelineId = $crmTools['pipeline_id'] ?? null;
-        $initialStageId = $crmTools['initial_stage_id'] ?? null;
+        $ensureDealEnabled = $crmConnected && ($crmTools['ensure_deal_enabled'] ?? $crmActionsDefaultEnabled) === true;
+        $moveDealEnabled = $crmConnected && ($crmTools['move_deal_enabled'] ?? $crmActionsDefaultEnabled) === true;
+        $registerNoteEnabled = $crmConnected && ($crmTools['register_note_enabled'] ?? $crmActionsDefaultEnabled) === true;
+        $pipelines = $crmIntegration?->crm_metadata['pipelines'] ?? [];
+        $firstPipeline = $pipelines[0] ?? null;
+        $pipelineId = $crmTools['pipeline_id'] ?? ($firstPipeline['id'] ?? null);
+        $selectedPipeline = collect($pipelines)->first(fn (array $pipeline): bool => (string) ($pipeline['id'] ?? '') === (string) $pipelineId);
+        $firstStageId = collect($selectedPipeline['stages'] ?? [])
+            ->first(fn (array $stage): bool => ! in_array(strtolower((string) ($stage['status'] ?? '')), ['won', 'lost'], true))['id'] ?? null;
+        $initialStageId = $crmTools['initial_stage_id'] ?? $firstStageId;
+        $allowedStages = $this->allowedStages(
+            $crmTools['allowed_stages'] ?? [],
+            $crmIntegration?->crm_metadata ?? [],
+            is_string($pipelineId) ? $pipelineId : null,
+        );
 
         if ($ensureDealEnabled && is_string($pipelineId) && $pipelineId !== '' && is_string($initialStageId) && $initialStageId !== '') {
             $tools[] = new GuaranteeCrmDeal(
@@ -117,6 +142,31 @@ class AgentToolFactory
                 app(CrmOperationDispatcher::class),
                 $pipelineId,
                 $initialStageId,
+                $mode === AgentToolMode::Simulated,
+                $mode === AgentToolMode::Simulated ? $crmLookupPhone : null,
+            );
+        }
+
+        if ($moveDealEnabled && is_string($pipelineId) && $pipelineId !== '' && $allowedStages !== []) {
+            $tools[] = new MoveCrmDealStage(
+                $team,
+                $agent,
+                $contact,
+                app(CrmOperationDispatcher::class),
+                $pipelineId,
+                $allowedStages,
+                $mode === AgentToolMode::Simulated,
+                $mode === AgentToolMode::Simulated ? $crmLookupPhone : null,
+            );
+        }
+
+        if ($registerNoteEnabled) {
+            $tools[] = new RegisterCrmNote(
+                $team,
+                $agent,
+                $contact,
+                app(CrmOperationDispatcher::class),
+                is_string($pipelineId) ? $pipelineId : '',
                 $mode === AgentToolMode::Simulated,
                 $mode === AgentToolMode::Simulated ? $crmLookupPhone : null,
             );
@@ -153,5 +203,27 @@ class AgentToolFactory
         }
 
         return $publishedVersion?->shouldSendPurchaseLink($shopConnected, $agent->shop_tools_enabled) ?? false;
+    }
+
+    private function allowedStages(array $configuredStages, array $metadata, ?string $pipelineId): array
+    {
+        if ($pipelineId === null) {
+            return [];
+        }
+
+        $stages = collect($metadata['pipelines'] ?? [])
+            ->first(fn (array $pipeline): bool => (string) ($pipeline['id'] ?? '') === $pipelineId)['stages'] ?? [];
+
+        return collect($configuredStages)
+            ->filter(fn (array $allowedStage): bool => collect($stages)->contains(
+                fn (array $stage): bool => (string) ($stage['id'] ?? '') === (string) ($allowedStage['stage_id'] ?? '')
+                    && ! in_array(strtolower((string) ($stage['status'] ?? '')), ['won', 'lost'], true),
+            ))
+            ->map(fn (array $allowedStage): array => [
+                ...$allowedStage,
+                'name' => collect($stages)->firstWhere('id', $allowedStage['stage_id'])['name'] ?? $allowedStage['stage_id'],
+            ])
+            ->values()
+            ->all();
     }
 }

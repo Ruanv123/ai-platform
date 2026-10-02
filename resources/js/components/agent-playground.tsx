@@ -35,8 +35,11 @@ export type AgentDraft = {
     sendPurchaseLink: boolean;
     crmLookupEnabled: boolean;
     crmEnsureDealEnabled: boolean;
+    crmMoveDealEnabled: boolean;
+    crmRegisterNoteEnabled: boolean;
     crmPipelineId: string;
     crmInitialStageId: string;
+    crmAllowedStages: { stage_id: string; description: string }[];
 };
 
 type Source = {
@@ -264,6 +267,12 @@ export default function AgentPlayground({ draft }: Props) {
                     collection_ids: draft.collectionIds,
                     schedulable_calendar_ids: draft.schedulableCalendarIds,
                     crm_lookup_enabled: draft.crmLookupEnabled,
+                    crm_ensure_deal_enabled: draft.crmEnsureDealEnabled,
+                    crm_move_deal_enabled: draft.crmMoveDealEnabled,
+                    crm_register_note_enabled: draft.crmRegisterNoteEnabled,
+                    crm_pipeline_id: draft.crmPipelineId || null,
+                    crm_initial_stage_id: draft.crmInitialStageId || null,
+                    crm_allowed_stages: draft.crmAllowedStages,
                     crm_lookup_phone: crmLookupPhone || null,
                     history,
                     message,
@@ -344,7 +353,10 @@ export default function AgentPlayground({ draft }: Props) {
                             Teste como {draft.name || 'este Agente'} responde
                             com a configuração atual.
                         </CardDescription>
-                        {(draft.crmLookupEnabled || draft.crmEnsureDealEnabled) && (
+                        {(draft.crmLookupEnabled ||
+                            draft.crmEnsureDealEnabled ||
+                            draft.crmMoveDealEnabled ||
+                            draft.crmRegisterNoteEnabled) && (
                             <div className="mt-3 grid gap-2">
                                 <Label htmlFor="playground-crm-phone">
                                     Telefone para consulta no CRM

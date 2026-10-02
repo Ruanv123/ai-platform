@@ -28,10 +28,6 @@ class CrmOperationProcessor
             throw new CrmProviderException(CrmErrorCategory::Definitive, 'O Contato ou a Integração do CRM não está mais disponível.');
         }
 
-        if (! in_array($operation->type, ['ensure_person', 'guarantee_deal'], true)) {
-            throw new CrmProviderException(CrmErrorCategory::Definitive, 'O tipo desta Operação do CRM não é compatível.');
-        }
-
         try {
             return Cache::lock('crm:contact-link:'.$contact->team_id.':'.$contact->getKey(), 120)
                 ->block(30, function () use ($operation, $integration, $contact): ?CrmLinkedDeal {
@@ -41,7 +37,12 @@ class CrmOperationProcessor
                         return null;
                     }
 
-                    return $this->ensureDeal($operation, $integration, $contact);
+                    return match ($operation->type) {
+                        'guarantee_deal' => $this->ensureDeal($operation, $integration, $contact),
+                        'move_deal' => $this->moveDeal($operation, $integration, $contact),
+                        'register_note' => $this->registerNote($operation, $integration, $contact),
+                        default => throw new CrmProviderException(CrmErrorCategory::Definitive, 'O tipo desta Operação do CRM não é compatível.'),
+                    };
                 });
         } catch (LockTimeoutException) {
             throw new CrmProviderException(CrmErrorCategory::Temporary, 'Outra gravação do CRM está sendo concluída para este Contato.', 5);
@@ -114,12 +115,76 @@ class CrmOperationProcessor
         return $person;
     }
 
+    private function moveDeal(CrmOperation $operation, Integration $integration, Contact $contact): CrmLinkedDeal
+    {
+        $payload = $operation->payload;
+        $personLink = $this->ensurePersonLink(
+            $operation,
+            $integration,
+            $contact,
+            $payload,
+            is_string($payload['external_person_id'] ?? null) ? $payload['external_person_id'] : null,
+        );
+        $dealId = is_string($payload['external_deal_id'] ?? null) ? $payload['external_deal_id'] : '';
+        $pipelineId = is_string($payload['pipeline_id'] ?? null) ? $payload['pipeline_id'] : '';
+        $stageId = is_string($payload['target_stage_id'] ?? null) ? $payload['target_stage_id'] : '';
+        if ($dealId === '' || $pipelineId === '' || $stageId === '') {
+            throw new CrmProviderException(CrmErrorCategory::Definitive, 'A Operação não contém os dados necessários para mover o Negócio.');
+        }
+
+        $deal = $this->adapter->findDeal($integration, $dealId);
+        if (($deal['status'] ?? null) !== 'open'
+            || ($deal['pipeline_id'] ?? null) !== $pipelineId
+            || ($deal['person_id'] ?? null) !== $personLink->external_person_id) {
+            throw new CrmProviderException(CrmErrorCategory::Definitive, 'O Negócio aberto deste Contato não está mais disponível no Funil de vendas do Agente.');
+        }
+
+        $movedDeal = $this->adapter->moveDeal($integration, $dealId, $stageId);
+
+        return $this->saveLinkedDeal($operation, $integration, $personLink, $movedDeal);
+    }
+
+    private function registerNote(CrmOperation $operation, Integration $integration, Contact $contact): ?CrmLinkedDeal
+    {
+        $payload = $operation->payload;
+        $personLink = $this->ensurePersonLink(
+            $operation,
+            $integration,
+            $contact,
+            $payload,
+            is_string($payload['external_person_id'] ?? null) ? $payload['external_person_id'] : null,
+        );
+        $body = is_string($payload['body'] ?? null) ? trim($payload['body']) : '';
+        if ($body === '') {
+            throw new CrmProviderException(CrmErrorCategory::Definitive, 'A Operação não contém o texto da nota.');
+        }
+
+        $pipelineId = is_string($payload['pipeline_id'] ?? null) ? $payload['pipeline_id'] : null;
+        $deal = $pipelineId === null
+            ? null
+            : $this->matchingOpenDeal($integration, $personLink->external_person_id, $pipelineId);
+
+        $this->adapter->createNote(
+            $integration,
+            $personLink->external_person_id,
+            $body,
+            is_array($deal) && is_string($deal['id'] ?? null) ? $deal['id'] : null,
+        );
+
+        if ($deal === null) {
+            return null;
+        }
+
+        return $this->saveLinkedDeal($operation, $integration, $personLink, $deal);
+    }
+
     /** @param array<string, mixed> $payload */
     private function ensurePersonLink(
         CrmOperation $operation,
         Integration $integration,
         Contact $contact,
         array $payload,
+        ?string $preferredPersonId = null,
     ): CrmContactLink {
         $existingLink = CrmContactLink::query()
             ->where('team_id', $contact->team_id)
@@ -128,6 +193,15 @@ class CrmOperationProcessor
             ->first();
         if ($existingLink !== null) {
             return $existingLink;
+        }
+
+        if ($preferredPersonId !== null && $preferredPersonId !== '') {
+            return CrmContactLink::query()->create([
+                'team_id' => $contact->team_id,
+                'contact_id' => $contact->getKey(),
+                'integration_id' => $integration->getKey(),
+                'external_person_id' => $preferredPersonId,
+            ]);
         }
 
         $phone = E164PhoneNumber::formatForCountry($contact->phone, 'BR');

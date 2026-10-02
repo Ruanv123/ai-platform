@@ -87,7 +87,7 @@ abstract class AbstractCrmProviderAdapter implements CrmProviderAdapter
         return $this->unsupported();
     }
 
-    public function createNote(Integration $integration, string $personId, string $body): array
+    public function createNote(Integration $integration, string $personId, string $body, ?string $dealId = null): array
     {
         return $this->unsupported();
     }

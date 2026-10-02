@@ -96,7 +96,7 @@ interface CrmProviderAdapter
     public function moveDeal(Integration $integration, string $dealId, string $stageId): array;
 
     /** @return CrmActivity */
-    public function createNote(Integration $integration, string $personId, string $body): array;
+    public function createNote(Integration $integration, string $personId, string $body, ?string $dealId = null): array;
 
     public function personUrl(string $personId): ?string;
 
