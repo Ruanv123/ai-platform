@@ -28,7 +28,6 @@ use Illuminate\Support\Carbon;
  * @property-read Team $team
  * @property-read Agent|null $agent
  * @property-read Collection<int, Message> $messages
- * @property-read Collection<int, Flow> $flows
  * @property-read WhatsAppPhoneNumber|null $whatsappPhoneNumber
  * @property-read WhatsAppTestConnection|null $whatsappTestConnection
  */
@@ -71,12 +70,6 @@ class Channel extends Model
     public function messages(): HasMany
     {
         return $this->hasMany(Message::class);
-    }
-
-    /** @return HasMany<Flow, $this> */
-    public function flows(): HasMany
-    {
-        return $this->hasMany(Flow::class);
     }
 
     /**

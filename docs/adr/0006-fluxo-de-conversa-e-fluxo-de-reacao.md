@@ -1,5 +1,7 @@
 # Fluxo de conversa e Fluxo de reação: unicidade derivada do grafo, sem regra de desempate
 
+Status: superseded by ADR-0018
+
 Vários Fluxos podem disparar na mesma mensagem recebida. O que não pode é dois Fluxos conversarem ao mesmo tempo: se o Fluxo A perguntou a data e o Fluxo B perguntou o CPF, a resposta "amanhã de manhã" não pertence a nenhum dos dois de forma decidível — a ambiguidade está na cabeça do Contato, não no código, e nenhuma regra de desempate a resolve.
 
 A separação é lida do grafo, não declarada pelo usuário:

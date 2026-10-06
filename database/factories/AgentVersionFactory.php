@@ -18,10 +18,6 @@ class AgentVersionFactory extends Factory
             'agent_id' => Agent::factory()->for($team),
             'number' => 1,
             'objective' => AgentObjective::Support,
-            'ecommerce_tools' => [
-                'search_products' => null,
-                'send_purchase_link' => null,
-            ],
             'published_at' => now(),
         ];
     }

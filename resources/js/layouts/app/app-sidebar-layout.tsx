@@ -8,7 +8,6 @@ import type { AppLayoutProps } from '@/types';
 
 export default function AppSidebarLayout({ children }: AppLayoutProps) {
     const { component } = usePage();
-    const isFlowEditor = component === 'flows/show';
     const isInbox = component === 'inbox/index';
 
     return (
@@ -21,14 +20,13 @@ export default function AppSidebarLayout({ children }: AppLayoutProps) {
                     isInbox
                         ? 'h-svh min-h-0 overflow-hidden'
                         : 'overflow-x-clip',
-                    isFlowEditor && 'h-screen',
                 )}
             >
                 <div className="border-border/70 bg-background flex h-12 shrink-0 items-center gap-2 border-b px-3 md:hidden">
                     <SidebarTrigger className="size-10" />
                     <span className="text-sm font-medium">Menu</span>
                 </div>
-                {isInbox || isFlowEditor ? (
+                {isInbox ? (
                     <div className="flex min-h-0 flex-1 flex-col">
                         {children}
                     </div>

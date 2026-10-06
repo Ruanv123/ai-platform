@@ -32,6 +32,12 @@ return [
         'timeout' => (int) env('AI_PRODUCT_TRIAGE_TIMEOUT', 20),
     ],
 
+    'product_triage_pricing' => [
+        'default_input_per_million_brl' => (float) env('AI_PRODUCT_TRIAGE_INPUT_PRICE_BRL', 2.50),
+        'default_output_per_million_brl' => (float) env('AI_PRODUCT_TRIAGE_OUTPUT_PRICE_BRL', 10.00),
+        'models' => [],
+    ],
+
     /*
     |--------------------------------------------------------------------------
     | Caching

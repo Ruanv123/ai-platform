@@ -2,8 +2,6 @@
 
 namespace App\Providers;
 
-use App\Ecommerce\EcommerceAdapter;
-use App\Ecommerce\ShopifyAdapter;
 use App\Http\Controllers\Channels\WhatsAppController;
 use App\Http\Controllers\Channels\WhatsAppTestController;
 use App\WhatsApp\Oficial\MetaWhatsAppProfileProvider;
@@ -26,8 +24,6 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
-        $this->app->bind(EcommerceAdapter::class, ShopifyAdapter::class);
-
         $this->app->when(WhatsAppController::class)
             ->needs(WhatsAppProfileProvider::class)
             ->give(MetaWhatsAppProfileProvider::class);
@@ -65,25 +61,6 @@ class AppServiceProvider extends ServiceProvider
                 ->by('whatsapp-webhook:'.(string) $request->ip().':'.$phoneNumberKey);
         });
 
-        RateLimiter::for('shopify-webhook', function (Request $request): Limit {
-            $shopDomain = $request->header('X-Shopify-Shop-Domain');
-            $shopKey = is_string($shopDomain) && $shopDomain !== ''
-                ? strtolower($shopDomain)
-                : 'unknown';
-
-            return Limit::perMinute(300)->by('shopify-webhook:'.(string) $request->ip().':'.$shopKey);
-        });
-
-        RateLimiter::for('flow-webhook', function (Request $request): array {
-            $channel = (string) $request->route('channelId');
-            $team = (string) ($request->header('X-Company-Id') ?? 'unknown');
-
-            return [
-                Limit::perMinute(120)->by('flow-channel:'.$channel),
-                Limit::perMinute(1000)->by('flow-team:'.$team),
-                Limit::perMinute(10000)->by('flow-global'),
-            ];
-        });
     }
 
     /**

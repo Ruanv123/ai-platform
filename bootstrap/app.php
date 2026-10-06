@@ -21,9 +21,6 @@ return Application::configure(basePath: dirname(__DIR__))
             'webhooks/whatsapp',
             'webhooks/whatsapp/app-proprio',
             'webhooks/whatsapp-test',
-            'webhooks/flows/*',
-            'webhooks/shopify',
-            'shopify/embedded/authenticate',
         ]);
 
         $middleware->web(append: [

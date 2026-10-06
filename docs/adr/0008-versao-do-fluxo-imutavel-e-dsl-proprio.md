@@ -1,5 +1,7 @@
 # Versão do fluxo imutável, e um DSL independente do editor
 
+Status: superseded by ADR-0018
+
 Publicar um Fluxo cria uma **Versão imutável**. Toda Execução fica presa à Versão em que começou: quem está no meio termina na antiga, e a edição do rascunho não afeta ninguém em andamento. O Fluxo é persistido como um **DSL próprio** — nós, arestas e configuração — em que a posição no canvas é metadado descartável. O editor visual é uma view sobre o DSL, nunca o contrário.
 
 ## Considered Options

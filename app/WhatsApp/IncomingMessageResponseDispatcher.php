@@ -3,10 +3,8 @@
 namespace App\WhatsApp;
 
 use App\Enums\ChannelType;
-use App\Flows\FlowEngine;
 use App\Inbox\AgentConversationService;
 use App\Jobs\RespondToWhatsAppMessage;
-use App\Jobs\RunFlowTurn;
 use App\Models\Channel;
 use App\Models\Message;
 use App\WhatsApp\Output\WhatsAppOutputAdapterFactory;
@@ -20,13 +18,12 @@ final class IncomingMessageResponseDispatcher
 
     public function __construct(
         private readonly WhatsAppOutputAdapterFactory $outputAdapterFactory,
-        private readonly FlowEngine $flowEngine,
         private readonly OptOutInterceptor $optOutInterceptor,
         private readonly AgentConversationService $agentConversations,
     ) {}
 
     /**
-     * Start the response flow for a newly persisted incoming Message.
+     * Start the Agent response for a newly persisted incoming Message.
      */
     public function dispatch(Channel $channel, Message $message): void
     {
@@ -41,14 +38,11 @@ final class IncomingMessageResponseDispatcher
         }
 
         $channel->loadMissing('agent');
-        $isFlowChannel = $this->flowEngine->hasManagedMessageFlows($channel)
-            && $this->flowEngine->hasNonTrivialManagedMessageFlows($channel);
-
         if ($this->optOutInterceptor->intercept($channel, $message)) {
             return;
         }
 
-        if (! $isFlowChannel && ($channel->agent === null || ! $channel->agent->is_active)) {
+        if ($channel->agent === null || ! $channel->agent->is_active) {
             return;
         }
 
@@ -59,13 +53,6 @@ final class IncomingMessageResponseDispatcher
         $this->attempt(function () use ($adapter, $channel, $message): void {
             $adapter->sendTypingIndicator($channel, $message);
         });
-
-        if ($isFlowChannel) {
-            RunFlowTurn::dispatch($channel->getKey(), $message->contact_id)
-                ->delay(now()->addSeconds(self::BUFFER_SECONDS));
-
-            return;
-        }
 
         RespondToWhatsAppMessage::dispatch($channel->getKey(), $message->contact_id)
             ->delay(now()->addSeconds(self::BUFFER_SECONDS));
@@ -112,7 +99,7 @@ final class IncomingMessageResponseDispatcher
     }
 
     /**
-     * Keep a provider notification from preventing the response flow.
+     * Keep a provider notification from preventing the response.
      */
     private function attempt(callable $action): void
     {

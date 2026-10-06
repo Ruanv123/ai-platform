@@ -88,6 +88,42 @@ class GoogleCalendarClient
         return $this->decode($response);
     }
 
+    public function updateEvent(string $calendarId, string $eventId, array $event, ?string $etag = null): array
+    {
+        $request = $this->request();
+        if ($etag !== null) {
+            $request = $request->withHeaders(['If-Match' => $etag]);
+        }
+
+        return $this->decode($request->patch('/calendars/'.rawurlencode($calendarId).'/events/'.rawurlencode($eventId), $event));
+    }
+
+    public function hasConflictingEvent(string $calendarId, string $excludedEventId, CarbonInterface $start, CarbonInterface $end): bool
+    {
+        $pageToken = null;
+
+        do {
+            $data = $this->decode($this->request()->get('/calendars/'.rawurlencode($calendarId).'/events', array_filter([
+                'timeMin' => $start->copy()->utc()->toIso8601String(),
+                'timeMax' => $end->copy()->utc()->toIso8601String(),
+                'singleEvents' => 'true',
+                'pageToken' => $pageToken,
+            ])));
+
+            foreach ($data['items'] ?? [] as $event) {
+                if (($event['id'] ?? null) !== $excludedEventId
+                    && ($event['status'] ?? null) !== 'cancelled'
+                    && ($event['transparency'] ?? null) !== 'transparent') {
+                    return true;
+                }
+            }
+
+            $pageToken = $data['nextPageToken'] ?? null;
+        } while ($pageToken !== null);
+
+        return false;
+    }
+
     public function deleteEvent(string $calendarId, string $eventId): void
     {
         $response = $this->request()->delete('/calendars/'.rawurlencode($calendarId).'/events/'.rawurlencode($eventId));

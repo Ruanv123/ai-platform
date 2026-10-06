@@ -1,15 +1,11 @@
 <?php
 
 use App\Enums\ChannelType;
-use App\Enums\FlowExecutionStatus;
 use App\Enums\MessageDirection;
 use App\Models\Agent;
 use App\Models\AgentConversationState;
 use App\Models\Channel;
 use App\Models\Contact;
-use App\Models\Flow;
-use App\Models\FlowExecution;
-use App\Models\FlowVersion;
 use App\Models\Message;
 use App\Models\User;
 use App\Models\WhatsAppAccount;
@@ -22,11 +18,13 @@ use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Storage;
 
-function mediaSendingExecution(User $user, ChannelType $channelType): FlowExecution
+function mediaSendingConversation(User $user, ChannelType $channelType): AgentConversationState
 {
     $team = $user->company();
+    $agent = Agent::factory()->for($team)->create();
     $channel = Channel::factory()->for($team)->connected()->create([
         'type' => $channelType,
+        'agent_id' => $agent->getKey(),
     ]);
 
     if ($channelType === ChannelType::WhatsApp) {
@@ -49,24 +47,25 @@ function mediaSendingExecution(User $user, ChannelType $channelType): FlowExecut
     Message::factory()->for($contact)->for($channel)->incoming()->create([
         'created_at' => now(),
     ]);
-    $flow = Flow::factory()->for($team)->create();
-    $version = FlowVersion::factory()->for($flow)->create();
 
-    return FlowExecution::factory()
-        ->for($version)
+    return AgentConversationState::factory()
+        ->for($team)
         ->for($contact)
+        ->for($channel)
         ->create([
             'team_id' => $team->getKey(),
+            'contact_id' => $contact->getKey(),
             'channel_id' => $channel->getKey(),
-            'status' => FlowExecutionStatus::Paused,
-            'waiting_for' => 'human',
-            'human_transfer_reason' => 'contact_requested',
-            'wake_at' => now()->addDay(),
+            'is_paused' => true,
+            'paused_at' => now(),
+            'expires_at' => now()->addMinutes(30),
+            'pause_duration_minutes' => 30,
+            'last_activity_at' => now(),
         ]);
 }
 
 /** @return array{contact: int, channel: string} */
-function mediaSendingConversationParams(FlowExecution $execution): array
+function mediaSendingConversationParams(AgentConversationState $execution): array
 {
     return [
         'contact' => $execution->contact_id,
@@ -99,7 +98,7 @@ it('sends an outgoing media message through the conversation route', function (C
     Storage::fake('whatsapp_media');
     Http::preventStrayRequests();
     $user = User::factory()->withTeam()->create(['is_platform_admin' => true]);
-    $execution = mediaSendingExecution($user, $channelType);
+    $execution = mediaSendingConversation($user, $channelType);
     $file = validOutgoingMedia($type);
     $providerMessageId = $channelType === ChannelType::WhatsApp
         ? 'meta-'.$type.'-message-id'
@@ -120,7 +119,7 @@ it('sends an outgoing media message through the conversation route', function (C
     }
 
     $this->actingAs($user)
-        ->post(route('inbox.take', [
+        ->post(route('inbox.agent.take-over', [
             'contact' => $execution->contact,
             'channel' => $execution->channel,
         ]))
@@ -200,7 +199,7 @@ it('accepts supported audio attachment formats through the conversation route', 
     Storage::fake('whatsapp_media');
     Http::preventStrayRequests();
     $user = User::factory()->withTeam()->create(['is_platform_admin' => true]);
-    $execution = mediaSendingExecution($user, ChannelType::WhatsApp);
+    $execution = mediaSendingConversation($user, ChannelType::WhatsApp);
     Http::fake([
         'graph.facebook.com/*' => Http::sequence()
             ->push(['id' => 'meta-audio-format-upload-id'])
@@ -208,7 +207,7 @@ it('accepts supported audio attachment formats through the conversation route', 
     ]);
 
     $this->actingAs($user)
-        ->post(route('inbox.take', [
+        ->post(route('inbox.agent.take-over', [
             'contact' => $execution->contact,
             'channel' => $execution->channel,
         ]))
@@ -251,7 +250,7 @@ it('uploads a recipient file and sends it in an approved media header template',
             ->push(['messages' => [['id' => 'media-header-template-message-id']]]),
     ]);
     $user = User::factory()->withTeam()->create(['is_platform_admin' => true]);
-    $execution = mediaSendingExecution($user, ChannelType::WhatsApp);
+    $execution = mediaSendingConversation($user, ChannelType::WhatsApp);
     $account = $execution->channel->whatsappPhoneNumber->whatsappAccount;
     $template = WhatsAppTemplate::factory()->for($account, 'account')->create([
         'name' => 'exame_pronto',
@@ -265,7 +264,7 @@ it('uploads a recipient file and sends it in an approved media header template',
     $file = UploadedFile::fake()->create('exame.png', 1, 'image/png');
 
     $this->actingAs($user)
-        ->post(route('inbox.take', mediaSendingConversationParams($execution)))
+        ->post(route('inbox.agent.take-over', mediaSendingConversationParams($execution)))
         ->assertRedirect(route('inbox.show', mediaSendingConversationParams($execution)));
 
     $this->actingAs($user)
@@ -363,7 +362,7 @@ it('sends a media header template through a direct Agent conversation', function
 it('shows synchronized video header templates and blocks sending them', function () {
     Http::preventStrayRequests();
     $user = User::factory()->withTeam()->create(['is_platform_admin' => true]);
-    $execution = mediaSendingExecution($user, ChannelType::WhatsApp);
+    $execution = mediaSendingConversation($user, ChannelType::WhatsApp);
     $account = $execution->channel->whatsappPhoneNumber->whatsappAccount;
     $template = WhatsAppTemplate::factory()->for($account, 'account')->create([
         'name' => 'video_apresentacao',
@@ -382,7 +381,7 @@ it('shows synchronized video header templates and blocks sending them', function
             ->where('selected.templates.0.headerType', 'VIDEO'));
 
     $this->actingAs($user)
-        ->post(route('inbox.take', mediaSendingConversationParams($execution)))
+        ->post(route('inbox.agent.take-over', mediaSendingConversationParams($execution)))
         ->assertRedirect(route('inbox.show', mediaSendingConversationParams($execution)));
     $this->actingAs($user)
         ->post(route('inbox.messages.store', mediaSendingConversationParams($execution)), [

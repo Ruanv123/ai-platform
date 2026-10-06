@@ -17,7 +17,6 @@ return new class extends Migration
             $table->foreignUuid('agent_id')->constrained('agents')->cascadeOnDelete();
             $table->unsignedInteger('number');
             $table->string('objective', 32);
-            $table->json('ecommerce_tools');
             $table->timestamp('published_at')->nullable();
             $table->timestamps();
 
@@ -26,7 +25,7 @@ return new class extends Migration
         });
 
         DB::table('agents')
-            ->select(['id', 'team_id', 'objective', 'search_products'])
+            ->select(['id', 'team_id', 'objective'])
             ->orderBy('id')
             ->chunkById(500, function (Collection $agents): void {
                 $timestamp = now();
@@ -36,11 +35,6 @@ return new class extends Migration
                     'agent_id' => $agent->id,
                     'number' => 1,
                     'objective' => $agent->objective,
-                    'ecommerce_tools' => json_encode([
-                        'search_products' => $agent->search_products === null
-                            ? null
-                            : filter_var($agent->search_products, FILTER_VALIDATE_BOOLEAN),
-                    ], JSON_THROW_ON_ERROR),
                     'published_at' => $timestamp,
                     'created_at' => $timestamp,
                     'updated_at' => $timestamp,

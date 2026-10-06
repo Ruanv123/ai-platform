@@ -4,8 +4,7 @@ namespace App\Http\Middleware;
 
 use App\Data\UserTeam;
 use App\Enums\ChannelType;
-use App\Enums\FlowExecutionStatus;
-use App\Models\FlowExecution;
+use App\Models\AgentConversationState;
 use Illuminate\Http\Request;
 use Inertia\Middleware;
 
@@ -55,9 +54,8 @@ class HandleInertiaRequests extends Middleware
             },
             'pendingHumanCount' => fn (): int => $user === null
                 ? 0
-                : FlowExecution::query()
-                    ->where('status', FlowExecutionStatus::Paused)
-                    ->where('waiting_for', 'human')
+                : AgentConversationState::query()
+                    ->where('is_paused', true)
                     ->count(),
             'hasOfficialWhatsApp' => fn (): bool => $user?->company()?->channels()
                 ->where('type', ChannelType::WhatsApp)

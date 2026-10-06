@@ -29,8 +29,6 @@ export type AgentDraft = {
     rules: string[];
     collectionIds: string[];
     schedulableCalendarIds: string[];
-    searchProducts: boolean;
-    sendPurchaseLink: boolean;
 };
 
 type Source = {
@@ -252,8 +250,6 @@ export default function AgentPlayground({ draft }: Props) {
                     welcome_message: draft.welcomeMessage,
                     instructions: draft.instructions,
                     rules: draft.rules,
-                    search_products: draft.searchProducts,
-                    send_purchase_link: draft.sendPurchaseLink,
                     collection_ids: draft.collectionIds,
                     schedulable_calendar_ids: draft.schedulableCalendarIds,
                     history,

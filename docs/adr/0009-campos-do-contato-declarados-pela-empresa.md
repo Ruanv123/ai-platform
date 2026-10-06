@@ -1,5 +1,7 @@
 # Campos do Contato declarados pela Empresa
 
+Status: superseded by ADR-0018
+
 O Contato deixa de ser só identificador — Empresa mais telefone, mais o nome vindo do WhatsApp — e passa a carregar **Campos** que a Empresa declara: nome, tipo (texto, número, data, escolha) e valor por Contato. Junto vêm **Tags**, marcas livres sem valor. Ambos sobrevivem entre Execuções, diferente das Variáveis, que morrem com a Execução que as criou.
 
 ## Considered Options

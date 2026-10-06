@@ -1,5 +1,7 @@
 # Execução do fluxo como entidade estreita, sem reabrir Conversa
 
+Status: superseded by ADR-0018
+
 Um Fluxo em andamento precisa guardar em que Nó está, quais Variáveis coletou, quando acorda e quantas vezes tentou. Isso é estado persistido com ciclo de vida, e não dá para derivar das Mensagens. Criamos a **Execução**: uma entidade própria, deliberadamente estreita, que guarda posição e Variáveis e **não guarda Mensagens**.
 
 O ADR 0003 continua valendo: o Histórico segue sendo uma consulta às Mensagens, não uma coluna nem uma tabela.

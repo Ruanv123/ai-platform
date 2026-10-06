@@ -62,12 +62,4 @@ return [
         'redirect' => env('GOOGLE_REDIRECT_URI', env('APP_URL').'/integrations/agenda/google/callback'),
     ],
 
-    'shopify' => [
-        'client_id' => env('SHOPIFY_CLIENT_ID'),
-        'client_secret' => env('SHOPIFY_CLIENT_SECRET'),
-        'redirect' => env('SHOPIFY_REDIRECT_URI', env('APP_URL').'/integrations/ecommerce/shopify/callback'),
-        'scopes' => ['read_products', 'read_inventory', 'read_customers', 'read_orders'],
-        'api_version' => env('SHOPIFY_API_VERSION', '2026-07'),
-    ],
-
 ];

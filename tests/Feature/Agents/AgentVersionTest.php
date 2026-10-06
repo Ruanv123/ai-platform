@@ -1,14 +1,7 @@
 <?php
 
-use App\Ai\Agents\WhatsAppAgent;
-use App\Ai\Tools\SearchProducts;
-use App\Ai\Tools\SendPurchaseLink;
-use App\Ecommerce\ProductCatalogSearch;
 use App\Enums\AgentObjective;
-use App\Knowledge\AgentInstructionTemplate;
-use App\Knowledge\KnowledgeBaseSearch;
 use App\Models\Agent;
-use App\Models\Shop;
 use App\Models\User;
 
 beforeEach(function (): void {
@@ -32,79 +25,30 @@ function agentPublishingPayload(Agent $agent, array $overrides = []): array
     ], $overrides);
 }
 
-function agentChannelHasProductSearch(Agent $agent): bool
-{
-    $agent->load('team');
-    $channelAgent = new WhatsAppAgent(
-        $agent,
-        collect(),
-        app(AgentInstructionTemplate::class),
-        app(KnowledgeBaseSearch::class),
-        app(ProductCatalogSearch::class),
-    );
-
-    return collect($channelAgent->tools())->contains(fn ($tool): bool => $tool instanceof SearchProducts);
-}
-
-function agentChannelHasPurchaseLink(Agent $agent): bool
-{
-    $agent->load('team');
-    $channelAgent = new WhatsAppAgent(
-        $agent,
-        collect(),
-        app(AgentInstructionTemplate::class),
-        app(KnowledgeBaseSearch::class),
-        app(ProductCatalogSearch::class),
-    );
-
-    return collect($channelAgent->tools())->contains(fn ($tool): bool => $tool instanceof SendPurchaseLink);
-}
-
-it('keeps saved drafts out of channel tool settings until publishing', function () {
+it('keeps saved drafts out of the published version until publishing', function () {
     $user = User::factory()->withTeam()->create();
-    $team = $user->company();
-    Shop::factory()->for($team)->create();
-    $agent = Agent::factory()->for($team)->create([
+    $agent = Agent::factory()->for($user->company())->create([
         'objective' => AgentObjective::Support,
-        'search_products' => null,
     ]);
 
     $this->actingAs($user)->post(
         route('agents.publish', $agent),
-        agentPublishingPayload($agent, [
-            'objective' => AgentObjective::Sales->value,
-            'search_products' => true,
-            'send_purchase_link' => true,
-        ]),
+        agentPublishingPayload($agent, ['objective' => AgentObjective::Sales->value]),
     )->assertRedirect(route('agents.edit', $agent));
 
     $firstVersion = $agent->fresh()->publishedVersion();
     expect($firstVersion)->not->toBeNull()
         ->and($firstVersion->number)->toBe(1)
-        ->and($firstVersion->objective)->toBe(AgentObjective::Sales)
-        ->and($firstVersion->ecommerce_tools)->toBe([
-            'search_products' => true,
-            'send_purchase_link' => true,
-        ])
-        ->and($agent->fresh()->search_products)->toBeTrue()
-        ->and(agentChannelHasProductSearch($agent->fresh()))->toBeTrue()
-        ->and(agentChannelHasPurchaseLink($agent->fresh()))->toBeTrue();
+        ->and($firstVersion->objective)->toBe(AgentObjective::Sales);
 
     $this->actingAs($user)->patch(
         route('agents.update', $agent),
-        agentPublishingPayload($agent->fresh(), [
-            'objective' => AgentObjective::Support->value,
-            'search_products' => false,
-            'send_purchase_link' => false,
-        ]),
+        agentPublishingPayload($agent->fresh(), ['objective' => AgentObjective::Support->value]),
     )->assertRedirect(route('agents.edit', $agent));
 
     expect($agent->fresh()->objective)->toBe(AgentObjective::Support)
-        ->and($agent->fresh()->search_products)->toBeFalse()
-        ->and($agent->fresh()->send_purchase_link)->toBeFalse()
         ->and($agent->fresh()->publishedVersion()->number)->toBe(1)
-        ->and(agentChannelHasProductSearch($agent->fresh()))->toBeTrue()
-        ->and(agentChannelHasPurchaseLink($agent->fresh()))->toBeTrue();
+        ->and($agent->fresh()->publishedVersion()->objective)->toBe(AgentObjective::Sales);
 
     $this->actingAs($user)->post(
         route('agents.publish', $agent),
@@ -113,40 +57,5 @@ it('keeps saved drafts out of channel tool settings until publishing', function 
 
     $latestVersion = $agent->fresh()->publishedVersion();
     expect($latestVersion->number)->toBe(2)
-        ->and($latestVersion->objective)->toBe(AgentObjective::Support)
-        ->and($latestVersion->ecommerce_tools)->toBe([
-            'search_products' => false,
-            'send_purchase_link' => false,
-        ])
-        ->and(agentChannelHasProductSearch($agent->fresh()))->toBeFalse()
-        ->and(agentChannelHasPurchaseLink($agent->fresh()))->toBeFalse();
-});
-
-it('derives null product-search flags from the published objective and current shop', function () {
-    $user = User::factory()->withTeam()->create();
-    $team = $user->company();
-    Shop::factory()->for($team)->create();
-    $agent = Agent::factory()->for($team)->create([
-        'objective' => AgentObjective::Support,
-        'search_products' => null,
-    ]);
-
-    $this->actingAs($user)->post(
-        route('agents.publish', $agent),
-        agentPublishingPayload($agent, [
-            'objective' => AgentObjective::Sales->value,
-        ]),
-    )->assertRedirect(route('agents.edit', $agent));
-
-    $version = $agent->fresh()->publishedVersion();
-    expect($version->ecommerce_tools)->toBe([
-        'search_products' => null,
-        'send_purchase_link' => null,
-    ])
-        ->and($version->shouldSearchProducts(true))->toBeTrue()
-        ->and($version->shouldSearchProducts(false))->toBeFalse()
-        ->and($version->shouldSendPurchaseLink(true))->toBeTrue()
-        ->and($version->shouldSendPurchaseLink(false))->toBeFalse()
-        ->and(agentChannelHasProductSearch($agent->fresh()))->toBeTrue()
-        ->and(agentChannelHasPurchaseLink($agent->fresh()))->toBeTrue();
+        ->and($latestVersion->objective)->toBe(AgentObjective::Support);
 });

@@ -3,7 +3,6 @@
 namespace App\Http\Controllers\Teams;
 
 use App\Actions\Teams\AcceptTeamInvitation;
-use App\Ecommerce\ShopifyInstallationFlow;
 use App\Enums\TeamRole;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Teams\CreateTeamInvitationRequest;
@@ -47,12 +46,8 @@ class TeamInvitationController extends Controller
      * Route an invitation link to registration, or accept it for an unassigned
      * authenticated user.
      */
-    public function show(
-        Request $request,
-        TeamInvitation $invitation,
-        AcceptTeamInvitation $acceptTeamInvitation,
-        ShopifyInstallationFlow $shopifyInstallationFlow,
-    ): RedirectResponse {
+    public function show(Request $request, TeamInvitation $invitation, AcceptTeamInvitation $acceptTeamInvitation): RedirectResponse
+    {
         abort_if(! $invitation->isPending(), 404);
 
         if (! $request->user()) {
@@ -62,11 +57,6 @@ class TeamInvitationController extends Controller
         $acceptTeamInvitation->handle($request->user(), $invitation);
 
         Inertia::flash('toast', ['type' => 'success', 'message' => 'Convite aceito.']);
-
-        $installationRedirect = $shopifyInstallationFlow->redirectAfterAuthentication($request);
-        if ($installationRedirect !== null) {
-            return $installationRedirect;
-        }
 
         return to_route('dashboard');
     }
@@ -93,20 +83,11 @@ class TeamInvitationController extends Controller
     /**
      * Accept the invitation.
      */
-    public function accept(
-        RespondToTeamInvitationRequest $request,
-        TeamInvitation $invitation,
-        AcceptTeamInvitation $acceptTeamInvitation,
-        ShopifyInstallationFlow $shopifyInstallationFlow,
-    ): RedirectResponse {
+    public function accept(RespondToTeamInvitationRequest $request, TeamInvitation $invitation, AcceptTeamInvitation $acceptTeamInvitation): RedirectResponse
+    {
         $acceptTeamInvitation->handle($request->user(), $invitation);
 
         Inertia::flash('toast', ['type' => 'success', 'message' => 'Convite aceito.']);
-
-        $installationRedirect = $shopifyInstallationFlow->redirectAfterAuthentication($request);
-        if ($installationRedirect !== null) {
-            return $installationRedirect;
-        }
 
         return to_route('dashboard');
     }

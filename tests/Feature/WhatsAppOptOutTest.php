@@ -2,7 +2,6 @@
 
 use App\Enums\ChannelType;
 use App\Jobs\RespondToWhatsAppMessage;
-use App\Jobs\RunFlowTurn;
 use App\Models\Channel;
 use App\Models\Contact;
 use App\Models\Message;
@@ -13,9 +12,9 @@ use App\WhatsApp\OptOutInterceptor;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
 
-it('intercepts an opt-out before dispatching any flow job', function () {
+it('intercepts an opt-out before dispatching an Agent response', function () {
     Http::preventStrayRequests();
-    Queue::fake([RunFlowTurn::class, RespondToWhatsAppMessage::class]);
+    Queue::fake([RespondToWhatsAppMessage::class]);
     $user = User::factory()->withTeam()->create();
     $channel = Channel::factory()->for($user->company())->create(['type' => ChannelType::WhatsApp]);
     $phone = WhatsAppPhoneNumber::factory()->for($channel)->create(['phone_number_id' => 'opt-out-phone']);
@@ -41,7 +40,6 @@ it('intercepts an opt-out before dispatching any flow job', function () {
         'content' => 'Você foi descadastrado dos nossos envios de marketing e não receberá mais esse tipo de mensagem. Para voltar a receber, fale com a nossa equipe.',
         'delivery_status' => 'sent',
     ]);
-    Queue::assertNotPushed(RunFlowTurn::class);
     Queue::assertNotPushed(RespondToWhatsAppMessage::class);
 });
 

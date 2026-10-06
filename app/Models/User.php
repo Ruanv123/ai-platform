@@ -35,7 +35,6 @@ use Laravel\Fortify\TwoFactorAuthenticatable;
  * @property-read Collection<int, Team> $ownedTeams
  * @property-read Collection<int, Membership> $teamMemberships
  * @property-read Collection<int, Team> $teams
- * @property-read Collection<int, FlowExecution> $humanInboxExecutions
  * @property-read Collection<int, Message> $humanInboxMessages
  */
 #[Fillable(['name', 'email', 'password', 'current_team_id'])]
@@ -50,12 +49,6 @@ class User extends Authenticatable implements PasskeyUser
      *
      * @return array<string, string>
      */
-    /** @return HasMany<FlowExecution, $this> */
-    public function humanInboxExecutions(): HasMany
-    {
-        return $this->hasMany(FlowExecution::class, 'human_assigned_user_id');
-    }
-
     /** @return HasMany<Message, $this> */
     public function humanInboxMessages(): HasMany
     {

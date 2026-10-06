@@ -2,27 +2,15 @@ import { Head, Link, router } from '@inertiajs/react';
 import { ArrowLeft, Check, Trash2 } from 'lucide-react';
 import { useState, type FormEvent } from 'react';
 import Heading from '@/components/heading';
-import InputError from '@/components/input-error';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import ShopifyConnectionPanel from '@/components/integrations/shopify-connection-panel';
 import agenda from '@/routes/integrations/agenda';
 import calendars from '@/routes/integrations/agenda/calendars';
-import { destroy, index, show, store, test, update } from '@/routes/integrations';
+import { destroy, index } from '@/routes/integrations';
 import type { TeamPermissions } from '@/types';
-
-type CatalogIntegration = {
-    value: string;
-    name: string;
-    description: string;
-    logo: string;
-    capabilities: string[];
-    planned: boolean;
-    available: boolean;
-};
 
 type ConfiguredIntegration = {
     id: string;
@@ -52,96 +40,13 @@ type SchedulableCalendar = {
     businessHours: Record<string, { enabled?: boolean; open?: string | null; close?: string | null }> | null;
 };
 
-type ShopifyStore = {
-    id: string;
-    domain: string;
-    name: string;
-    currencyCode: string;
-    countryCode: string | null;
-    timezone: string | null;
-    syncStatus: string;
-    syncStatusLabel: string;
-    syncProgress: number;
-    syncProcessedCount: number;
-    syncTotalCount: number | null;
-    lastSyncedAt: string | null;
-    syncError: string | null;
-    suggestedAction: string | null;
-};
-
-type IntegrationType = 'crm' | 'ecommerce' | 'agenda';
-
 type Props = {
-    type: IntegrationType;
-    catalog: CatalogIntegration[];
-    provider: string | null;
     integration: ConfiguredIntegration | null;
     googleCalendars: GoogleCalendar[];
     schedulableCalendars: SchedulableCalendar[];
     agendaError: string | null;
-    shop: ShopifyStore | null;
-    shopifyError: string | null;
-    shopifySuccess: string | null;
     permissions: TeamPermissions;
 };
-
-const settingsTabs = [
-    { value: 'settings', label: 'Configurações' },
-    { value: 'data', label: 'Dados' },
-] as const;
-
-type SettingsTab = (typeof settingsTabs)[number]['value'];
-
-export default function IntegrationShowPage(props: Props) {
-    const { type, catalog, provider, integration, permissions } = props;
-    const [activeTab, setActiveTab] = useState<SettingsTab>('settings');
-    const selectedProviderValue = integration?.provider ?? provider;
-    const selectedCatalogItem = catalog.find((item) => item.value === selectedProviderValue);
-
-    if (type === 'ecommerce' && (provider === 'shopify' || integration?.provider === 'shopify')) {
-        return (
-            <>
-                <Head title="Shopify" />
-                <ShopifyConnectionPanel
-                    integration={integration}
-                    shop={props.shop}
-                    shopifyError={props.shopifyError}
-                    shopifySuccess={props.shopifySuccess}
-                    permissions={permissions}
-                />
-            </>
-        );
-    }
-
-    if (type === 'agenda') {
-        return <AgendaPage {...props} />;
-    }
-
-    const title = integration ? (selectedCatalogItem?.name ?? integration.name) : (selectedCatalogItem?.name ?? 'Conectar integração');
-
-    return (
-        <>
-            <Head title={title} />
-            <div className="flex flex-1 flex-col gap-8 p-4 md:p-6">
-                <PageHeader title={title} description={selectedCatalogItem?.description ?? 'A credencial é cifrada e nunca aparece no desenho do Fluxo.'} />
-                {!selectedCatalogItem ? (
-                    <ProviderPicker type={type} catalog={catalog} />
-                ) : (
-                    <div className="grid gap-5">
-                        <div className="border-border flex gap-6 border-b" role="tablist" aria-label="Configurações da integração">
-                            {settingsTabs.map((tab) => (
-                                <button key={tab.value} type="button" role="tab" aria-selected={activeTab === tab.value} onClick={() => setActiveTab(tab.value)} className={`border-b-2 px-1 pb-3 text-sm font-medium transition-colors ${activeTab === tab.value ? 'border-primary text-foreground' : 'text-muted-foreground hover:text-foreground border-transparent'}`}>
-                                    {tab.label}
-                                </button>
-                            ))}
-                        </div>
-                        {activeTab === 'settings' ? <SettingsForm type={type} provider={selectedCatalogItem.value} integration={integration} permissions={permissions} /> : <Card className="border-dashed shadow-none"><CardContent className="text-muted-foreground flex min-h-40 items-center justify-center p-6 text-center text-sm">Em breve: visualize aqui os dados trazidos por esta integração.</CardContent></Card>}
-                    </div>
-                )}
-            </div>
-        </>
-    );
-}
 
 function PageHeader({ title, description }: { title: string; description: string }) {
     return (
@@ -152,7 +57,7 @@ function PageHeader({ title, description }: { title: string; description: string
     );
 }
 
-function AgendaPage({ integration, googleCalendars, schedulableCalendars, agendaError, permissions }: Props) {
+export default function IntegrationShowPage({ integration, googleCalendars, schedulableCalendars, agendaError, permissions }: Props) {
     const isConnected = integration?.status === 'connected';
 
     return (
@@ -223,17 +128,6 @@ function CalendarCard({ calendar, configured, enabled, canManage }: { calendar: 
             </CardContent>
         </Card>
     );
-}
-
-function ProviderPicker({ type, catalog }: { type: IntegrationType; catalog: CatalogIntegration[] }) { return <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">{catalog.map((item) => <Card key={item.value} className={item.available ? 'group hover:border-primary/50' : 'bg-muted/20 border-dashed shadow-none'}><CardHeader className="flex-1"><span className="bg-primary text-primary-foreground flex size-12 shrink-0 items-center justify-center rounded-xl text-sm font-bold">{item.logo}</span><CardTitle className="pt-2">{item.name}</CardTitle><CardDescription>{item.description}</CardDescription></CardHeader><CardContent>{item.available ? <Button className="w-full" asChild><Link href={show(type, { query: { provider: item.value } })}>Conectar</Link></Button> : <span className="text-muted-foreground text-sm">Estamos preparando esta conexão.</span>}</CardContent></Card>)}</div>; }
-
-function SettingsForm({ type, provider, integration, permissions }: { type: IntegrationType; provider: string; integration: ConfiguredIntegration | null; permissions: TeamPermissions }) {
-    const [name, setName] = useState(integration?.name ?? '');
-    const [baseUrl, setBaseUrl] = useState('');
-    const [token, setToken] = useState('');
-    const [isSaving, setIsSaving] = useState(false);
-    const submit = (event: FormEvent<HTMLFormElement>) => { event.preventDefault(); if (name.trim() === '' || !permissions.canManageIntegrations) return; setIsSaving(true); const payload = { name: name.trim(), type, provider, base_url: baseUrl, auth_type: token ? 'bearer' : integration === null ? 'none' : null, token: token || null }; const request = integration === null ? router.post(store().url, payload, { onFinish: () => setIsSaving(false) }) : router.patch(update(integration.id).url, payload, { onFinish: () => setIsSaving(false) }); return request; };
-    return <Card><form onSubmit={submit}><CardContent className="grid gap-4 pt-6"><div className="grid gap-2"><Label htmlFor="integration-name">Nome da conexão</Label><Input id="integration-name" value={name} onChange={(event) => setName(event.target.value)} /><InputError message={undefined} /></div><div className="grid gap-2"><Label htmlFor="integration-url">URL base</Label><Input id="integration-url" type="url" value={baseUrl} onChange={(event) => setBaseUrl(event.target.value)} /></div><div className="grid gap-2"><Label htmlFor="integration-token">Token (opcional)</Label><Input id="integration-token" type="password" value={token} onChange={(event) => setToken(event.target.value)} /></div></CardContent><div className="flex items-center justify-between gap-2 border-t p-6"><div className="flex gap-2">{integration && permissions.canManageIntegrations && <><Button type="button" variant="outline" onClick={() => router.post(test(integration.id).url)}>Testar conexão</Button><Button type="button" variant="outline" onClick={() => router.delete(destroy(integration.id).url)}><Trash2 /> Remover</Button></>}</div><Button type="submit" disabled={isSaving || !permissions.canManageIntegrations}>{isSaving ? 'Salvando...' : integration === null ? 'Conectar' : 'Salvar alterações'}</Button></div></form></Card>;
 }
 
 function StatusBadge({ status, label }: { status: string; label: string }) { return <Badge variant={status === 'connected' ? 'success' : status === 'error' ? 'destructive' : 'secondary'}>{status === 'connected' && <Check className="size-3" />}{label}</Badge>; }

@@ -1,2 +1,0 @@
-{"__typename":"Customer","id":"gid://shopify/Customer/7001","firstName":"Mariana","lastName":"Costa","email":"mariana.costa@example.test","phone":"(11) 98765-4321","amountSpent":{"amount":"823.50","currencyCode":"BRL"}}
-{"__typename":"Customer","id":"gid://shopify/Customer/7002","firstName":"Rafael","lastName":"Lima","email":"rafael.lima@example.test","phone":null,"amountSpent":{"amount":"0.00","currencyCode":"BRL"}}

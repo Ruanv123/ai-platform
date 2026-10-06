@@ -3,7 +3,6 @@
 namespace App\Models;
 
 use App\Concerns\BelongsToTeam;
-use App\Ecommerce\StoreCustomerContactLinker;
 use App\Support\E164PhoneNumber;
 use Database\Factories\ContactFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
@@ -11,10 +10,8 @@ use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
-use Illuminate\Database\Eloquent\Relations\Pivot;
 use Illuminate\Support\Carbon;
 
 /**
@@ -22,39 +19,21 @@ use Illuminate\Support\Carbon;
  * @property int $team_id
  * @property string $phone
  * @property string|null $name
- * @property bool $human_waiting
- * @property Carbon|null $human_waiting_at
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
  * @property-read Team $team
  * @property-read Collection<int, Message> $messages
  * @property-read Message|null $latestMessage
- * @property-read Collection<int, ContactFieldValue> $fieldValues
- * @property-read Collection<int, Tag> $tags
- * @property-read Collection<int, FlowExecution> $flowExecutions
  * @property-read Collection<int, ContactConsent> $consents
  * @property-read Collection<int, Appointment> $appointments
  */
-#[Fillable(['team_id', 'phone', 'name', 'human_waiting', 'human_waiting_at'])]
+#[Fillable(['team_id', 'phone', 'name'])]
 class Contact extends Model
 {
     public const int MAX_HISTORY_MESSAGES = 50;
 
     /** @use HasFactory<ContactFactory> */
     use BelongsToTeam, HasFactory;
-
-    protected static function booted(): void
-    {
-        static::created(function (Contact $contact): void {
-            app(StoreCustomerContactLinker::class)->syncContact($contact);
-        });
-
-        static::updated(function (Contact $contact): void {
-            if ($contact->wasChanged('phone')) {
-                app(StoreCustomerContactLinker::class)->syncContact($contact);
-            }
-        });
-    }
 
     /**
      * Get the messages exchanged with this contact.
@@ -72,24 +51,6 @@ class Contact extends Model
         return $this->hasOne(Message::class)->latestOfMany();
     }
 
-    /** @return HasMany<ContactFieldValue, $this> */
-    public function fieldValues(): HasMany
-    {
-        return $this->hasMany(ContactFieldValue::class);
-    }
-
-    /** @return BelongsToMany<Tag, $this, Pivot, 'pivot'> */
-    public function tags(): BelongsToMany
-    {
-        return $this->belongsToMany(Tag::class, 'contact_tag');
-    }
-
-    /** @return HasMany<FlowExecution, $this> */
-    public function flowExecutions(): HasMany
-    {
-        return $this->hasMany(FlowExecution::class);
-    }
-
     /** @return HasMany<ContactConsent, $this> */
     public function consents(): HasMany
     {
@@ -100,11 +61,6 @@ class Contact extends Model
     public function appointments(): HasMany
     {
         return $this->hasMany(Appointment::class);
-    }
-
-    public function storeCustomer(): HasOne
-    {
-        return $this->hasOne(StoreCustomer::class);
     }
 
     public function agentMemories(): HasMany
@@ -127,8 +83,6 @@ class Contact extends Model
     protected function casts(): array
     {
         return [
-            'human_waiting' => 'boolean',
-            'human_waiting_at' => 'immutable_datetime',
         ];
     }
 

@@ -4,12 +4,10 @@ namespace App\WhatsApp;
 
 use App\Consent\ContactConsentService;
 use App\Enums\ConsentPurpose;
-use App\Enums\FlowExecutionStatus;
 use App\Enums\MessageDeliveryStatus;
 use App\Enums\MessageDirection;
 use App\Models\Channel;
 use App\Models\Contact;
-use App\Models\FlowExecution;
 use App\Models\Message;
 use App\WhatsApp\Output\WhatsAppOutputAdapterFactory;
 use Illuminate\Support\Str;
@@ -23,7 +21,7 @@ final class OptOutInterceptor
     ) {}
 
     /**
-     * Intercept a keyword before any flow or Agent job is dispatched.
+     * Intercept a keyword before any Agent job is dispatched.
      */
     public function intercept(Channel $channel, Message $message): bool
     {
@@ -43,7 +41,6 @@ final class OptOutInterceptor
             'keyword',
             ['keyword' => $content, 'message_id' => $message->getKey()],
         );
-        $this->finishActiveExecutions($contact, $channel);
         $message->forceFill(['is_responded' => true])->save();
         $this->sendConfirmation($channel, $contact);
 
@@ -64,24 +61,6 @@ final class OptOutInterceptor
         }
 
         return false;
-    }
-
-    private function finishActiveExecutions(Contact $contact, Channel $channel): void
-    {
-        $executions = FlowExecution::withoutGlobalScopes()
-            ->where('team_id', $contact->team_id)
-            ->where('contact_id', $contact->getKey())
-            ->where('channel_id', $channel->getKey())
-            ->whereIn('status', [FlowExecutionStatus::Running, FlowExecutionStatus::Waiting, FlowExecutionStatus::Paused])
-            ->get();
-
-        foreach ($executions as $execution) {
-            $execution->finish(FlowExecutionStatus::Abandoned, 'opted_out_marketing');
-        }
-
-        if ($executions->isNotEmpty()) {
-            $contact->forceFill(['human_waiting' => false, 'human_waiting_at' => null])->save();
-        }
     }
 
     private function sendConfirmation(Channel $channel, Contact $contact): void

@@ -32,7 +32,11 @@ class BookAppointment implements Tool
     {
         try {
             $calendar = $this->calendar($request->string('calendar_id')->toString());
-            $start = CarbonImmutable::parse($request->string('start')->toString(), $calendar->team->timezone ?: 'America/Sao_Paulo');
+            $startInput = $request->string('start')->toString();
+            if (blank($startInput)) {
+                throw new \RuntimeException('Informe a data e hora confirmadas pelo Contato.');
+            }
+            $start = CarbonImmutable::parse($startInput, $calendar->team->timezone ?: 'America/Sao_Paulo');
             if ($this->contact === null && ! $this->simulate) {
                 throw new \RuntimeException('Não há um Contato nesta conversa.');
             }

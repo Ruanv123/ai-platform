@@ -90,6 +90,6 @@ final class WhatsAppResponseFailureHandler
 
         return filled($message)
             ? Str::limit($message, 1000)
-            : 'O fluxo de atendimento falhou após as tentativas disponíveis.';
+            : 'A resposta do Agente falhou após as tentativas disponíveis.';
     }
 }

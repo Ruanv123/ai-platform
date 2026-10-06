@@ -5,7 +5,6 @@ import {
     MessageSquare,
     Plug,
     Settings,
-    Workflow,
 } from 'lucide-react';
 import AppLogo from '@/components/app-logo';
 import { NavMain } from '@/components/nav-main';
@@ -28,7 +27,6 @@ import { index as agents } from '@/routes/agents';
 import { index as channels } from '@/routes/channels';
 import { index as integrations } from '@/routes/integrations';
 import { index as templates } from '@/routes/templates';
-import { index as flows } from '@/routes/flows';
 import { edit as profile } from '@/routes/profile';
 import { index as inbox } from '@/routes/inbox';
 import { useInboxRealtime } from '@/hooks/use-inbox-realtime';
@@ -76,11 +74,6 @@ export function AppSidebar() {
                     href: channels(),
                 },
             ],
-        },
-        {
-            title: 'Fluxos',
-            href: flows(),
-            icon: Workflow,
         },
         ...(props.hasOfficialWhatsApp
             ? [

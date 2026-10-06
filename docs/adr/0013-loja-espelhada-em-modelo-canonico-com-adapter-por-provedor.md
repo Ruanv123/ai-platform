@@ -1,5 +1,7 @@
 # Loja espelhada em modelo canônico, com adapter por Provedor de e-commerce
 
+Status: superseded by ADR-0018
+
 A plataforma mantém uma cópia local da Loja — Produtos, Variantes, Categorias, Clientes da loja e Pedidos — num modelo canônico único, igual para qualquer Provedor de e-commerce. Cada provedor entra por um adapter com contrato fixo (conectar, importar tudo, buscar um recurso pelo id externo, traduzir para o canônico, validar webhook), e o Agente só enxerga o canônico. É o caminho oposto ao do ADR 0004, e de propósito: lá os provedores divergem em semântica sem tradução limpa; aqui produto, variante e pedido têm correspondência direta, e o Agente, a busca semântica e os Fluxos precisam de uma forma só.
 
 ## Considered Options

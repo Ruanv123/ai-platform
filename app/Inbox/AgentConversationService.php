@@ -11,7 +11,6 @@ use App\Models\AgentConversationAudit;
 use App\Models\AgentConversationState;
 use App\Models\Channel;
 use App\Models\Contact;
-use App\Models\Flow;
 use App\Models\Message;
 use App\Models\Team;
 use App\Models\User;
@@ -36,13 +35,7 @@ final class AgentConversationService
             return false;
         }
 
-        return ! Flow::withoutGlobalScopes()
-            ->where('team_id', $channel->team_id)
-            ->where('channel_id', $channel->getKey())
-            ->where('trigger_type', 'message')
-            ->whereIn('status', ['published', 'paused'])
-            ->where('is_trivial', false)
-            ->exists();
+        return true;
     }
 
     public function stateFor(Contact $contact, Channel $channel): ?AgentConversationState
@@ -682,7 +675,7 @@ final class AgentConversationService
         abort_unless($contact->team_id === $channel->team_id && $user->belongsToTeam(Team::withoutGlobalScopes()->findOrFail($channel->team_id)), 404);
 
         if (! $this->canPause($contact, $channel)) {
-            throw new ConflictHttpException('Esta conversa é conduzida por um Fluxo e não pode ser pausada pelo controle do Agente.');
+            throw new ConflictHttpException('Esta conversa não possui um Agente vinculado.');
         }
     }
 

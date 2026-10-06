@@ -3,7 +3,6 @@
 use App\Enums\TeamRole;
 use App\Models\Appointment;
 use App\Models\Contact;
-use App\Models\Flow;
 use App\Models\Integration;
 use App\Models\SchedulableCalendar;
 use App\Models\User;
@@ -16,51 +15,7 @@ it('isolates integrations between companies', function () {
     $other = User::factory()->withTeam()->create();
     $integration = Integration::factory()->for($owner->company())->create();
 
-    $this->actingAs($other)->postJson(route('integrations.test', $integration))->assertNotFound();
-});
-
-it('reuses the existing singleton integration instead of creating a duplicate', function () {
-    $user = User::factory()->withTeam()->create();
-
-    $this->actingAs($user)->postJson(route('integrations.store'), [
-        'name' => 'RD Station principal',
-        'type' => 'crm',
-        'provider' => 'rd_station',
-        'base_url' => 'https://rdstation.example.test',
-        'token' => 'first-token',
-    ])->assertCreated();
-
-    $this->actingAs($user)->postJson(route('integrations.store'), [
-        'name' => 'RD Station renomeado',
-        'type' => 'crm',
-        'provider' => 'rd_station',
-        'base_url' => 'https://rdstation.example.test',
-        'token' => 'second-token',
-    ])->assertOk();
-
-    $team = $user->company();
-    expect($team->integrations()->where('type', 'crm')->count())->toBe(1);
-    $integration = $team->integrations()->where('type', 'crm')->firstOrFail();
-    expect($integration->name)->toBe('RD Station renomeado')
-        ->and($integration->credentials['token'])->toBe('second-token');
-});
-
-it('explains when an integration is still used by a flow instead of deleting it', function () {
-    $user = User::factory()->withTeam()->create();
-    $integration = Integration::factory()->for($user->company())->create();
-    Flow::factory()->for($user->company())->create([
-        'draft_dsl' => [
-            'version' => 1,
-            'nodes' => [['id' => 'request', 'type' => 'http_request', 'config' => ['integration_id' => $integration->getKey()]]],
-            'edges' => [],
-        ],
-    ]);
-
-    $this->actingAs($user)
-        ->delete(route('integrations.destroy', $integration))
-        ->assertSessionHasErrors('integration');
-
-    $this->assertModelExists($integration);
+    $this->actingAs($other)->deleteJson(route('integrations.destroy', $integration))->assertNotFound();
 });
 
 it('redirects the integration manager to Google with calendar scopes and offline consent', function () {

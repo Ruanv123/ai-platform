@@ -9,7 +9,6 @@ use App\Enums\MessageDirection;
 use App\Enums\WhatsAppTemplateStatus;
 use App\Events\HumanConversationUpdated;
 use App\Jobs\RespondToWhatsAppMessage;
-use App\Jobs\RunFlowTurn;
 use App\Models\Agent;
 use App\Models\Channel;
 use App\Models\Contact;
@@ -218,7 +217,7 @@ it('creates, replaces, and removes the reaction on its target message', function
         ->create(['provider_message_id' => $providerMessageId]);
     $agent = Agent::factory()->for($channel->team)->create();
     $channel->update(['agent_id' => $agent->getKey()]);
-    Queue::fake([RespondToWhatsAppMessage::class, RunFlowTurn::class]);
+    Queue::fake([RespondToWhatsAppMessage::class]);
     Event::fake([HumanConversationUpdated::class]);
     $payload = whatsappConformanceFixture($fixtureDirectory, 'message-reaction');
 
@@ -243,7 +242,6 @@ it('creates, replaces, and removes the reaction on its target message', function
 
     $this->assertDatabaseCount('messages', 1);
     Queue::assertNotPushed(RespondToWhatsAppMessage::class);
-    Queue::assertNotPushed(RunFlowTurn::class);
     Event::assertDispatched(HumanConversationUpdated::class, fn (HumanConversationUpdated $event): bool => $event->teamId === $channel->team_id
         && $event->contactId === $contact->id
         && $event->channelId === $channel->id
@@ -272,7 +270,7 @@ it('discards a reaction when the provider message belongs to another channel', f
         ->create(['provider_message_id' => $providerMessageId]);
     $agent = Agent::factory()->for($channel->team)->create();
     $channel->update(['agent_id' => $agent->getKey()]);
-    Queue::fake([RespondToWhatsAppMessage::class, RunFlowTurn::class]);
+    Queue::fake([RespondToWhatsAppMessage::class]);
     Event::fake([HumanConversationUpdated::class]);
     $payload = whatsappConformanceFixture($fixtureDirectory, 'message-reaction');
 
@@ -288,7 +286,6 @@ it('discards a reaction when the provider message belongs to another channel', f
         ->and($targetMessage->fresh()->reacted_at)->toBeNull();
     $this->assertDatabaseCount('messages', 1);
     Queue::assertNotPushed(RespondToWhatsAppMessage::class);
-    Queue::assertNotPushed(RunFlowTurn::class);
     Event::assertNotDispatched(HumanConversationUpdated::class);
 })->with('WhatsApp webhook channels');
 

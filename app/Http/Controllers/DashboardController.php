@@ -6,7 +6,6 @@ use App\Enums\ChannelStatus;
 use App\Enums\ChannelType;
 use App\Enums\DocumentStatus;
 use App\Knowledge\DocumentStorageQuota;
-use App\Models\FlowEventDelivery;
 use App\Models\Team;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
@@ -37,15 +36,6 @@ class DashboardController extends Controller
             ->where('type', ChannelType::WhatsApp->value)
             ->where('status', ChannelStatus::Connected->value)
             ->exists();
-        $flowHealth = [
-            'failed' => $team->flowExecutions()->where('status', 'failed')->where('created_at', '>=', now()->subDays(30))->count(),
-            'stuck' => $team->flowExecutions()->stuck()->count(),
-            'href' => route('flows.index', ['tab' => 'executions']),
-        ];
-        $webhookFailures = [
-            'count' => FlowEventDelivery::withoutGlobalScopes()->where('team_id', $team->getKey())->where('status', 'failed')->count(),
-            'href' => route('integrations.webhook-failures.index'),
-        ];
         $hasLinkedAgent = $team->channels()
             ->where('type', ChannelType::WhatsApp->value)
             ->whereNotNull('agent_id')
@@ -104,8 +94,6 @@ class DashboardController extends Controller
                     'status' => $whatsapp?->status?->value,
                     'statusLabel' => $whatsapp?->status?->label() ?? 'Não configurado',
                 ],
-                'flowHealth' => $flowHealth,
-                'webhookFailures' => $webhookFailures,
             ],
         ]);
     }

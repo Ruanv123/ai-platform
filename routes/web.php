@@ -11,22 +11,10 @@ use App\Http\Controllers\Channels\WhatsAppTestWebhookController;
 use App\Http\Controllers\Channels\WhatsAppWebhookController;
 use App\Http\Controllers\ContactConsentController;
 use App\Http\Controllers\DashboardController;
-use App\Http\Controllers\Events\FlowEventController;
-use App\Http\Controllers\Events\FlowEventWebhookController;
-use App\Http\Controllers\Flows\FlowAiController;
-use App\Http\Controllers\Flows\FlowController;
-use App\Http\Controllers\Flows\FlowExecutionController;
-use App\Http\Controllers\Flows\FlowPlaygroundController;
-use App\Http\Controllers\Flows\FlowWebhookController;
 use App\Http\Controllers\InboxController;
 use App\Http\Controllers\InboxMediaController;
 use App\Http\Controllers\Integrations\AgendaCalendarController;
 use App\Http\Controllers\Integrations\IntegrationController;
-use App\Http\Controllers\Integrations\IntegrationWebhookFailureController;
-use App\Http\Controllers\Integrations\ShopifyConnectionController;
-use App\Http\Controllers\Integrations\ShopifyEmbeddedController;
-use App\Http\Controllers\Integrations\ShopifyInstallationController;
-use App\Http\Controllers\Integrations\ShopifyWebhookController;
 use App\Http\Controllers\Knowledge\CollectionController;
 use App\Http\Controllers\Knowledge\DocumentController;
 use App\Http\Controllers\Onboarding\CompanyController;
@@ -34,7 +22,6 @@ use App\Http\Controllers\Teams\TeamInvitationController;
 use App\Http\Controllers\Templates\WhatsAppTemplateController;
 use App\Http\Middleware\EnsureUserHasTeam;
 use App\Http\Middleware\RedirectIfUserHasTeam;
-use App\Http\Middleware\SetShopifyEmbeddedSecurityHeaders;
 use App\Models\Channel;
 use Illuminate\Support\Facades\Route;
 
@@ -51,34 +38,6 @@ Route::match(['get', 'post'], 'webhooks/whatsapp/app-proprio', [WhatsAppWebhookC
 Route::post('webhooks/whatsapp-test', [WhatsAppTestWebhookController::class, 'handle'])
     ->name('webhooks.whatsapp-test');
 
-Route::post('webhooks/shopify', [ShopifyWebhookController::class, 'handle'])
-    ->middleware('throttle:shopify-webhook')
-    ->name('webhooks.shopify');
-
-Route::get('shopify/embedded', [ShopifyEmbeddedController::class, 'bootstrap'])
-    ->middleware(SetShopifyEmbeddedSecurityHeaders::class)
-    ->name('shopify.embedded.bootstrap');
-
-Route::post('shopify/embedded/authenticate', [ShopifyEmbeddedController::class, 'authenticate'])
-    ->middleware('throttle:30,1')
-    ->name('shopify.embedded.authenticate');
-
-Route::get('shopify/embedded/home', [ShopifyEmbeddedController::class, 'home'])
-    ->middleware(['signed', SetShopifyEmbeddedSecurityHeaders::class])
-    ->name('shopify.embedded.home');
-
-Route::get('shopify/install/{handoffToken}', [ShopifyInstallationController::class, 'start'])
-    ->where('handoffToken', '[A-Za-z0-9]{64}')
-    ->middleware('throttle:10,1')
-    ->name('shopify.install.start');
-
-Route::middleware('auth')->group(function (): void {
-    Route::get('shopify/install', [ShopifyInstallationController::class, 'resume'])
-        ->name('shopify.install.resume');
-    Route::post('shopify/install', [ShopifyInstallationController::class, 'store'])
-        ->name('shopify.install.store');
-});
-
 Route::get(
     'webhooks/whatsapp-test/profile-photo/{photoToken}/{extension}',
     [WhatsAppTestProfilePhotoController::class, 'show'],
@@ -89,10 +48,6 @@ Route::get(
     ])
     ->middleware('signed')
     ->name('channels.whatsapp-test.profile.photo.serve');
-
-Route::post('webhooks/flows/{channelId}/{event}', [FlowWebhookController::class, 'handle'])
-    ->middleware('throttle:flow-webhook')
-    ->name('webhooks.flows');
 
 Route::bind('channel', function (string $value): Channel {
     $query = Channel::query()->whereKey($value);
@@ -124,31 +79,17 @@ Route::get('dashboard', DashboardController::class)
 Route::middleware(['auth', EnsureUserHasTeam::class])->group(function () {
     Route::get('atendimento', [InboxController::class, 'index'])->name('inbox.index');
     Route::get('atendimento/{contact}/{channel}', [InboxController::class, 'show'])->name('inbox.show');
-    Route::post('atendimento/{contact}/{channel}/take', [InboxController::class, 'take'])->name('inbox.take');
     Route::post('atendimento/{contact}/{channel}/pause-agent', [InboxController::class, 'pauseAgent'])->name('inbox.agent.pause');
     Route::post('atendimento/{contact}/{channel}/take-over-agent', [InboxController::class, 'takeOverAgent'])->name('inbox.agent.take-over');
     Route::post('atendimento/{contact}/{channel}/messages', [InboxController::class, 'storeMessage'])->name('inbox.messages.store');
     Route::get('atendimento/{contact}/{channel}/messages/{message}/media', [InboxMediaController::class, 'show'])
         ->name('inbox.messages.media');
     Route::post('atendimento/{contact}/{channel}/consents', [ContactConsentController::class, 'store'])->name('inbox.consents.store');
-    Route::post('atendimento/{contact}/{channel}/return', [InboxController::class, 'returnToBot'])->name('inbox.return');
+    Route::post('atendimento/{contact}/{channel}/return', [InboxController::class, 'returnToAgent'])->name('inbox.return');
 
     Route::resource('agents', AgentController::class)
         ->only(['index', 'store', 'edit', 'update', 'destroy'])
         ->names('agents');
-    Route::post('flows/templates/{template}/clone', [FlowController::class, 'cloneTemplate'])->name('flows.templates.clone');
-    Route::get('flows/{flow}/executions/{execution}', [FlowExecutionController::class, 'show'])
-        ->name('flows.executions.show');
-    Route::resource('flows', FlowController::class)
-        ->only(['index', 'show', 'store', 'update', 'destroy'])
-        ->names('flows');
-    Route::post('flows/{flow}/ai/propose', [FlowAiController::class, 'propose'])->middleware('throttle:playground')->name('flows.ai.propose');
-    Route::post('flows/{flow}/ai/apply', [FlowAiController::class, 'apply'])->name('flows.ai.apply');
-    Route::post('flows/{flow}/publish', [FlowController::class, 'publish'])->name('flows.publish');
-    Route::post('flows/{flow}/pause', [FlowController::class, 'pause'])->name('flows.pause');
-    Route::post('flows/{flow}/rollback/{version}', [FlowController::class, 'rollback'])->name('flows.rollback');
-    Route::post('flows/{flow}/resume', [FlowController::class, 'resume'])->name('flows.resume');
-    Route::post('flows/{flow}/playground', [FlowPlaygroundController::class, 'run'])->name('flows.playground');
     Route::patch('agents/{agent}/toggle', [AgentController::class, 'toggle'])
         ->name('agents.toggle');
     Route::post('agents/{agent}/publish', [AgentController::class, 'publish'])
@@ -178,16 +119,10 @@ Route::middleware(['auth', EnsureUserHasTeam::class])->group(function () {
 
     Route::get('integrations', [IntegrationController::class, 'index'])
         ->name('integrations.index');
-    Route::get('integrations/ecommerce/shopify/connect', [ShopifyConnectionController::class, 'connect'])
-        ->name('integrations.shopify.connect');
-    Route::get('integrations/ecommerce/shopify/callback', [ShopifyConnectionController::class, 'callback'])
-        ->name('integrations.shopify.callback');
     Route::get('integrations/agenda/google/connect', [IntegrationController::class, 'connect'])
         ->name('integrations.agenda.connect');
     Route::get('integrations/agenda/google/callback', [IntegrationController::class, 'callback'])
         ->name('integrations.agenda.callback');
-    Route::post('integrations', [IntegrationController::class, 'store'])
-        ->name('integrations.store');
     Route::post('integrations/agenda/calendars', [AgendaCalendarController::class, 'store'])
         ->name('integrations.agenda.calendars.store');
     Route::patch('integrations/agenda/calendars/{schedulableCalendar}', [AgendaCalendarController::class, 'update'])
@@ -195,30 +130,10 @@ Route::middleware(['auth', EnsureUserHasTeam::class])->group(function () {
     Route::delete('integrations/agenda/calendars/{schedulableCalendar}', [AgendaCalendarController::class, 'destroy'])
         ->name('integrations.agenda.calendars.destroy');
     Route::get('integrations/{type}', [IntegrationController::class, 'show'])
-        ->whereIn('type', ['agenda', 'crm', 'ecommerce'])
+        ->whereIn('type', ['agenda'])
         ->name('integrations.show');
-    Route::patch('integrations/{integration}', [IntegrationController::class, 'update'])
-        ->name('integrations.update');
-    Route::post('integrations/{integration}/test', [IntegrationController::class, 'test'])
-        ->name('integrations.test');
     Route::delete('integrations/{integration}', [IntegrationController::class, 'destroy'])
         ->name('integrations.destroy');
-    Route::get('integrations/webhook-failures', [IntegrationWebhookFailureController::class, 'index'])
-        ->name('integrations.webhook-failures.index');
-    Route::post('integrations/webhook-failures/{delivery}/retry', [IntegrationWebhookFailureController::class, 'retry'])
-        ->name('integrations.webhook-failures.retry');
-    Route::get('events', [FlowEventController::class, 'index'])
-        ->name('events.index');
-    Route::post('events', [FlowEventController::class, 'store'])
-        ->name('events.store');
-    Route::patch('events/{flowEvent}', [FlowEventController::class, 'update'])
-        ->name('events.update');
-    Route::delete('events/{flowEvent}', [FlowEventController::class, 'destroy'])
-        ->name('events.destroy');
-    Route::post('events/{flowEvent}/webhooks', [FlowEventWebhookController::class, 'store'])
-        ->name('events.webhooks.store');
-    Route::delete('events/{flowEvent}/webhooks/{webhook}', [FlowEventWebhookController::class, 'destroy'])
-        ->name('events.webhooks.destroy');
     Route::post('channels/whatsapp', [WhatsAppController::class, 'store'])
         ->name('channels.whatsapp.store');
     Route::post('channels/whatsapp/connect-with-meta', [WhatsAppController::class, 'connectWithMeta'])

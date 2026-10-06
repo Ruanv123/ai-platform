@@ -169,14 +169,8 @@ class AgentController extends Controller
                 'team_id' => $lockedAgent->team_id,
                 'number' => $number,
                 'objective' => $lockedAgent->objective,
-                'ecommerce_tools' => [
-                    'search_products' => $lockedAgent->search_products,
-                    'send_purchase_link' => $lockedAgent->send_purchase_link,
-                ],
                 'published_at' => now(),
             ]);
-
-            $lockedAgent->forceFill(['shop_tools_enabled' => true])->save();
         });
 
         Inertia::flash('toast', [
@@ -233,7 +227,6 @@ class AgentController extends Controller
         Agent $agent,
         bool $canManageAgents = false,
     ): array {
-        $shopConnected = $team->shops()->exists();
         $publishedVersion = $agent->publishedVersion();
 
         return [
@@ -242,8 +235,6 @@ class AgentController extends Controller
                 'name' => $agent->name,
                 'description' => $agent->description,
                 'objective' => $agent->objective->value,
-                'searchProducts' => $agent->search_products ?? ($shopConnected && $agent->objective === AgentObjective::Sales),
-                'sendPurchaseLink' => $agent->send_purchase_link ?? ($shopConnected && $agent->objective === AgentObjective::Sales),
                 'tone' => $agent->tone->value,
                 'usesEmojis' => $agent->uses_emojis,
                 'responseLength' => $agent->response_length->value,
@@ -272,9 +263,6 @@ class AgentController extends Controller
                 ])
                 ->values(),
             'agendaConnected' => $team->integrations()->where('type', 'agenda')->where('status', 'connected')->exists(),
-            'shopConnected' => $shopConnected,
-            'productSearchConfigured' => $agent->search_products !== null,
-            'purchaseLinkConfigured' => $agent->send_purchase_link !== null,
             'publishedVersion' => $publishedVersion === null ? null : [
                 'number' => $publishedVersion->number,
             ],

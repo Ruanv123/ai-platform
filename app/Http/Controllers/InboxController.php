@@ -5,19 +5,15 @@ namespace App\Http\Controllers;
 use App\Consent\ContactConsentService;
 use App\Enums\ChannelStatus;
 use App\Enums\ChannelType;
-use App\Enums\FlowExecutionStatus;
 use App\Enums\MessageDirection;
 use App\Enums\WhatsAppTemplateStatus;
 use App\Http\Requests\SendHumanMessageRequest;
 use App\Inbox\AgentConversationService;
-use App\Inbox\HumanInboxService;
 use App\Models\AgentConversationState;
 use App\Models\Channel;
 use App\Models\Contact;
 use App\Models\ConversationRead;
-use App\Models\FlowExecution;
 use App\Models\Message;
-use App\Models\StoreOrder;
 use App\Models\User;
 use App\Models\WhatsAppTemplate;
 use App\WhatsApp\WhatsAppCustomerCareWindow;
@@ -52,13 +48,6 @@ final class InboxController extends Controller
         return $this->render($request, $contact, $channel);
     }
 
-    public function take(Request $request, Contact $contact, Channel $channel, HumanInboxService $inbox): RedirectResponse
-    {
-        $inbox->assign($contact, $channel, $request->user());
-
-        return to_route('inbox.show', [$contact, $channel]);
-    }
-
     public function pauseAgent(
         Request $request,
         Contact $contact,
@@ -85,26 +74,22 @@ final class InboxController extends Controller
         SendHumanMessageRequest $request,
         Contact $contact,
         Channel $channel,
-        HumanInboxService $inbox,
+        AgentConversationService $conversations,
     ): RedirectResponse {
-        $inbox->send($contact, $channel, $request->user(), $request->validated());
+        $conversations->send($contact, $channel, $request->user(), $request->validated());
 
         return to_route('inbox.show', [$contact, $channel]);
     }
 
-    public function returnToBot(
+    public function returnToAgent(
         Request $request,
         Contact $contact,
         Channel $channel,
-        HumanInboxService $inbox,
+        AgentConversationService $conversations,
     ): RedirectResponse {
-        $isDirectAgentConversation = $inbox->returnToBot($contact, $channel, $request->user());
+        $conversations->returnToAgent($contact, $channel, $request->user());
 
-        if ($isDirectAgentConversation) {
-            return to_route('inbox.show', [$contact, $channel]);
-        }
-
-        return to_route('inbox.index');
+        return to_route('inbox.show', [$contact, $channel]);
     }
 
     private function render(Request $request, ?Contact $selectedContact = null, ?Channel $selectedChannel = null): Response
@@ -133,35 +118,17 @@ final class InboxController extends Controller
             ->paginate(20)
             ->withQueryString();
 
-        $executionsByConversation = $this->waitingExecutionsFor($conversations);
         $agentStatesByConversation = $this->agentStatesFor($conversations);
         $unreadCountsByConversation = $this->unreadCountsFor($conversations);
 
-        $selectedExecution = $selectedContact === null || $selectedChannel === null
-            ? null
-            : $this->waitingQuery()
-                ->where('contact_id', $selectedContact->getKey())
-                ->where('channel_id', $selectedChannel->getKey())
-                ->with([
-                    'contact.fieldValues.field',
-                    'contact.tags',
-                    'channel',
-                    'flowVersion.flow',
-                    'humanAssignee',
-                ])
-                ->latest('created_at')
-                ->first();
         $selectedAgentState = $selectedContact === null || $selectedChannel === null
             ? null
             : app(AgentConversationService::class)->stateFor($selectedContact, $selectedChannel);
-
-        $selectedContact?->loadMissing(['fieldValues.field', 'tags']);
 
         return Inertia::render('inbox/index', [
             'conversations' => [
                 'data' => $conversations->getCollection()->map(fn (Message $message): array => $this->conversation(
                     $message,
-                    $executionsByConversation->get($this->conversationKey($message->contact_id, $message->channel_id)),
                     $agentStatesByConversation->get($this->conversationKey($message->contact_id, $message->channel_id)),
                     $unreadCountsByConversation->get($this->conversationKey($message->contact_id, $message->channel_id), 0),
                 ))->values(),
@@ -196,20 +163,9 @@ final class InboxController extends Controller
                 ->values(),
             'selected' => $selectedContact === null || $selectedChannel === null
                 ? null
-                : $this->selectedConversation($selectedContact, $selectedChannel, $selectedExecution, $selectedAgentState, $request),
+                : $this->selectedConversation($selectedContact, $selectedChannel, $selectedAgentState, $request),
             'currentUserId' => $request->user()->getKey(),
         ]);
-    }
-
-    /** @return Builder<FlowExecution> */
-    private function waitingQuery(): Builder
-    {
-        return FlowExecution::query()
-            ->where('status', FlowExecutionStatus::Paused)
-            ->where('waiting_for', 'human')
-            ->whereNotNull('contact_id')
-            ->whereNotNull('channel_id')
-            ->whereHas('channel');
     }
 
     /** @return Builder<Message> */
@@ -251,51 +207,17 @@ final class InboxController extends Controller
     /** @param Builder<Message> $query */
     private function countWaitingConversations(Builder $query, bool $unassigned = false, ?int $userId = null): int
     {
-        $query->where(function (Builder $query) use ($unassigned, $userId): void {
-            $query->whereExists(function (QueryBuilder $subquery) use ($unassigned, $userId): void {
-                $this->waitingExecutionSubquery($subquery);
+        $query->whereExists(function (QueryBuilder $subquery) use ($unassigned, $userId): void {
+            $this->agentPauseSubquery($subquery);
 
-                if ($unassigned) {
-                    $subquery->whereNull('flow_executions.human_assigned_user_id');
-                } elseif ($userId !== null) {
-                    $subquery->where('flow_executions.human_assigned_user_id', $userId);
-                }
-            })->orWhereExists(function (QueryBuilder $subquery) use ($unassigned, $userId): void {
-                $this->agentPauseSubquery($subquery);
-
-                if ($unassigned) {
-                    $subquery->whereNull('agent_conversation_states.assigned_user_id');
-                } elseif ($userId !== null) {
-                    $subquery->where('agent_conversation_states.assigned_user_id', $userId);
-                }
-            });
+            if ($unassigned) {
+                $subquery->whereNull('agent_conversation_states.assigned_user_id');
+            } elseif ($userId !== null) {
+                $subquery->where('agent_conversation_states.assigned_user_id', $userId);
+            }
         });
 
         return $query->count();
-    }
-
-    private function waitingExecutionsFor(LengthAwarePaginator $conversations): Collection
-    {
-        $messages = $conversations->getCollection();
-        if ($messages->isEmpty()) {
-            return new Collection;
-        }
-
-        return $this->waitingQuery()
-            ->where(function (Builder $query) use ($messages): void {
-                foreach ($messages as $message) {
-                    $query->orWhere(function (Builder $pairQuery) use ($message): void {
-                        $pairQuery->where('contact_id', $message->contact_id)
-                            ->where('channel_id', $message->channel_id);
-                    });
-                }
-            })
-            ->with(['flowVersion.flow', 'humanAssignee'])
-            ->get()
-            ->keyBy(fn (FlowExecution $execution): string => $this->conversationKey(
-                (int) $execution->contact_id,
-                (string) $execution->channel_id,
-            ));
     }
 
     /** @return Collection<int, AgentConversationState> */
@@ -386,17 +308,6 @@ final class InboxController extends Controller
         return $contactId.':'.$channelId;
     }
 
-    private function waitingExecutionSubquery(QueryBuilder $query): void
-    {
-        $query->selectRaw('1')
-            ->from('flow_executions')
-            ->whereColumn('flow_executions.team_id', 'messages.team_id')
-            ->whereColumn('flow_executions.contact_id', 'messages.contact_id')
-            ->whereColumn('flow_executions.channel_id', 'messages.channel_id')
-            ->where('flow_executions.status', FlowExecutionStatus::Paused->value)
-            ->where('flow_executions.waiting_for', 'human');
-    }
-
     private function agentPauseSubquery(QueryBuilder $query): void
     {
         $query->selectRaw('1')
@@ -427,22 +338,11 @@ final class InboxController extends Controller
         }
 
         match ($request->string('state', 'all')->toString()) {
-            'agent' => $query
-                ->whereNotExists(function (QueryBuilder $subquery): void {
-                    $this->waitingExecutionSubquery($subquery);
-                })
-                ->whereNotExists(function (QueryBuilder $subquery): void {
-                    $this->agentPauseSubquery($subquery);
-                }),
-            'paused' => $query
-                ->whereNotExists(function (QueryBuilder $subquery): void {
-                    $this->waitingExecutionSubquery($subquery);
-                })
-                ->whereExists(function (QueryBuilder $subquery): void {
-                    $this->agentPauseSubquery($subquery);
-                }),
-            'flow' => $query->whereExists(function (QueryBuilder $subquery): void {
-                $this->waitingExecutionSubquery($subquery);
+            'agent' => $query->whereNotExists(function (QueryBuilder $subquery): void {
+                $this->agentPauseSubquery($subquery);
+            }),
+            'paused' => $query->whereExists(function (QueryBuilder $subquery): void {
+                $this->agentPauseSubquery($subquery);
             }),
             default => null,
         };
@@ -452,24 +352,14 @@ final class InboxController extends Controller
     private function applyQueue(Builder $query, Request $request): void
     {
         match ($request->string('queue', 'all')->toString()) {
-            'mine' => $query->where(function (Builder $query) use ($request): void {
-                $query->whereExists(function (QueryBuilder $subquery) use ($request): void {
-                    $this->waitingExecutionSubquery($subquery);
-                    $subquery->where('flow_executions.human_assigned_user_id', $request->user()->getKey());
-                })->orWhereExists(function (QueryBuilder $subquery) use ($request): void {
-                    $this->agentPauseSubquery($subquery);
-                    $subquery->where('agent_conversation_states.assigned_user_id', $request->user()->getKey());
-                });
+            'mine' => $query->whereExists(function (QueryBuilder $subquery) use ($request): void {
+                $this->agentPauseSubquery($subquery);
+                $subquery->where('agent_conversation_states.assigned_user_id', $request->user()->getKey());
             }),
             'all' => null,
-            default => $query->where(function (Builder $query): void {
-                $query->whereExists(function (QueryBuilder $subquery): void {
-                    $this->waitingExecutionSubquery($subquery);
-                    $subquery->whereNull('flow_executions.human_assigned_user_id');
-                })->orWhereExists(function (QueryBuilder $subquery): void {
-                    $this->agentPauseSubquery($subquery);
-                    $subquery->whereNull('agent_conversation_states.assigned_user_id');
-                });
+            default => $query->whereExists(function (QueryBuilder $subquery): void {
+                $this->agentPauseSubquery($subquery);
+                $subquery->whereNull('agent_conversation_states.assigned_user_id');
             }),
         };
     }
@@ -479,30 +369,20 @@ final class InboxController extends Controller
     {
         $assignedTo = $request->input('assigned_to');
         if ($assignedTo === 'unassigned') {
-            $query->where(function (Builder $query): void {
-                $query->whereExists(function (QueryBuilder $subquery): void {
-                    $this->waitingExecutionSubquery($subquery);
-                    $subquery->whereNull('flow_executions.human_assigned_user_id');
-                })->orWhereExists(function (QueryBuilder $subquery): void {
-                    $this->agentPauseSubquery($subquery);
-                    $subquery->whereNull('agent_conversation_states.assigned_user_id');
-                });
+            $query->whereExists(function (QueryBuilder $subquery): void {
+                $this->agentPauseSubquery($subquery);
+                $subquery->whereNull('agent_conversation_states.assigned_user_id');
             });
         } elseif (is_numeric($assignedTo)) {
-            $query->where(function (Builder $query) use ($assignedTo): void {
-                $query->whereExists(function (QueryBuilder $subquery) use ($assignedTo): void {
-                    $this->waitingExecutionSubquery($subquery);
-                    $subquery->where('flow_executions.human_assigned_user_id', (int) $assignedTo);
-                })->orWhereExists(function (QueryBuilder $subquery) use ($assignedTo): void {
-                    $this->agentPauseSubquery($subquery);
-                    $subquery->where('agent_conversation_states.assigned_user_id', (int) $assignedTo);
-                });
+            $query->whereExists(function (QueryBuilder $subquery) use ($assignedTo): void {
+                $this->agentPauseSubquery($subquery);
+                $subquery->where('agent_conversation_states.assigned_user_id', (int) $assignedTo);
             });
         }
     }
 
     /** @return array<string, mixed> */
-    private function conversation(Message $latestMessage, ?FlowExecution $execution, ?AgentConversationState $agentState, int $unreadCount): array
+    private function conversation(Message $latestMessage, ?AgentConversationState $agentState, int $unreadCount): array
     {
         $contact = $latestMessage->contact;
         $channel = $latestMessage->channel;
@@ -519,11 +399,8 @@ final class InboxController extends Controller
             'excerpt' => $excerpt,
             'lastMessageAt' => $latestMessage->created_at?->toIso8601String(),
             'unreadCount' => $unreadCount,
-            'waitingSince' => $execution?->created_at?->toIso8601String(),
             'waitingSeconds' => $latestMessage->created_at === null ? 0 : max(0, (int) $latestMessage->created_at->diffInSeconds(now())),
-            'state' => $execution === null ? 'agent' : 'flow',
-            'agentPaused' => $execution === null && $agentState?->is_paused === true,
-            'reason' => $execution === null ? null : $this->reason($execution->human_transfer_reason),
+            'agentPaused' => $agentState?->is_paused === true,
             'channel' => [
                 'id' => $channel->id,
                 'label' => $channel->type->label(),
@@ -531,13 +408,10 @@ final class InboxController extends Controller
                 'statusLabel' => $channel->status->label(),
                 'available' => $channel->status === ChannelStatus::Connected,
             ],
-            'assignee' => $execution?->humanAssignee !== null ? [
-                'id' => $execution->humanAssignee->id,
-                'name' => $execution->humanAssignee->name,
-            ] : ($execution === null && $agentState?->assignedUser !== null ? [
+            'assignee' => $agentState?->assignedUser !== null ? [
                 'id' => $agentState->assignedUser->id,
                 'name' => $agentState->assignedUser->name,
-            ] : null),
+            ] : null,
         ];
     }
 
@@ -572,7 +446,6 @@ final class InboxController extends Controller
     private function selectedConversation(
         Contact $contact,
         Channel $channel,
-        ?FlowExecution $execution,
         ?AgentConversationState $agentState,
         Request $request,
     ): array {
@@ -605,62 +478,12 @@ final class InboxController extends Controller
         $expiresAt = $window->expiresAt($channel, $lastIncoming);
         $consents = app(ContactConsentService::class)->snapshot($contact);
 
-        $flow = $execution?->flowVersion?->flow;
-        $storeCustomer = $contact->storeCustomer()->first();
-        $storeOrders = StoreOrder::query()
-            ->where('team_id', $contact->team_id)
-            ->whereHas('shop', fn (Builder $query) => $query->where('team_id', $contact->team_id))
-            ->where(function (Builder $query) use ($contact, $storeCustomer): void {
-                $query->whereHas('purchaseAttribution', fn (Builder $attributionQuery) => $attributionQuery
-                    ->where('team_id', $contact->team_id)
-                    ->where('contact_id', $contact->getKey()));
-
-                if ($storeCustomer !== null) {
-                    $query->orWhere('store_customer_id', $storeCustomer->getKey());
-                }
-            })
-            ->distinct()
-            ->orderByDesc('ordered_at')
-            ->limit(5)
-            ->get()
-            ->unique(fn (StoreOrder $order): string => $order->getKey())
-            ->values();
-
         return [
             'contact' => [
                 'id' => $contact->id,
                 'name' => $contact->name,
                 'phone' => $contact->phone,
-                'fields' => $contact->fieldValues
-                    ->filter(fn ($value): bool => $value->field !== null)
-                    ->map(fn ($value): array => [
-                        'name' => $value->field->name,
-                        'value' => $value->field->is_sensitive ? '••••••••' : $value->value,
-                        'sensitive' => $value->field->is_sensitive,
-                    ])
-                    ->values(),
-                'tags' => $contact->tags->map(fn ($tag): array => [
-                    'id' => $tag->id,
-                    'name' => $tag->name,
-                ])->values(),
                 'consents' => $consents,
-                'storeCustomer' => $storeCustomer === null ? null : [
-                    'id' => $storeCustomer->getKey(),
-                    'name' => $storeCustomer->displayName() !== '' ? $storeCustomer->displayName() : null,
-                    'email' => $storeCustomer->email,
-                    'totalSpent' => $storeCustomer->total_spent,
-                    'currencyCode' => $storeCustomer->currency_code,
-                ],
-                'storeOrders' => $storeOrders->map(fn (StoreOrder $order): array => [
-                    'id' => $order->getKey(),
-                    'orderNumber' => $order->order_number,
-                    'totalAmount' => $order->total_amount,
-                    'currencyCode' => $order->currency_code,
-                    'financialStatus' => $order->financial_status,
-                    'fulfillmentStatus' => $order->fulfillment_status,
-                    'orderedAt' => $order->ordered_at?->toIso8601String(),
-                    'attributed' => $order->purchase_attribution_id !== null,
-                ])->values(),
             ],
             'channel' => [
                 'id' => $channel->id,
@@ -670,28 +493,13 @@ final class InboxController extends Controller
                 'available' => $channel->status === ChannelStatus::Connected,
             ],
             'templates' => $this->templatesForChannel($channel),
-            'state' => $execution === null ? 'agent' : 'flow',
-            'agentPaused' => $execution === null && $agentState?->is_paused === true,
+            'agentPaused' => $agentState?->is_paused === true,
             'agentPauseExpiresAt' => $agentState?->expires_at?->toIso8601String(),
             'agentPauseDurationMinutes' => $agentState?->pause_duration_minutes,
-            'assignee' => $execution?->humanAssignee !== null ? [
-                'id' => $execution->humanAssignee->id,
-                'name' => $execution->humanAssignee->name,
-            ] : ($execution === null && $agentState?->assignedUser !== null ? [
+            'assignee' => $agentState?->assignedUser !== null ? [
                 'id' => $agentState->assignedUser->id,
                 'name' => $agentState->assignedUser->name,
-            ] : null),
-            'reason' => $execution === null ? null : $this->reason($execution->human_transfer_reason),
-            'execution' => $execution === null || $flow === null ? null : [
-                'id' => $execution->id,
-                'flowId' => $flow->id,
-                'flowName' => $flow->name,
-                'version' => $execution->flowVersion->number,
-                'nodeId' => $execution->current_node_id,
-                'nodeName' => $this->nodeName($execution),
-                'traceUrl' => route('flows.executions.show', [$flow, $execution]),
-                'status' => $execution->status->value,
-            ],
+            ] : null,
             'messages' => $this->messagePaginator($messages),
             'history' => $this->messagePaginator($history),
             'window' => [
@@ -699,23 +507,19 @@ final class InboxController extends Controller
                 'expiresAt' => $expiresAt?->toIso8601String(),
                 'remainingSeconds' => $window->remainingSeconds($channel, $lastIncoming),
             ],
-            'canPause' => $execution === null && ! ($agentState?->is_paused ?? false)
+            'canPause' => ! ($agentState?->is_paused ?? false)
                 && app(AgentConversationService::class)->canPause($contact, $channel),
-            'canTakeOver' => $execution === null && ($agentState?->is_paused ?? false)
+            'canTakeOver' => ($agentState?->is_paused ?? false)
                 && $agentState?->assigned_user_id !== $request->user()->getKey(),
-            'canReturn' => $execution === null && ($agentState?->is_paused ?? false)
+            'canReturn' => ($agentState?->is_paused ?? false)
                 && $agentState?->assigned_user_id === $request->user()->getKey(),
-            'canWrite' => $execution !== null
-                ? $execution->human_assigned_user_id === $request->user()->getKey()
-                : app(AgentConversationService::class)->canPause($contact, $channel)
-                    && (! ($agentState?->is_paused ?? false)
-                        || $agentState?->assigned_user_id === $request->user()->getKey()),
+            'canWrite' => app(AgentConversationService::class)->canPause($contact, $channel)
+                && (! ($agentState?->is_paused ?? false)
+                    || $agentState?->assigned_user_id === $request->user()->getKey()),
             'canSend' => $channel->status === ChannelStatus::Connected
-                && ($execution !== null
-                    ? $execution->human_assigned_user_id === $request->user()->getKey()
-                    : app(AgentConversationService::class)->canPause($contact, $channel)
-                        && (! ($agentState?->is_paused ?? false)
-                            || $agentState?->assigned_user_id === $request->user()->getKey())),
+                && app(AgentConversationService::class)->canPause($contact, $channel)
+                && (! ($agentState?->is_paused ?? false)
+                    || $agentState?->assigned_user_id === $request->user()->getKey()),
         ];
     }
 
@@ -761,28 +565,5 @@ final class InboxController extends Controller
             'nextUrl' => $messages->nextPageUrl(),
             'previousUrl' => $messages->previousPageUrl(),
         ];
-    }
-
-    private function nodeName(FlowExecution $execution): string
-    {
-        $nodes = $execution->flowVersion->dsl['nodes'] ?? [];
-        $node = collect(is_array($nodes) ? $nodes : [])->firstWhere('id', $execution->current_node_id);
-
-        return is_array($node)
-            ? (string) data_get($node, 'config.label', data_get($node, 'label', $execution->current_node_id ?? 'Nó desconhecido'))
-            : ($execution->current_node_id ?? 'Nó desconhecido');
-    }
-
-    /** @return array{code: string, label: string} */
-    private function reason(?string $reason): array
-    {
-        $code = $reason ?: 'contact_requested';
-        $labels = [
-            'contact_requested' => 'Pedido do Contato',
-            'exception_exhausted' => 'Escada de exceção esgotada',
-            'unsupported_media' => 'Mídia não suportada',
-        ];
-
-        return ['code' => $code, 'label' => $labels[$code] ?? $code];
     }
 }

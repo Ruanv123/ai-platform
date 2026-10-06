@@ -6,17 +6,12 @@ use App\Ai\Tools\BookAppointment;
 use App\Ai\Tools\CancelAppointment;
 use App\Ai\Tools\ConsultAvailableTimes;
 use App\Ai\Tools\ListAppointments;
-use App\Ai\Tools\ReturnToFlow;
+use App\Ai\Tools\RescheduleAppointment;
 use App\Ai\Tools\SearchKnowledgeBase;
-use App\Ai\Tools\SearchProducts;
-use App\Ai\Tools\SendPurchaseLink;
-use App\Ecommerce\ProductCatalogSearch;
-use App\Ecommerce\ProductCatalogTriage;
 use App\Enums\MessageDirection;
 use App\Knowledge\AgentInstructionTemplate;
 use App\Knowledge\KnowledgeBaseSearch;
 use App\Models\Agent as ConfiguredAgent;
-use App\Models\Channel;
 use App\Models\Contact;
 use App\Models\Message as ConversationMessage;
 use App\Scheduling\SchedulingService;
@@ -44,11 +39,8 @@ class WhatsAppAgent implements Agent, Conversational, HasTools
         private Collection $conversationMessages,
         private AgentInstructionTemplate $instructionTemplate,
         private KnowledgeBaseSearch $knowledgeBaseSearch,
-        private ProductCatalogSearch $productCatalogSearch,
-        private ?ReturnToFlow $returnToFlow = null,
         private ?Contact $contact = null,
         private ?SchedulingService $scheduling = null,
-        private ?Channel $channel = null,
     ) {}
 
     /**
@@ -56,7 +48,28 @@ class WhatsAppAgent implements Agent, Conversational, HasTools
      */
     public function instructions(): Stringable|string
     {
-        return $this->instructionTemplate->render($this->configuredAgent);
+        $instructions = $this->instructionTemplate->render($this->configuredAgent);
+        if ($this->contact === null || $this->configuredAgent->schedulableCalendars->isEmpty()) {
+            return $instructions;
+        }
+
+        $timezone = $this->configuredAgent->team->timezone ?: 'America/Sao_Paulo';
+        $appointments = $this->contact->appointments()
+            ->where('team_id', $this->configuredAgent->team_id)
+            ->whereIn('schedulable_calendar_id', $this->configuredAgent->schedulableCalendars->modelKeys())
+            ->where('status', 'booked')
+            ->where('starts_at', '>=', now())
+            ->orderBy('starts_at')
+            ->get()
+            ->map(fn ($appointment): string => '- '.$appointment->starts_at->setTimezone($timezone)->format('d/m/Y H:i')
+                .' até '.$appointment->ends_at->setTimezone($timezone)->format('H:i'));
+
+        if ($appointments->isNotEmpty()) {
+            $instructions .= "\n\n## Compromissos já registrados deste Contato\n".$appointments->implode("\n")
+                ."\nEstes registros são persistentes, não apenas promessas do histórico. Use listar_compromissos para confirmar o estado atual no Google antes de responder ou remarcar. Não negue a existência deles sem verificar a Agenda.";
+        }
+
+        return $instructions;
     }
 
     /**
@@ -89,23 +102,6 @@ class WhatsAppAgent implements Agent, Conversational, HasTools
                 $this->knowledgeBaseSearch,
             );
         }
-        $team = $this->configuredAgent->team;
-        $publishedVersion = $this->configuredAgent->publishedVersion();
-        $shopConnected = $team->shops()->exists();
-        $shopToolsEnabled = $this->configuredAgent->shop_tools_enabled;
-        if ($publishedVersion?->shouldSearchProducts($shopConnected, $shopToolsEnabled)) {
-            $tools[] = new SearchProducts(
-                $team,
-                $this->productCatalogSearch,
-                new ProductCatalogTriage,
-                $this->configuredAgent,
-                $this->contact,
-                $this->conversationMessages,
-            );
-        }
-        if ($publishedVersion?->shouldSendPurchaseLink($shopConnected, $shopToolsEnabled)) {
-            $tools[] = new SendPurchaseLink($team, $this->configuredAgent, $this->contact, $this->channel);
-        }
         $calendars = $this->configuredAgent->schedulableCalendars;
         if ($calendars->isNotEmpty()) {
             $scheduling = $this->scheduling ?? app(SchedulingService::class);
@@ -115,10 +111,8 @@ class WhatsAppAgent implements Agent, Conversational, HasTools
                 new BookAppointment($this->contact, $calendars, $scheduling),
                 new ListAppointments($this->contact, $scheduling),
                 new CancelAppointment($this->contact, $scheduling),
+                new RescheduleAppointment($this->contact, $calendars, $scheduling),
             ];
-        }
-        if ($this->returnToFlow !== null) {
-            $tools[] = $this->returnToFlow;
         }
 
         return $tools;

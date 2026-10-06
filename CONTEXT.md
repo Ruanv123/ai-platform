@@ -57,11 +57,11 @@ Algo que o Agente nunca faz, em qualquer conversa — um assunto que evita, uma 
 _Avoid_: Regra, Proteção, Guardrail, Restrição
 
 **Cenário**:
-Uma situação específica descrita em linguagem natural — quando ela acontece e o que o Agente deve fazer — podendo citar Ações. O Agente a interpreta dentro da conversa livre, sem garantia de ordem; quando a ordem precisa ser garantida, o lugar é um Fluxo.
+Uma situação específica descrita em linguagem natural — quando ela acontece e o que o Agente deve fazer — podendo citar Ações. O Agente a interpreta dentro da conversa livre, sem garantia de ordem; não é um roteiro com ordem garantida.
 _Avoid_: Instrução, Playbook, Roteiro, Fluxo
 
 **Ação**:
-Algo que o Agente pode fazer além de responder — consultar a Base de conhecimento, buscar produtos da Loja, mandar Link de compra, marcar na agenda, fazer a Transferência para humano, aplicar Tag, salvar Campo do Contato. A Empresa liga as que o Agente pode usar; um Cenário só pode pedir uma Ação ligada.
+Algo que o Agente pode fazer além de responder — consultar a Base de conhecimento, marcar na agenda, fazer a Transferência para humano. A Empresa liga as que o Agente pode usar; um Cenário só pode pedir uma Ação ligada.
 _Avoid_: Ferramenta, Tool, Habilidade, Integração
 
 **Rascunho do agente**:
@@ -74,14 +74,14 @@ _Avoid_: Revisão, Snapshot, Release
 
 **Memória do agente**:
 Os fatos curtos e importantes que um Agente decidiu guardar sobre um Contato — uma preferência, um vínculo, algo já resolvido. Pertence ao par Agente e Contato: outro Agente não a enxerga. Não desliza como o Histórico e vale em todos os Canais do Contato. A Empresa pode vê-la e apagá-la.
-_Avoid_: Contexto, Histórico, Campo do Contato, Perfil
+_Avoid_: Contexto, Histórico, Perfil
 
 **Situação de teste**:
 Uma conversa de exemplo salva junto do Agente, com o comportamento esperado — o que a resposta deve ou não conter e quais Ações deve ou não usar. Roda de novo sobre o Rascunho a cada mudança para mostrar o que quebrou.
 _Avoid_: Cenário, Eval, Caso de teste, Teste
 
 **Playground**:
-O chat de teste do atendimento. Roda sobre o rascunho — o Rascunho do agente, no caso do Agente, e a Versão não publicada, no caso do Fluxo — e nada é enviado ao Contato. Consultar Horários disponíveis e buscar produtos da Loja é real; marcar e cancelar Compromisso são simulados, e o Link de compra sai sem Atribuição. No Fluxo, mostra o Traço do turno ao lado da conversa.
+O chat de teste do atendimento. Roda sobre o Rascunho do agente e nada é enviado ao Contato. Consultar Horários disponíveis é real; marcar e cancelar Compromisso são simulados.
 _Avoid_: Simulador, Preview, Sandbox
 
 **Agente inativo**:
@@ -144,7 +144,7 @@ O Tipo de canal que conecta um número de WhatsApp por um serviço não oficial,
 _Avoid_: Evolution, WhatsApp não oficial, WhatsApp alternativo
 
 **Integração**:
-Uma conexão configurada com um sistema externo — CRM, agenda, e-commerce — que os Nós de um Fluxo ou o Agente usam para consultar ou registrar coisas lá fora. É outra coisa que um Canal: Canal traz a conversa, Integração leva e busca o resultado. Guarda a credencial; o Fluxo guarda o que fazer com ela.
+Uma conexão configurada com um sistema externo que o Agente usa para consultar ou registrar coisas lá fora; hoje, só a Agenda. É outra coisa que um Canal: Canal traz a conversa, Integração leva e busca o resultado.
 _Avoid_: Conector, Canal, App
 
 **Agenda**:
@@ -167,106 +167,6 @@ _Avoid_: Slot, Vaga, Horário livre
 Um evento que o Agente marcou num Calendário agendável para um Contato, registrado na plataforma. Só o que a plataforma marcou é Compromisso: eventos criados direto no Google não são. É por ele que o Agente sabe o que o Contato tem marcado e o que pode cancelar. O Google continua sendo a fonte da verdade: evento apagado lá é Compromisso cancelado, evento movido lá é Compromisso remarcado. Um Contato tem no máximo um Compromisso futuro por Calendário agendável; remarcar é cancelar e marcar de novo.
 _Avoid_: Agendamento, Evento, Consulta, Reserva
 
-### Loja
-
-**Loja**:
-A Integração de e-commerce da Empresa com a sua loja num Provedor de e-commerce — Shopify, Nuvemshop, VTEX, Loja Integrada. Uma Empresa tem no máximo uma. A plataforma mantém uma cópia do que o Agente precisa da Loja, no mesmo formato para qualquer provedor, sincronizada em segundo plano. É a Loja que sabe se essa cópia está em dia — importando, sincronizada ou com erro —, e com erro o Agente continua usando a última cópia.
-_Avoid_: E-commerce, Store, Shop, Integração de loja
-
-**Provedor de e-commerce**:
-A plataforma em que a Loja existe. Cada provedor tem a sua forma de conectar e de avisar mudanças, mas o que chega ao Agente é sempre igual.
-_Avoid_: Plataforma, Canal, Marketplace
-
-**Produto**:
-O que a Loja vende, com nome, descrição e Categorias. Não é comprado diretamente: quem se compra é uma Variante.
-_Avoid_: Item, Mercadoria, Anúncio
-
-**Variante**:
-A versão comprável de um Produto — tamanho M na cor azul —, com SKU, preço, preço comparativo e estoque somado de todos os locais.
-_Avoid_: SKU, Opção, Grade, Modelo
-
-**Categoria**:
-Um agrupamento de Produtos na Loja. Nunca é chamada de Coleção, que é da Base de conhecimento.
-_Avoid_: Coleção, Collection, Departamento
-
-**Cliente da loja**:
-Quem tem cadastro na Loja, como o Provedor de e-commerce o conhece — nome, e-mail, telefone e Pedidos. Liga-se a no máximo um Contato quando o telefone bate, e aparece na ficha dele sem ser copiado para o Contato. Pode existir sem Contato, quando comprou sem telefone.
-_Avoid_: Cliente, Comprador, Customer
-
-**Link de compra**:
-O endereço que o Agente manda ao Contato e que abre o checkout da Loja com as Variantes e quantidades escolhidas. Não cria nada na Loja até o Contato comprar, e leva a marca que permite a Atribuição.
-_Avoid_: Carrinho, Checkout, Link de pagamento
-
-**Atribuição**:
-A ligação entre um Pedido e o atendimento que gerou o Link de compra usado nele — qual Contato e qual Agente. É o que permite dizer quanto o Agente vendeu.
-_Avoid_: Conversão, Origem, Tracking
-
-**Pedido**:
-Uma compra feita na Loja, com suas Variantes, quantidades e valores. Na v1 serve de histórico do que o comprador já levou, para recomendar; o Agente não responde sobre o andamento dele.
-_Avoid_: Compra, Venda, Order
-
-### CRM
-
-**CRM**:
-A Integração da Empresa com o sistema de vendas em que o time comercial trabalha — RD Station CRM, Pipedrive, HubSpot. Uma Empresa tem no máximo um; trocar de Provedor de CRM é desconectar um e conectar outro. O CRM é a fonte da verdade dos seus registros: a plataforma não guarda cópia deles, só a sua configuração.
-_Avoid_: Integração de CRM, Conector, Sistema de vendas
-
-**Provedor de CRM**:
-O produto em que o CRM existe. Cada provedor tem a sua forma de conectar, nomear e avisar mudanças, mas o que o Agente enxerga é sempre igual.
-_Avoid_: Plataforma, Ferramenta
-
-**Pessoa do CRM**:
-O registro de uma pessoa dentro do CRM. Não é o Contato: o Contato é quem fala pelos Canais, a Pessoa do CRM é como o time comercial a conhece. Nunca é chamada de Contato, mesmo que o provedor a chame assim.
-_Avoid_: Contato do CRM, Lead, Cliente
-
-**Organização do CRM**:
-A empresa cliente registrada no CRM, à qual Pessoas do CRM e Negócios pertencem. Nunca é chamada só de Organização ou de Empresa, que é o tenant.
-_Avoid_: Empresa, Organização, Company, Conta
-
-**Vínculo**:
-A ligação entre um Contato e a sua Pessoa do CRM. Nasce na primeira vez que algo precisa do CRM para aquele Contato — achando a Pessoa do CRM pelo telefone ou criando uma quando é preciso escrever — e desfaz-se quando a Pessoa do CRM é apagada no CRM. Depois de criado, vale o registro ligado, mesmo que o telefone mude lá.
-_Avoid_: Mapeamento, Sincronização, Associação
-
-**Negócio**:
-Uma oportunidade de venda no CRM, que caminha pelas Etapas de um Funil de vendas e tem uma Situação: aberto, ganho ou perdido, com Motivo de perda quando perdido. Do ponto de vista da plataforma, uma Pessoa do CRM tem no máximo um Negócio aberto por Funil de vendas.
-_Avoid_: Oportunidade, Deal, Lead, Venda
-
-**Negócio vinculado**:
-Um Negócio de uma Pessoa do CRM que tem Vínculo com um Contato. É o único tipo de Negócio de que a plataforma lembra: a Etapa do funil, a Situação e o Responsável, para que o Agente saiba em que pé está o Contato e a IA saia da frente quando o time comercial assume.
-_Avoid_: Negócio do Contato, Oportunidade vinculada
-
-**Funil de vendas**:
-A sequência de Etapas do funil por onde os Negócios caminham no CRM. Sempre com o qualificador: "Funil" sozinho não é usado.
-_Avoid_: Funil, Pipeline, Jornada
-
-**Etapa do funil**:
-Uma posição dentro de um Funil de vendas. Sempre com o qualificador, para não se confundir com Nó.
-_Avoid_: Etapa, Stage, Fase
-
-**Etapa comercial**:
-Uma Etapa do funil que a Empresa marcou como conduzida pelo time comercial. Quando um Negócio vinculado entra nela, a IA é pausada para o Contato e a Equipe é avisada, como numa Transferência para humano. Um Agente que move o Negócio para ela passa o atendimento adiante.
-_Avoid_: Etapa humana, Etapa de vendedor, Etapa pausada
-
-**Atividade**:
-Um registro de trabalho no CRM ligado a uma Pessoa do CRM ou a um Negócio: uma nota com o que aconteceu ou uma tarefa para alguém do time comercial fazer.
-_Avoid_: Tarefa, Anotação, Engagement, Evento
-
-**Responsável**:
-O usuário do CRM encarregado de uma Pessoa do CRM ou de um Negócio. Não é alguém da Equipe: é alguém do time comercial dentro do CRM.
-_Avoid_: Dono, Owner, Vendedor, Usuário
-
-**Campo do CRM**:
-Um campo, padrão ou personalizado, que o CRM declara para Pessoas do CRM, Organizações do CRM ou Negócios. Diferente do Campo do Contato, que é declarado pela Empresa na plataforma. Um Campo do Contato pode ser mapeado a um Campo do CRM de tipo compatível, sempre numa direção só.
-_Avoid_: Custom field, Propriedade, Atributo
-
-**Operação do CRM**:
-Cada escrita que a plataforma pede ao CRM — por conta própria ou por uma Ação do Agente —, com a sua situação: pendente, feita ou com falha. É por ela que a Empresa vê o que não chegou ao CRM e tenta de novo.
-_Avoid_: Sincronização, Log, Job, Requisição
-
-**Resumo do atendimento**:
-A Atividade de nota que a plataforma registra no CRM depois de um período de silêncio do Contato, resumindo o que foi conversado desde o último resumo. Só existe para Contatos que já têm Vínculo.
-_Avoid_: Transcrição, Relatório, Histórico
-
 ### Atendimento
 
 **Contato**:
@@ -282,7 +182,7 @@ A sequência de Mensagens de um Contato com a Empresa em um Canal. É a unidade 
 _Avoid_: Thread, Sessão, Ticket
 
 **Pausa da IA**:
-A suspensão temporária das respostas automáticas do Agente em uma Conversa enquanto alguém da Equipe a conduz. Pode terminar por devolução manual ou pelo prazo da Empresa. Quando vem do CRM — um Negócio vinculado entrou numa Etapa comercial —, vale em todas as Conversas do Contato, não tem prazo e termina quando nenhum Negócio vinculado dele está mais numa Etapa comercial, ou por devolução manual.
+A suspensão temporária das respostas automáticas do Agente em uma Conversa enquanto alguém da Equipe a conduz. Pode terminar por devolução manual ou pelo prazo da Empresa.
 _Avoid_: Agente inativo, Transferência para humano
 
 **Reação**:
@@ -293,68 +193,10 @@ _Avoid_: Curtida, Mensagem de reação
 A janela recente de Mensagens de um Contato num Canal: o que o Agente lê para responder. É uma leitura das Mensagens, não uma entidade própria.
 _Avoid_: Conversa, Thread, Sessão, Atendimento
 
-### Fluxos
-
-**Fluxo**:
-O atendimento desenhado como um grafo de Nós, pertencente à Empresa. Descreve o que acontece a partir de um Gatilho: o que é perguntado, o que é decidido, o que é chamado fora da plataforma e quando o Agente assume.
-_Avoid_: Workflow, Automação, Jornada, Funil, Bot
-
-**Fluxo de conversa**:
-Um Fluxo que contém algum Nó que espera o Contato responder, e por isso toma o turno da conversa. Um Canal tem no máximo um deles no Gatilho de mensagem, porque o Contato que responde não diz a quem está respondendo.
-_Avoid_: Fluxo principal, Fluxo síncrono
-
-**Fluxo de reação**:
-Um Fluxo que roda do começo ao fim sem esperar resposta. Não toma o turno, e por isso vários podem rodar em paralelo sobre a mesma mensagem. A diferença para o Fluxo de conversa é lida do grafo, não declarada.
-_Avoid_: Regra, Automação, Trigger, Fluxo secundário
-
-**Versão do fluxo**:
-O retrato imutável de um Fluxo no momento em que foi publicado. É o que uma Execução percorre: editar o Fluxo cria rascunho, publicar cria Versão nova, e quem está no meio termina na Versão em que começou.
-_Avoid_: Revisão, Snapshot, Release
-
-**Nó**:
-Cada passo de um Fluxo — mandar mensagem, capturar resposta, decidir, esperar, chamar uma API, entregar ao Agente, transferir para humano, emitir Evento.
-_Avoid_: Bloco, Card, Etapa, Passo
-
-**Gatilho**:
-O Nó que faz um Fluxo começar, e onde vive a escolha do Canal. Dois tipos: mensagem recebida e webhook.
-_Avoid_: Trigger, Evento de entrada, Início
-
-**Execução**:
-Um Contato percorrendo uma Versão do fluxo. Tem começo, fim e Traço, e guarda em que Nó está e as Variáveis que coletou. Não é uma Conversa: não guarda Mensagens, e um Contato pode ter tido muitas ao longo do tempo.
-_Avoid_: Conversa, Sessão, Instância, Run, Percurso
-
-**Variável**:
-Um valor que vive durante uma Execução e morre com ela. Diferente do Campo do Contato, que sobrevive.
-_Avoid_: Contexto, Parâmetro, Estado
-
-**Campo do Contato**:
-Um dado do Contato que a Empresa declarou e que persiste entre Execuções — convênio, cidade, data da última compra. É o que transforma o Contato de identificador em ficha.
-_Avoid_: Atributo, Propriedade, Custom field, Metadado
-
-**Tag**:
-Uma marca livre aplicada a um Contato, sem valor associado. Serve para separar quem é o quê.
-_Avoid_: Etiqueta, Rótulo, Label, Categoria
-
-**Sub-fluxo**:
-Um Fluxo chamado por outro, com parâmetros de entrada e valores de retorno declarados. Não enxerga as Variáveis de quem o chamou.
-_Avoid_: Fluxo filho, Componente, Bloco reutilizável
-
-**Evento**:
-Um acontecimento nomeado que um Nó emite durante uma Execução. Alimenta as métricas do Fluxo e pode sair da plataforma como webhook. O nome é declarado pela Empresa, não escrito à mão a cada uso.
-_Avoid_: Acontecimento, Sinal, Marco, Webhook
-
-**Traço**:
-O registro do que aconteceu numa Execução, nó a nó: por onde passou, quanto demorou, o que enviou e recebeu, quanto custou em IA e onde quebrou.
-_Avoid_: Log, Histórico, Auditoria, Trace
-
-**Modelo de fluxo**:
-Um Fluxo pronto de catálogo que a Empresa clona e adapta. Nunca é chamado de Template, que é outra coisa.
-_Avoid_: Template, Preset, Exemplo
-
 **Template**:
-A mensagem pré-aprovada pela Meta, única forma de escrever para um Contato fora da janela de 24 horas. Pertence à Conta do WhatsApp, porque é lá que a Meta a aprova. Nunca é o nome de um Fluxo pronto.
+A mensagem pré-aprovada pela Meta, única forma de escrever para um Contato fora da janela de 24 horas. Pertence à Conta do WhatsApp, porque é lá que a Meta a aprova.
 _Avoid_: Modelo, HSM, Mensagem pronta
 
 **Transferência para humano**:
-O momento em que um Fluxo ou um Agente para de responder, marca o Contato como aguardando atendimento e avisa a Equipe. Só volta a responder quando alguém devolve ou por inatividade.
+O momento em que o Agente para de responder, marca o Contato como aguardando atendimento e avisa a Equipe. Só volta a responder quando alguém devolve ou por inatividade.
 _Avoid_: Handoff, Escalação, Takeover

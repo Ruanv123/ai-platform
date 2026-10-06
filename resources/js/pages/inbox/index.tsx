@@ -33,7 +33,6 @@ import {
     index as inboxIndex,
     returnMethod,
     show as inboxShow,
-    take,
 } from '@/routes/inbox';
 import {
     pause as pauseAgent,
@@ -41,10 +40,6 @@ import {
 } from '@/routes/inbox/agent';
 import { store as messagesStore } from '@/routes/inbox/messages';
 import { VoiceMessageRecorder } from '@/components/inbox-voice-recorder';
-import ShopifyStoreCustomerCard, {
-    type StoreCustomerSummary,
-    type StoreOrderSummary,
-} from '@/components/inbox/shopify-store-customer-card';
 
 type Conversation = {
     contactId: number;
@@ -53,11 +48,8 @@ type Conversation = {
     excerpt: string;
     lastMessageAt: string | null;
     unreadCount: number;
-    waitingSince: string | null;
     waitingSeconds: number;
-    state: 'agent' | 'flow';
     agentPaused: boolean;
-    reason: { code: string; label: string } | null;
     channel: {
         id: string;
         label: string;
@@ -111,8 +103,6 @@ type SelectedConversation = {
         id: number;
         name: string | null;
         phone: string;
-        fields: { name: string; value: string | null; sensitive: boolean }[];
-        tags: { id: string; name: string }[];
         consents: Record<
             string,
             {
@@ -124,8 +114,6 @@ type SelectedConversation = {
                 at: string | null;
             }
         >;
-        storeCustomer: StoreCustomerSummary | null;
-        storeOrders: StoreOrderSummary[];
     };
     channel: {
         id: string;
@@ -134,21 +122,9 @@ type SelectedConversation = {
         statusLabel: string;
         available: boolean;
     };
-    state: 'agent' | 'flow';
     agentPaused: boolean;
     agentPauseExpiresAt: string | null;
     assignee: { id: number; name: string } | null;
-    reason: { code: string; label: string } | null;
-    execution: {
-        id: string;
-        flowId: string;
-        flowName: string;
-        version: number;
-        nodeId: string | null;
-        nodeName: string;
-        traceUrl: string;
-        status: string;
-    } | null;
     messages: MessagePage;
     history: MessagePage;
     window: {
@@ -533,7 +509,6 @@ function ConversationsPanel({
                     <option value="all">Todos os estados</option>
                     <option value="agent">Agente ativo</option>
                     <option value="paused">Pausa da IA</option>
-                    <option value="flow">Fluxo transferido</option>
                 </select>
             </div>
 
@@ -609,33 +584,12 @@ function ConversationsPanel({
                                     )}
                                 </div>
                                 <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
-                                    {conversation.state === 'agent' ? (
-                                        <span className="bg-signal-live/10 text-signal-live rounded-md px-1.5 py-0.5 text-[10px] font-semibold">
-                                            {conversation.agentPaused
-                                                ? 'Pausa da IA'
-                                                : 'Agente ativo'}
-                                        </span>
-                                    ) : (
-                                        <>
-                                            <span className="bg-muted text-muted-foreground rounded-md px-1.5 py-0.5 text-[10px] font-semibold">
-                                                Fluxo transferido
-                                            </span>
-                                            {conversation.reason !== null && (
-                                                <span
-                                                    className={cn(
-                                                        'rounded-md px-1.5 py-0.5 text-[10px] font-semibold',
-                                                        reasonBadgeClass(
-                                                            conversation.reason
-                                                                .code,
-                                                        ),
-                                                    )}
-                                                >
-                                                    {conversation.reason.label}
-                                                </span>
-                                            )}
-                                        </>
-                                    )}
-                                    {conversation.state === 'flow' &&
+                                    <span className="bg-signal-live/10 text-signal-live rounded-md px-1.5 py-0.5 text-[10px] font-semibold">
+                                        {conversation.agentPaused
+                                            ? 'Pausa da IA'
+                                            : 'Agente ativo'}
+                                    </span>
+                                    {conversation.agentPaused &&
                                         conversation.assignee === null && (
                                             <span className="border-border text-muted-foreground rounded-md border px-1.5 py-0.5 text-[10px] font-semibold">
                                                 não atribuída
@@ -716,8 +670,7 @@ function EmptySelection() {
             <div>
                 <h2 className="font-semibold">Escolha uma conversa</h2>
                 <p className="text-muted-foreground mt-1 max-w-sm text-sm">
-                    Acompanhe o atendimento do Agente ou abra uma transferência
-                    de Fluxo para continuar.
+                    Acompanhe ou assuma o atendimento nesta conversa.
                 </p>
             </div>
         </section>
@@ -924,19 +877,6 @@ function ConversationThread({
         form.clearErrors('media');
     };
 
-    const takeConversation = () => {
-        router.post(
-            take({
-                contact: selected.contact.id,
-                channel: selected.channel.id,
-            }).url,
-            undefined,
-            {
-                preserveScroll: true,
-            },
-        );
-    };
-
     const returnConversation = () => {
         router.post(
             returnMethod({
@@ -1002,11 +942,7 @@ function ConversationThread({
                 <div className="flex-1" />
                 <span className="text-muted-foreground bg-muted hidden items-center gap-1.5 rounded-md px-2.5 py-1 text-[11.5px] font-medium sm:flex">
                     <Bot className="size-3.5" />
-                    {selected.state === 'flow'
-                        ? 'Fluxo transferido'
-                        : selected.agentPaused
-                          ? 'Pausa da IA'
-                          : 'Agente ativo'}
+                    {selected.agentPaused ? 'Pausa da IA' : 'Agente ativo'}
                 </span>
                 {selected.canPause && (
                     <Button size="sm" onClick={pauseAgentConversation}>
@@ -1015,11 +951,6 @@ function ConversationThread({
                 )}
                 {selected.canTakeOver && (
                     <Button size="sm" onClick={takeOverAgentConversation}>
-                        Assumir conversa
-                    </Button>
-                )}
-                {selected.state === 'flow' && selected.assignee === null && (
-                    <Button size="sm" onClick={takeConversation}>
                         Assumir conversa
                     </Button>
                 )}
@@ -1066,12 +997,9 @@ function ConversationThread({
                 <div className="flex justify-center">
                     <span className="border-border/70 bg-background text-muted-foreground flex items-center gap-1.5 rounded-full border px-3 py-1 text-[11px] font-medium">
                         <Bot className="text-signal-attention size-3.5" />
-                        {selected.state === 'flow' &&
-                        selected.execution !== null
-                            ? `O Fluxo ${selected.execution.flowName} transferiu esta conversa para atendimento humano`
-                            : selected.agentPaused
-                              ? 'O Agente está pausado nesta conversa'
-                              : 'O Agente está conduzindo esta conversa'}
+                        {selected.agentPaused
+                            ? 'O Agente está pausado nesta conversa'
+                            : 'O Agente está conduzindo esta conversa'}
                     </span>
                 </div>
 
@@ -1089,7 +1017,7 @@ function ConversationThread({
                 <HistoryPanel history={selected.history} />
             </div>
 
-            {selected.state === 'flow' || selected.canWrite ? (
+            {selected.canWrite || selected.canTakeOver ? (
                 <div className="border-border/70 bg-background shrink-0 border-t p-4">
                     {!selected.channel.available && (
                         <div className="border-destructive/40 bg-destructive/10 text-foreground mb-3 rounded-lg border px-3 py-2 text-sm">
@@ -1104,7 +1032,7 @@ function ConversationThread({
                                 : `${selected.assignee.name} está atendendo esta conversa. Você precisa assumir antes de escrever.`}
                         </div>
                     )}
-                    {selected.state === 'agent' && !selected.agentPaused && (
+                    {!selected.agentPaused && (
                         <div className="border-signal-attention/40 bg-signal-attention/10 text-foreground mb-3 rounded-lg border px-3 py-2 text-sm">
                             Enviar uma Mensagem pausará o Agente e atribuirá a
                             conversa a você.
@@ -1351,16 +1279,6 @@ function ConversationThread({
                                 </span>
                             )}
                             <span className="flex-1" />
-                            {selected.state === 'flow' && (
-                                <Button
-                                    type="button"
-                                    variant="outline"
-                                    size="sm"
-                                    onClick={returnConversation}
-                                >
-                                    Devolver ao bot
-                                </Button>
-                            )}
                             {selected.canReturn && (
                                 <Button
                                     type="button"
@@ -1596,25 +1514,9 @@ function ContactPanel({ selected }: { selected: SelectedConversation }) {
                 </div>
             </div>
 
-            {selected.contact.tags.length > 0 && (
-                <div className="border-border/70 border-b px-4.5 py-3.5">
-                    <div className="flex flex-wrap gap-1.5">
-                        {selected.contact.tags.map((tag) => (
-                            <Badge
-                                key={tag.id}
-                                variant="secondary"
-                                className="text-[10.5px]"
-                            >
-                                {tag.name}
-                            </Badge>
-                        ))}
-                    </div>
-                </div>
-            )}
-
             <div className="border-border/70 border-b px-4.5 py-3.5">
                 <div className="text-muted-foreground mb-2.5 text-[10px] font-bold tracking-[0.07em] uppercase">
-                    Campos do contato
+                    Dados do contato
                 </div>
                 <div className="grid gap-2">
                     <ContactField label="Telefone">
@@ -1622,24 +1524,8 @@ function ContactPanel({ selected }: { selected: SelectedConversation }) {
                             {selected.contact.phone}
                         </span>
                     </ContactField>
-                    {selected.contact.fields.map((field) => (
-                        <ContactField key={field.name} label={field.name}>
-                            <span
-                                className={
-                                    field.sensitive ? 'font-mono' : undefined
-                                }
-                            >
-                                {field.value ?? '—'}
-                            </span>
-                        </ContactField>
-                    ))}
                 </div>
             </div>
-
-            <ShopifyStoreCustomerCard
-                customer={selected.contact.storeCustomer}
-                orders={selected.contact.storeOrders}
-            />
 
             <div className="border-border/70 border-b px-4.5 py-3.5">
                 <div className="text-muted-foreground mb-2.5 text-[10px] font-bold tracking-[0.07em] uppercase">
@@ -1665,48 +1551,16 @@ function ContactPanel({ selected }: { selected: SelectedConversation }) {
                 </div>
             </div>
 
-            {selected.execution !== null ? (
-                <div className="px-4.5 py-3.5">
-                    <div className="text-muted-foreground mb-2.5 text-[10px] font-bold tracking-[0.07em] uppercase">
-                        Execução pausada
-                    </div>
-                    <div className="border-border/70 rounded-lg border p-3">
-                        <div className="text-[12.5px] font-semibold">
-                            {selected.execution.flowName}
-                        </div>
-                        <div className="text-muted-foreground mt-0.5 text-[11px]">
-                            #{selected.execution.id} · v
-                            {selected.execution.version}
-                            {' · '}
-                            {selected.execution.nodeName}
-                        </div>
-                        <div className="bg-muted mt-2 flex items-center gap-1.5 rounded-md px-2.5 py-1.5">
-                            <span className="bg-signal-attention size-1.5 shrink-0 rounded-full" />
-                            <span className="text-[11.5px] font-medium">
-                                {selected.reason?.label ??
-                                    'Atendimento transferido'}
-                            </span>
-                        </div>
-                        <Link
-                            href={selected.execution.traceUrl}
-                            className="mt-2.5 inline-block text-[11.5px] font-semibold underline underline-offset-4"
-                        >
-                            Ver o traço completo →
-                        </Link>
-                    </div>
+            <div className="px-4.5 py-3.5">
+                <div className="text-muted-foreground mb-2.5 text-[10px] font-bold tracking-[0.07em] uppercase">
+                    Atendimento
                 </div>
-            ) : (
-                <div className="px-4.5 py-3.5">
-                    <div className="text-muted-foreground mb-2.5 text-[10px] font-bold tracking-[0.07em] uppercase">
-                        Atendimento
-                    </div>
-                    <div className="border-border/70 rounded-lg border p-3 text-xs">
-                        {selected.agentPaused
-                            ? 'Pausa da IA ativa neste Canal.'
-                            : 'Agente ativo neste Canal.'}
-                    </div>
+                <div className="border-border/70 rounded-lg border p-3 text-xs">
+                    {selected.agentPaused
+                        ? 'Pausa da IA ativa neste Canal.'
+                        : 'Agente ativo neste Canal.'}
                 </div>
-            )}
+            </div>
         </aside>
     );
 }
@@ -1762,17 +1616,6 @@ function Pagination({ page }: { page: MessagePage }) {
             )}
         </div>
     );
-}
-
-function reasonBadgeClass(code: string): string {
-    switch (code) {
-        case 'contact_requested':
-            return 'bg-destructive/10 text-destructive';
-        case 'unsupported_media':
-            return 'bg-signal-attention/15 text-signal-attention';
-        default:
-            return 'bg-muted text-muted-foreground';
-    }
 }
 
 function initials(name: string | null): string {

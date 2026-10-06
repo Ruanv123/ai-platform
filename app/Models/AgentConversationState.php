@@ -66,4 +66,16 @@ class AgentConversationState extends Model
     {
         return $this->belongsTo(User::class, 'assigned_user_id');
     }
+
+    /** @return BelongsTo<Contact, $this> */
+    public function contact(): BelongsTo
+    {
+        return $this->belongsTo(Contact::class);
+    }
+
+    /** @return BelongsTo<Channel, $this> */
+    public function channel(): BelongsTo
+    {
+        return $this->belongsTo(Channel::class);
+    }
 }

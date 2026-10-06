@@ -1,5 +1,7 @@
 # CRM sem espelho: Vínculos, metadados e estado mínimo dos Negócios vinculados
 
+Status: superseded by ADR-0018
+
 O CRM é a fonte da verdade dos seus registros, e a plataforma não guarda cópia de Pessoas do CRM, Organizações do CRM nem Atividades. Guarda só três coisas: o **Vínculo** entre Contato e Pessoa do CRM, os **metadados de configuração** do CRM (Funis de vendas, Etapas do funil, Campos do CRM, Responsáveis, Motivos de perda) e um **estado mínimo dos Negócios vinculados** (Funil de vendas, Etapa do funil, Situação, valor e Responsável). Registros são lidos e escritos ao vivo no Provedor de CRM por um adapter com contrato único. É um meio-termo deliberado entre a Loja, espelhada inteira (ADR 0013), e não guardar nada.
 
 ## Considered Options

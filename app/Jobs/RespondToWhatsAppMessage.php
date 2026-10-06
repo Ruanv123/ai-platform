@@ -3,7 +3,6 @@
 namespace App\Jobs;
 
 use App\Ai\Agents\WhatsAppAgent;
-use App\Ecommerce\ProductCatalogSearch;
 use App\Enums\MessageDeliveryStatus;
 use App\Enums\MessageDirection;
 use App\Inbox\AgentConversationService;
@@ -24,6 +23,8 @@ use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\Middleware\WithoutOverlapping;
 use Illuminate\Queue\SerializesModels;
+use Illuminate\Support\Arr;
+use Illuminate\Support\Facades\Log;
 use RuntimeException;
 use Throwable;
 
@@ -85,7 +86,7 @@ class RespondToWhatsAppMessage implements ShouldQueue
     }
 
     /**
-     * Serialize response flows for one Contact and Channel.
+     * Serialize response jobs for one Contact and Channel.
      *
      * @return array<int, WithoutOverlapping>
      */
@@ -101,7 +102,6 @@ class RespondToWhatsAppMessage implements ShouldQueue
     public function handle(
         AgentInstructionTemplate $instructionTemplate,
         KnowledgeBaseSearch $knowledgeBaseSearch,
-        ProductCatalogSearch $productCatalogSearch,
         WhatsAppOutputAdapterFactory $outputAdapterFactory,
         WhatsAppCustomerCareWindow $customerCareWindow,
         AgentConversationService $agentConversations,
@@ -160,11 +160,7 @@ class RespondToWhatsAppMessage implements ShouldQueue
             $history,
             $instructionTemplate,
             $knowledgeBaseSearch,
-            $productCatalogSearch,
-            null,
             $contact,
-            null,
-            $channel,
         );
         $response = $agent->prompt(
             $this->promptFor($lastPendingMessage),
@@ -172,6 +168,24 @@ class RespondToWhatsAppMessage implements ShouldQueue
             model: config('ai.playground.model'),
             timeout: (int) config('ai.playground.timeout', 60),
         );
+        foreach ($response->toolResults as $toolResult) {
+            if (! in_array($toolResult->name, ['consultar_horarios', 'marcar_compromisso', 'listar_compromissos', 'cancelar_compromisso', 'remarcar_compromisso'], true)) {
+                continue;
+            }
+
+            $result = is_string($toolResult->result) ? json_decode($toolResult->result, true) : null;
+            Log::info('Agent scheduling tool completed', [
+                'invocation_id' => $response->invocationId,
+                'channel_id' => $channel->getKey(),
+                'contact_id' => $contact->getKey(),
+                'tool' => $toolResult->name,
+                'arguments' => Arr::only($toolResult->arguments, ['calendar_id', 'appointment_id', 'start', 'start_date', 'end_date', 'preferred_time', 'limit']),
+                'result' => is_array($result) ? Arr::only($result, ['ok', 'simulado', 'compromisso_id', 'inicio', 'fim']) : [],
+                'slot_count' => is_array($result['horarios'] ?? null) ? count($result['horarios']) : null,
+                'appointment_count' => is_array($result['compromissos'] ?? null) ? count($result['compromissos']) : null,
+            ]);
+        }
+
         $content = trim($response->text);
 
         if ($content === '') {
@@ -231,7 +245,7 @@ class RespondToWhatsAppMessage implements ShouldQueue
     }
 
     /**
-     * Mark the incoming Messages covered by this response flow as handled.
+     * Mark the incoming Messages covered by this response turn as handled.
      *
      * @param  Collection<int, Message>  $messages
      */

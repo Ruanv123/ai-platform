@@ -13,13 +13,12 @@ class IntegrationFactory extends Factory
     {
         return [
             'team_id' => Team::factory(),
-            'name' => fake()->unique()->company().' API',
-            'type' => 'http',
-            'provider' => null,
+            'name' => 'Google Agenda',
+            'type' => 'agenda',
+            'provider' => 'google',
             'credentials' => [
-                'base_url' => 'https://api.example.test',
-                'auth_type' => 'bearer',
-                'token' => 'test-token',
+                'access_token' => 'test-token',
+                'email' => fake()->safeEmail(),
             ],
             'status' => 'never_tested',
             'status_message' => null,

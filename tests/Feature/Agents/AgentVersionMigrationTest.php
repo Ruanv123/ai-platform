@@ -9,11 +9,9 @@ it('backfills existing agents as their first published version', function (): vo
     $team = $user->company();
     $salesAgent = Agent::factory()->for($team)->create([
         'objective' => AgentObjective::Sales,
-        'search_products' => null,
     ]);
     $supportAgent = Agent::factory()->for($team)->create([
         'objective' => AgentObjective::Support,
-        'search_products' => false,
     ]);
     $migration = require database_path('migrations/2026_09_29_040627_create_agent_versions_table.php');
 
@@ -26,9 +24,7 @@ it('backfills existing agents as their first published version', function (): vo
     expect($salesVersion)->not->toBeNull()
         ->and($salesVersion->number)->toBe(1)
         ->and($salesVersion->objective)->toBe(AgentObjective::Sales)
-        ->and($salesVersion->ecommerce_tools)->toBe(['search_products' => null])
         ->and($salesVersion->published_at)->not->toBeNull()
         ->and($supportVersion)->not->toBeNull()
-        ->and($supportVersion->objective)->toBe(AgentObjective::Support)
-        ->and($supportVersion->ecommerce_tools)->toBe(['search_products' => false]);
+        ->and($supportVersion->objective)->toBe(AgentObjective::Support);
 });

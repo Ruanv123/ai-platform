@@ -37,6 +37,7 @@ class ConsultAvailableTimes implements Tool
                 $request->string('start_date')->toString() ?: $request->string('start')->toString() ?: null,
                 $request->string('end_date')->toString() ?: $request->string('end')->toString() ?: null,
                 $request->integer('limit', 10),
+                $request->string('preferred_time')->toString() ?: null,
             );
 
             return $this->json(['ok' => true, 'horarios' => $slots]);
@@ -51,7 +52,8 @@ class ConsultAvailableTimes implements Tool
             'calendar_id' => $schema->string()->nullable()->description('ID do Calendário agendável escolhido; omita ou use "qualquer" para o primeiro horário livre entre todos.'),
             'start_date' => $schema->string()->nullable()->description('Data inicial no formato AAAA-MM-DD.'),
             'end_date' => $schema->string()->nullable()->description('Data final no formato AAAA-MM-DD.'),
-            'limit' => $schema->integer()->nullable()->description('Quantidade desejada, limitada a 10.'),
+            'preferred_time' => $schema->string()->nullable()->description('Horário exato pedido pelo Contato, em HH:MM, por exemplo 16:00. Sempre preencha quando houver preferência de horário. A consulta verifica esse horário antes de limitar os resultados.'),
+            'limit' => $schema->integer()->nullable()->description('Quantidade desejada, limitada a 10. Não encontrar um horário numa lista parcial sem preferred_time NÃO significa que ele esteja ocupado.'),
         ];
     }
 

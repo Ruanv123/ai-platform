@@ -2,28 +2,18 @@
 
 use App\Enums\ChannelStatus;
 use App\Enums\ChannelType;
-use App\Enums\FlowExecutionStatus;
 use App\Enums\MessageDirection;
 use App\Events\HumanConversationUpdated;
 use App\Events\InboxMessageCreated;
 use App\Inbox\AgentConversationService;
 use App\Jobs\RespondToWhatsAppMessage;
-use App\Jobs\RunFlowTurn;
 use App\Models\Agent;
 use App\Models\AgentConversationAudit;
 use App\Models\AgentConversationState;
 use App\Models\Channel;
 use App\Models\Contact;
 use App\Models\ConversationRead;
-use App\Models\Flow;
-use App\Models\FlowExecution;
-use App\Models\FlowVersion;
-use App\Models\Integration;
 use App\Models\Message;
-use App\Models\PurchaseAttribution;
-use App\Models\Shop;
-use App\Models\StoreCustomer;
-use App\Models\StoreOrder;
 use App\Models\User;
 use App\Models\WhatsAppPhoneNumber;
 use App\WhatsApp\IncomingMessageResponseDispatcher;
@@ -36,36 +26,44 @@ beforeEach(function (): void {
     $this->withoutVite();
 });
 
-function humanWaitingExecution(
+function pausedAgentConversation(
     User $user,
     ?Contact $contact = null,
     ?Channel $channel = null,
     ChannelType $channelType = ChannelType::WhatsApp,
-): FlowExecution {
+): AgentConversationState {
     $team = $user->company();
-    $channel ??= Channel::factory()->for($team)->connected()->create(['type' => $channelType]);
-    $contact ??= Contact::factory()->for($team)->create([
-        'human_waiting' => true,
-        'human_waiting_at' => now(),
-    ]);
-    $flow = Flow::factory()->for($team)->create();
-    $version = FlowVersion::factory()->for($flow)->create();
+    if ($channel === null) {
+        $agent = Agent::factory()->for($team)->create();
+        $channel = Channel::factory()->for($team)->connected()->create([
+            'type' => $channelType,
+            'agent_id' => $agent->getKey(),
+        ]);
+    } elseif ($channel->agent_id === null) {
+        $agent = Agent::factory()->for($team)->create();
+        $channel->forceFill(['agent_id' => $agent->getKey()])->save();
+    }
 
-    return FlowExecution::factory()
-        ->for($version)
+    $contact ??= Contact::factory()->for($team)->create();
+
+    return AgentConversationState::factory()
+        ->for($team)
         ->for($contact)
+        ->for($channel)
         ->create([
-            'team_id' => $team->id,
-            'channel_id' => $channel->id,
-            'status' => FlowExecutionStatus::Paused,
-            'waiting_for' => 'human',
-            'human_transfer_reason' => 'contact_requested',
-            'wake_at' => now()->addDay(),
+            'team_id' => $team->getKey(),
+            'contact_id' => $contact->getKey(),
+            'channel_id' => $channel->getKey(),
+            'is_paused' => true,
+            'paused_at' => now(),
+            'expires_at' => now()->addMinutes(30),
+            'pause_duration_minutes' => 30,
+            'last_activity_at' => now(),
         ]);
 }
 
 /** @return array{contact: int, channel: string} */
-function inboxConversationParams(FlowExecution $execution): array
+function inboxConversationParams(AgentConversationState $execution): array
 {
     return [
         'contact' => $execution->contact_id,
@@ -76,8 +74,8 @@ function inboxConversationParams(FlowExecution $execution): array
 it('lists two channel conversations for one contact as separate latest-message rows', function () {
     $user = User::factory()->withTeam()->create(['is_platform_admin' => true]);
     $contact = Contact::factory()->for($user->company())->create();
-    $firstExecution = humanWaitingExecution($user, $contact);
-    $secondExecution = humanWaitingExecution($user, $contact, channelType: ChannelType::WhatsAppTest);
+    $firstExecution = pausedAgentConversation($user, $contact);
+    $secondExecution = pausedAgentConversation($user, $contact, channelType: ChannelType::WhatsAppTest);
     $message = Message::factory()
         ->for($contact)
         ->for($firstExecution->channel)
@@ -106,7 +104,7 @@ it('lists two channel conversations for one contact as separate latest-message r
         ->where('conversations.data.1.excerpt', $message->content));
 });
 
-it('lists message-backed WhatsApp conversations once and opens Agent conversations read-only', function () {
+it('lists message-backed WhatsApp conversations and opens active Agent conversations read-only', function () {
     $user = User::factory()->withTeam()->create(['is_platform_admin' => true]);
     $team = $user->company();
     $contact = Contact::factory()->for($team)->create();
@@ -114,16 +112,16 @@ it('lists message-backed WhatsApp conversations once and opens Agent conversatio
     $testChannel = Channel::factory()->for($team)->create(['type' => ChannelType::WhatsAppTest]);
     $websiteChannel = Channel::factory()->for($team)->create(['type' => ChannelType::WebsiteChat]);
     $emptyChannel = Channel::factory()->for($team)->create(['type' => ChannelType::InstagramDirect]);
-    $execution = humanWaitingExecution($user, $contact, $testChannel);
+    $execution = pausedAgentConversation($user, $contact, $testChannel);
     $timestamp = now();
     $agentMessage = Message::factory()
         ->for($contact)
         ->for($officialChannel)
         ->create(['content' => 'Atendimento direto do Agente.', 'created_at' => $timestamp]);
-    $flowMessage = Message::factory()
+    $pausedMessage = Message::factory()
         ->for($contact)
         ->for($testChannel)
-        ->create(['content' => 'Transferência de Fluxo.', 'created_at' => $timestamp]);
+        ->create(['content' => 'Atendimento pausado.', 'created_at' => $timestamp]);
     Message::factory()
         ->for($contact)
         ->for($websiteChannel)
@@ -135,120 +133,23 @@ it('lists message-backed WhatsApp conversations once and opens Agent conversatio
         ->assertInertia(fn ($page) => $page
             ->where('conversations.total', 2)
             ->where('conversations.data.0.channel.id', $testChannel->id)
-            ->where('conversations.data.0.state', 'flow')
-            ->where('conversations.data.0.excerpt', $flowMessage->content)
+            ->where('conversations.data.0.agentPaused', true)
+            ->where('conversations.data.0.excerpt', $pausedMessage->content)
             ->where('conversations.data.1.channel.id', $officialChannel->id)
-            ->where('conversations.data.1.state', 'agent')
+            ->where('conversations.data.1.agentPaused', false)
             ->where('conversations.data.1.excerpt', $agentMessage->content));
 
     $this->actingAs($user)
         ->get(route('inbox.show', ['contact' => $contact, 'channel' => $officialChannel]))
         ->assertOk()
         ->assertInertia(fn ($page) => $page
-            ->where('selected.state', 'agent')
-            ->where('selected.execution', null)
+            ->where('selected.agentPaused', false)
             ->where('selected.canWrite', false)
             ->where('selected.messages.data.0.id', $agentMessage->id));
 
     $this->actingAs($user)
         ->get(route('inbox.show', ['contact' => $contact, 'channel' => $emptyChannel]))
         ->assertNotFound();
-});
-
-it('shows a linked store customer and recent orders in the Contact detail', function () {
-    $user = User::factory()->withTeam()->create();
-    $team = $user->company();
-    $contact = Contact::factory()->for($team)->create([
-        'name' => 'Nome do atendimento',
-    ]);
-    $agent = Agent::factory()->for($team)->create();
-    $channel = Channel::factory()->for($team)->for($agent)->connected()->create();
-    Message::factory()->for($contact)->for($channel)->create(['content' => 'Quero saber sobre meu pedido.']);
-    $integration = Integration::factory()->for($team)->create([
-        'type' => 'ecommerce',
-        'provider' => 'shopify',
-        'status' => 'connected',
-    ]);
-    $shop = Shop::factory()->for($team)->for($integration)->create();
-    $customer = StoreCustomer::factory()->for($team)->for($shop)->for($contact)->create([
-        'first_name' => 'Mariana',
-        'last_name' => 'Costa',
-        'email' => 'mariana.costa@example.test',
-        'total_spent' => '823.50',
-        'currency_code' => 'BRL',
-    ]);
-    $purchaseAttribution = PurchaseAttribution::query()->create([
-        'team_id' => $team->getKey(),
-        'shop_id' => $shop->getKey(),
-        'contact_id' => $contact->getKey(),
-        'agent_id' => $agent->getKey(),
-        'channel_id' => $channel->getKey(),
-        'token_hash' => hash('sha256', 'inbox-purchase-token'),
-    ]);
-    StoreOrder::factory()->for($team)->for($shop)->for($customer, 'storeCustomer')->create([
-        'team_id' => $team->id,
-        'shop_id' => $shop->getKey(),
-        'store_customer_id' => $customer->getKey(),
-        'order_number' => '#1042',
-        'ordered_at' => now()->subDay(),
-    ]);
-    StoreOrder::factory()->for($team)->for($shop)->for($customer, 'storeCustomer')->create([
-        'team_id' => $team->id,
-        'shop_id' => $shop->getKey(),
-        'store_customer_id' => $customer->getKey(),
-        'purchase_attribution_id' => $purchaseAttribution->getKey(),
-        'order_number' => '#1043',
-        'ordered_at' => now(),
-    ]);
-
-    $this->actingAs($user)
-        ->get(route('inbox.show', ['contact' => $contact, 'channel' => $channel]))
-        ->assertOk()
-        ->assertInertia(fn ($page) => $page
-            ->where('selected.contact.name', 'Nome do atendimento')
-            ->where('selected.contact.storeCustomer.name', 'Mariana Costa')
-            ->where('selected.contact.storeCustomer.email', 'mariana.costa@example.test')
-            ->where('selected.contact.storeCustomer.totalSpent', '823.50')
-            ->where('selected.contact.storeOrders.0.orderNumber', '#1043')
-            ->where('selected.contact.storeOrders.0.attributed', true)
-            ->where('selected.contact.storeOrders.1.orderNumber', '#1042')
-            ->where('selected.contact.storeOrders.1.attributed', false));
-});
-
-it('shows a guest order attributed to the Contact without a linked store customer', function () {
-    $user = User::factory()->withTeam()->create();
-    $team = $user->company();
-    $contact = Contact::factory()->for($team)->create();
-    $agent = Agent::factory()->for($team)->create();
-    $channel = Channel::factory()->for($team)->for($agent)->connected()->create();
-    Message::factory()->for($contact)->for($channel)->create(['content' => 'Quero saber sobre meu pedido.']);
-    $integration = Integration::factory()->for($team)->create([
-        'type' => 'ecommerce',
-        'provider' => 'shopify',
-        'status' => 'connected',
-    ]);
-    $shop = Shop::factory()->for($team)->for($integration)->create();
-    $purchaseAttribution = PurchaseAttribution::query()->create([
-        'team_id' => $team->getKey(),
-        'shop_id' => $shop->getKey(),
-        'contact_id' => $contact->getKey(),
-        'agent_id' => $agent->getKey(),
-        'channel_id' => $channel->getKey(),
-        'token_hash' => hash('sha256', 'guest-purchase-token'),
-    ]);
-    StoreOrder::factory()->for($team)->for($shop)->create([
-        'store_customer_id' => null,
-        'purchase_attribution_id' => $purchaseAttribution->getKey(),
-        'order_number' => '#guest-1044',
-    ]);
-
-    $this->actingAs($user)
-        ->get(route('inbox.show', ['contact' => $contact, 'channel' => $channel]))
-        ->assertOk()
-        ->assertInertia(fn ($page) => $page
-            ->where('selected.contact.storeCustomer', null)
-            ->where('selected.contact.storeOrders.0.orderNumber', '#guest-1044')
-            ->where('selected.contact.storeOrders.0.attributed', true));
 });
 
 it('pauses a direct Agent conversation and records an explicit takeover', function () {
@@ -325,7 +226,6 @@ it('keeps paused incoming messages pending and serializes a generated response a
 
     app(IncomingMessageResponseDispatcher::class)->dispatch($channel, $message);
     Queue::assertNotPushed(RespondToWhatsAppMessage::class);
-    Queue::assertNotPushed(RunFlowTurn::class);
 
     $state->refresh();
     expect($state->last_activity_at->toDateTimeString())->toBe(now()->toDateTimeString())
@@ -342,13 +242,13 @@ it('keeps paused incoming messages pending and serializes a generated response a
 it('filters conversations by state, responsible person, channel, and contact search', function () {
     $user = User::factory()->withTeam()->create(['is_platform_admin' => true]);
     $team = $user->company();
-    $flowContact = Contact::factory()->for($team)->create(['name' => 'Ana Flow']);
+    $pausedContact = Contact::factory()->for($team)->create(['name' => 'Ana Pausada']);
     $agentContact = Contact::factory()->for($team)->create(['name' => 'Bruno Agent']);
-    $flowChannel = Channel::factory()->for($team)->connected()->create();
+    $pausedChannel = Channel::factory()->for($team)->connected()->create();
     $agentChannel = Channel::factory()->for($team)->connected()->create(['type' => ChannelType::WhatsAppTest]);
-    $flowExecution = humanWaitingExecution($user, $flowContact, $flowChannel);
-    $flowExecution->forceFill(['human_assigned_user_id' => $user->id])->save();
-    Message::factory()->for($flowContact)->for($flowChannel)->create(['content' => 'Fluxo']);
+    $pausedState = pausedAgentConversation($user, $pausedContact, $pausedChannel);
+    $pausedState->forceFill(['assigned_user_id' => $user->id])->save();
+    Message::factory()->for($pausedContact)->for($pausedChannel)->create(['content' => 'Pausada']);
     Message::factory()->for($agentContact)->for($agentChannel)->create(['content' => 'Agente']);
 
     $this->actingAs($user)
@@ -364,11 +264,11 @@ it('filters conversations by state, responsible person, channel, and contact sea
             ->where('conversations.data.0.contactId', $agentContact->id));
 
     $this->actingAs($user)
-        ->get(route('inbox.index', ['state' => 'flow', 'assigned_to' => $user->id]))
+        ->get(route('inbox.index', ['state' => 'paused', 'assigned_to' => $user->id]))
         ->assertOk()
         ->assertInertia(fn ($page) => $page
             ->where('conversations.total', 1)
-            ->where('conversations.data.0.contactId', $flowContact->id));
+            ->where('conversations.data.0.contactId', $pausedContact->id));
 });
 
 it('keeps unavailable channel history visible and blocks sending without calling the provider', function () {
@@ -376,8 +276,8 @@ it('keeps unavailable channel history visible and blocks sending without calling
     $user = User::factory()->withTeam()->create();
     $contact = Contact::factory()->for($user->company())->create();
     $channel = Channel::factory()->for($user->company())->error()->create();
-    $execution = humanWaitingExecution($user, $contact, $channel);
-    $execution->forceFill(['human_assigned_user_id' => $user->id])->save();
+    $execution = pausedAgentConversation($user, $contact, $channel);
+    $execution->forceFill(['assigned_user_id' => $user->id])->save();
     Message::factory()->for($contact)->for($channel)->create(['content' => 'Histórico continua disponível.']);
 
     $this->actingAs($user)
@@ -402,11 +302,11 @@ it('keeps unavailable channel history visible and blocks sending without calling
     Http::assertNotSent(fn (Request $request): bool => str_contains($request->url(), 'graph.facebook.com'));
 });
 
-it('renders only the selected channel messages, history, and Flow execution with pagination', function () {
+it('renders only the selected channel messages and history with pagination', function () {
     $user = User::factory()->withTeam()->create(['is_platform_admin' => true]);
     $contact = Contact::factory()->for($user->company())->create();
-    $firstExecution = humanWaitingExecution($user, $contact);
-    $selectedExecution = humanWaitingExecution($user, $contact, channelType: ChannelType::WhatsAppTest);
+    $firstExecution = pausedAgentConversation($user, $contact);
+    $selectedExecution = pausedAgentConversation($user, $contact, channelType: ChannelType::WhatsAppTest);
 
     $otherChannelMessage = Message::factory()
         ->for($contact)
@@ -424,7 +324,6 @@ it('renders only the selected channel messages, history, and Flow execution with
             ->component('inbox/index')
             ->where('selected.contact.id', $contact->id)
             ->where('selected.channel.id', $selectedExecution->channel_id)
-            ->where('selected.execution.id', $selectedExecution->id)
             ->where('selected.messages.lastPage', 2)
             ->where('selected.history.lastPage', 3)
             ->where('selected.messages.data.0.id', $selectedMessages->get(1)->id)
@@ -440,7 +339,7 @@ it('renders only the selected channel messages, history, and Flow execution with
 it('renders the current reaction on the selected conversation message', function () {
     $user = User::factory()->withTeam()->create(['is_platform_admin' => true]);
     $contact = Contact::factory()->for($user->company())->create();
-    $execution = humanWaitingExecution($user, $contact, channelType: ChannelType::WhatsAppTest);
+    $execution = pausedAgentConversation($user, $contact, channelType: ChannelType::WhatsAppTest);
     $message = Message::factory()
         ->for($contact)
         ->for($execution->channel)
@@ -504,23 +403,23 @@ it('broadcasts conversation pair identifiers without message content or media de
         ]);
 });
 
-it('does not reveal a transferred conversation from another Empresa', function () {
+it('does not reveal a paused Agent conversation from another Empresa', function () {
     $user = User::factory()->withTeam()->create();
     $otherUser = User::factory()->withTeam()->create();
-    $execution = humanWaitingExecution($otherUser);
+    $execution = pausedAgentConversation($otherUser);
 
     $this->actingAs($user)
         ->get(route('inbox.show', inboxConversationParams($execution)))
         ->assertNotFound();
 
     $this->actingAs($user)
-        ->post(route('inbox.take', inboxConversationParams($execution)))
+        ->post(route('inbox.agent.take-over', inboxConversationParams($execution)))
         ->assertNotFound();
 });
 
 it('returns 404 for a legacy contact-only conversation URL', function () {
     $user = User::factory()->withTeam()->create();
-    $execution = humanWaitingExecution($user);
+    $execution = pausedAgentConversation($user);
 
     $this->actingAs($user)
         ->get('/atendimento/'.$execution->contact_id)
@@ -532,19 +431,19 @@ it('allows one person to assume a conversation and rejects a competing assignee'
     $otherUser = User::factory()->create();
     $user->company()->members()->attach($otherUser, ['role' => 'member']);
     $contact = Contact::factory()->for($user->company())->create();
-    $otherChannelExecution = humanWaitingExecution($user, $contact, channelType: ChannelType::WebsiteChat);
-    $execution = humanWaitingExecution($user, $contact);
+    $otherChannelExecution = pausedAgentConversation($user, $contact, channelType: ChannelType::WebsiteChat);
+    $execution = pausedAgentConversation($user, $contact);
 
     $this->actingAs($user)
-        ->post(route('inbox.take', inboxConversationParams($execution)))
+        ->post(route('inbox.agent.take-over', inboxConversationParams($execution)))
         ->assertRedirect(route('inbox.show', inboxConversationParams($execution)));
 
     $this->actingAs($otherUser)
-        ->post(route('inbox.take', inboxConversationParams($execution)))
+        ->post(route('inbox.agent.pause', inboxConversationParams($execution)))
         ->assertStatus(409);
 
-    expect($execution->fresh()->human_assigned_user_id)->toBe($user->id)
-        ->and($otherChannelExecution->fresh()->human_assigned_user_id)->toBeNull();
+    expect($execution->fresh()->assigned_user_id)->toBe($user->id)
+        ->and($otherChannelExecution->fresh()->assigned_user_id)->toBeNull();
 });
 
 it('sends a human message through the conversation channel and records its sender', function () {
@@ -553,15 +452,15 @@ it('sends a human message through the conversation channel and records its sende
     ]);
     $user = User::factory()->withTeam()->create();
     $contact = Contact::factory()->for($user->company())->create();
-    humanWaitingExecution($user, $contact, channelType: ChannelType::WebsiteChat);
-    $execution = humanWaitingExecution($user, $contact);
+    pausedAgentConversation($user, $contact, channelType: ChannelType::WebsiteChat);
+    $execution = pausedAgentConversation($user, $contact);
     WhatsAppPhoneNumber::factory()->for($execution->channel)->create();
     Message::factory()->for($execution->contact)->for($execution->channel)->create([
         'direction' => MessageDirection::Incoming,
         'created_at' => now(),
     ]);
 
-    $this->actingAs($user)->post(route('inbox.take', inboxConversationParams($execution)));
+    $this->actingAs($user)->post(route('inbox.agent.take-over', inboxConversationParams($execution)));
     $this->actingAs($user)
         ->post(route('inbox.messages.store', inboxConversationParams($execution)), ['content' => 'Vou ajudar você.'])
         ->assertRedirect(route('inbox.show', inboxConversationParams($execution)));
@@ -847,70 +746,9 @@ it('opens a visible WhatsApp test conversation from the inbox', function () {
             ->where('selected.messages.data.0.id', $message->id));
 });
 
-it('marks an expired execution as failed when a person returns it to the bot', function () {
-    $user = User::factory()->withTeam()->create();
-    $execution = humanWaitingExecution($user);
-    $execution->forceFill(['expires_at' => now()->subMinute()])->save();
-
-    $this->actingAs($user)
-        ->post(route('inbox.return', inboxConversationParams($execution)))
-        ->assertRedirect(route('inbox.index'));
-
-    expect($execution->fresh()->status)->toBe(FlowExecutionStatus::Failed)
-        ->and($execution->fresh()->final_reason)->toBe('execution_ttl_exceeded')
-        ->and($execution->contact->fresh()->human_waiting)->toBeFalse();
-});
-
-it('returns only the selected channel execution to the flow', function () {
-    $user = User::factory()->withTeam()->create();
-    $contact = Contact::factory()->for($user->company())->create();
-    $otherChannelExecution = humanWaitingExecution($user, $contact);
-    $execution = humanWaitingExecution($user, $contact, channelType: ChannelType::WhatsAppTest);
-
-    $this->actingAs($user)
-        ->post(route('inbox.return', inboxConversationParams($execution)))
-        ->assertRedirect(route('inbox.index'));
-
-    expect($execution->fresh()->status)->toBe(FlowExecutionStatus::Completed)
-        ->and($otherChannelExecution->fresh()->status)->toBe(FlowExecutionStatus::Paused)
-        ->and($execution->contact->fresh()->human_waiting)->toBeFalse();
-});
-
-it('returns an unattended conversation to the flow after its wake time', function () {
-    $user = User::factory()->withTeam()->create();
-    $execution = humanWaitingExecution($user);
-    $execution->forceFill([
-        'wake_at' => now()->subMinute(),
-        'expires_at' => now()->addDay(),
-    ])->save();
-
-    $this->artisan('flows:reconcile')
-        ->assertSuccessful();
-
-    expect($execution->fresh()->status)->toBe(FlowExecutionStatus::Completed)
-        ->and($execution->fresh()->waiting_for)->toBeNull()
-        ->and($execution->contact->fresh()->human_waiting)->toBeFalse();
-});
-
-it('releases an assignment that has been inactive longer than the configured timeout', function () {
-    config(['flows.human_assignment_idle_seconds' => 60]);
-    $user = User::factory()->withTeam()->create();
-    $execution = humanWaitingExecution($user);
-    $execution->forceFill([
-        'human_assigned_user_id' => $user->id,
-        'human_assigned_at' => now()->subMinutes(5),
-        'human_last_activity_at' => now()->subMinutes(5),
-    ])->save();
-
-    $this->artisan('inbox:release-stale')
-        ->assertSuccessful();
-
-    expect($execution->fresh()->human_assigned_user_id)->toBeNull();
-});
-
 it('reopens the customer-care window when a new contact message arrives', function () {
     $user = User::factory()->withTeam()->create();
-    $execution = humanWaitingExecution($user);
+    $execution = pausedAgentConversation($user);
     Message::factory()->for($execution->contact)->for($execution->channel)->create([
         'direction' => MessageDirection::Incoming,
         'created_at' => now()->subDay()->subMinute(),
@@ -934,14 +772,14 @@ it('allows a Template after the WhatsApp customer-care window', function () {
         'graph.facebook.com/*' => Http::response(['messages' => [['id' => 'human-template-1']]]),
     ]);
     $user = User::factory()->withTeam()->create();
-    $execution = humanWaitingExecution($user);
+    $execution = pausedAgentConversation($user);
     WhatsAppPhoneNumber::factory()->for($execution->channel)->create();
     Message::factory()->for($execution->contact)->for($execution->channel)->create([
         'direction' => MessageDirection::Incoming,
         'created_at' => now()->subDay()->subMinute(),
     ]);
 
-    $this->actingAs($user)->post(route('inbox.take', inboxConversationParams($execution)));
+    $this->actingAs($user)->post(route('inbox.agent.take-over', inboxConversationParams($execution)));
     $this->actingAs($user)
         ->post(route('inbox.messages.store', inboxConversationParams($execution)), [
             'type' => 'template',
@@ -954,29 +792,34 @@ it('allows a Template after the WhatsApp customer-care window', function () {
         && $request->data()['template']['name'] === 'reengagement');
 });
 
-it('blocks a free-form message after the WhatsApp customer-care window', function () {
+it('records a free-form message as failed after the WhatsApp customer-care window without calling Meta', function () {
     Http::fake();
     $user = User::factory()->withTeam()->create();
-    $execution = humanWaitingExecution($user);
+    $execution = pausedAgentConversation($user);
     WhatsAppPhoneNumber::factory()->for($execution->channel)->create();
     Message::factory()->for($execution->contact)->for($execution->channel)->create([
         'direction' => MessageDirection::Incoming,
         'created_at' => now()->subDay()->subMinute(),
     ]);
 
-    $this->actingAs($user)->post(route('inbox.take', inboxConversationParams($execution)));
+    $this->actingAs($user)->post(route('inbox.agent.take-over', inboxConversationParams($execution)));
     $this->actingAs($user)
         ->post(route('inbox.messages.store', inboxConversationParams($execution)), ['content' => 'Ainda posso responder?'])
-        ->assertStatus(409);
+        ->assertRedirect(route('inbox.show', inboxConversationParams($execution)));
 
     Http::assertNothingSent();
+    $this->assertDatabaseHas('messages', [
+        'content' => 'Ainda posso responder?',
+        'delivery_status' => 'failed',
+        'sent_by_user_id' => $user->id,
+    ]);
 });
 
 it('counts unread incoming messages per conversation and clears them when the conversation is opened', function () {
     $user = User::factory()->withTeam()->create(['is_platform_admin' => true]);
     $team = $user->company();
-    $execution = humanWaitingExecution($user);
-    $otherExecution = humanWaitingExecution($user, channelType: ChannelType::WhatsAppTest);
+    $execution = pausedAgentConversation($user);
+    $otherExecution = pausedAgentConversation($user, channelType: ChannelType::WhatsAppTest);
     $readMessage = Message::factory()->for($execution->contact)->for($execution->channel)->create();
     ConversationRead::factory()->create([
         'team_id' => $team->id,
@@ -1009,7 +852,7 @@ it('counts unread incoming messages per conversation and clears them when the co
 
 it('flags a message that arrives after the conversation was opened as unread until it is opened again', function () {
     $user = User::factory()->withTeam()->create(['is_platform_admin' => true]);
-    $execution = humanWaitingExecution($user);
+    $execution = pausedAgentConversation($user);
     Message::factory()->for($execution->contact)->for($execution->channel)->create();
 
     $this->actingAs($user)->get(route('inbox.show', inboxConversationParams($execution)))->assertOk();

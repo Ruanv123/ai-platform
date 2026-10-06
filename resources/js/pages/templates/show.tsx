@@ -117,7 +117,7 @@ export default function TemplateShow({ template, permissions }: Props) {
                                 </h2>
                                 <p className="text-muted-foreground text-sm">
                                     A Meta substitui as variáveis pelos valores
-                                    do Fluxo.
+                                    preenchidos no envio.
                                 </p>
                             </div>
                             <div className="bg-muted/50 max-w-md rounded-2xl p-4">

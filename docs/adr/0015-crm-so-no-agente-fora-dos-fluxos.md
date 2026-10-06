@@ -1,5 +1,7 @@
 # CRM só no Agente, fora dos Fluxos, na v1
 
+Status: superseded by ADR-0018
+
 O CRM entra na plataforma apenas pelo Agente — Ações de consultar a ficha, garantir Negócio, mover de Etapa do funil e registrar nota — e pelo que a plataforma faz por conta própria (Vínculo e Resumo do atendimento). Não há Nó de CRM nem Gatilho de CRM nos Fluxos. É a mesma direção que a Agenda tomou, quando o conector de agenda do Fluxo virou `wontfix` e o agendamento passou a viver só no Agente.
 
 ## Considered Options

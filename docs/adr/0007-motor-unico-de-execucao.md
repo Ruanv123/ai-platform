@@ -1,5 +1,7 @@
 # Motor único: atendimento sem Fluxo é um Fluxo trivial
 
+Status: superseded by ADR-0018
+
 O atendimento atual do WhatsApp vive inteiro em `RespondToWhatsAppMessage`: buffer de cinco segundos, leitura do Histórico, janela de 24 horas, cinco tentativas e erro registrado no Canal. Com a chegada dos Fluxos, essa lógica passa a existir em um só lugar: **o motor de execução é sempre o mesmo**, e um Canal "sem Fluxo" roda um Fluxo trivial de um Nó — entregue o turno ao Agente e não retome.
 
 ## Considered Options

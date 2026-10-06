@@ -1,6 +1,5 @@
 import { Head, Link } from '@inertiajs/react';
 import { Check, Plug, Settings } from 'lucide-react';
-import { useState } from 'react';
 import Heading from '@/components/heading';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -34,45 +33,21 @@ type ConfiguredIntegration = {
     statusMessage: string | null;
 };
 
-type IntegrationType = 'crm' | 'ecommerce' | 'agenda';
+type IntegrationType = 'agenda';
 
 type Props = {
-    crmCatalog: CatalogIntegration[];
-    ecommerceCatalog: CatalogIntegration[];
     agendaCatalog: CatalogIntegration[];
-    singletonIntegrations: Record<IntegrationType, ConfiguredIntegration | null>;
+    agenda: ConfiguredIntegration | null;
     permissions: TeamPermissions;
 };
 
-const tabs = [
-    { value: 'crm', label: 'CRM', type: 'crm' as IntegrationType },
-    {
-        value: 'ecommerce',
-        label: 'E-commerce',
-        type: 'ecommerce' as IntegrationType,
-    },
-    { value: 'outros', label: 'Outros', type: 'agenda' as IntegrationType },
-] as const;
-
-type TabValue = (typeof tabs)[number]['value'];
-
 export default function IntegrationsPage({
-    crmCatalog,
-    ecommerceCatalog,
     agendaCatalog,
-    singletonIntegrations,
+    agenda,
     permissions,
 }: Props) {
-    const [activeTab, setActiveTab] = useState<TabValue>('crm');
-    const activeTabConfig = tabs.find((tab) => tab.value === activeTab)!;
-    const activeType = activeTabConfig.type;
-    const catalog =
-        activeType === 'crm'
-            ? crmCatalog
-            : activeType === 'ecommerce'
-              ? ecommerceCatalog
-              : agendaCatalog;
-    const singleton = singletonIntegrations[activeType];
+    const activeType: IntegrationType = 'agenda';
+    const catalog = agendaCatalog;
 
     return (
         <>
@@ -83,29 +58,10 @@ export default function IntegrationsPage({
                     description="Conecte a Empresa ao que precisa acontecer fora da plataforma."
                 />
 
-                <div
-                    className="border-border flex gap-6 border-b"
-                    role="tablist"
-                    aria-label="Tipo de integração"
-                >
-                    {tabs.map((tab) => (
-                        <button
-                            key={tab.value}
-                            type="button"
-                            role="tab"
-                            aria-selected={activeTab === tab.value}
-                            onClick={() => setActiveTab(tab.value)}
-                            className={`border-b-2 px-1 pb-3 text-sm font-medium transition-colors ${activeTab === tab.value ? 'border-primary text-foreground' : 'text-muted-foreground hover:text-foreground border-transparent'}`}
-                        >
-                            {tab.label}
-                        </button>
-                    ))}
-                </div>
-
-                {singleton ? (
+                {agenda ? (
                     <ConnectedCard
                         type={activeType}
-                        integration={singleton}
+                        integration={agenda}
                         catalog={catalog}
                     />
                 ) : (

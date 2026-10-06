@@ -27,10 +27,15 @@ class SchedulingService
         ?string $startInput,
         ?string $endInput,
         int $limit = 10,
+        ?string $preferredTime = null,
     ): array {
         $calendars = $this->selectCalendars($calendars, $calendarId);
         if ($calendars->isEmpty()) {
             return [];
+        }
+
+        if (filled($preferredTime) && ! preg_match('/^(?:[01][0-9]|2[0-3]):[0-5][0-9]$/', $preferredTime)) {
+            throw new SchedulingException('Informe o horário desejado no formato HH:MM.');
         }
 
         $timezone = $this->timezone($team);
@@ -53,6 +58,10 @@ class SchedulingService
             )];
         }
 
+        if (filled($preferredTime)) {
+            $slots = array_filter($slots, fn (array $slot): bool => CarbonImmutable::parse($slot['inicio'])->setTimezone($timezone)->format('H:i') === $preferredTime);
+        }
+
         usort($slots, fn (array $left, array $right): int => strcmp((string) $left['inicio'], (string) $right['inicio']));
 
         return array_slice($slots, 0, min(max(1, $limit), 10));
@@ -66,6 +75,7 @@ class SchedulingService
         string $reason,
         bool $simulate = false,
     ): array {
+        $startsAt = $startsAt->setTimezone($this->timezone($calendar->team));
         $duration = (int) $calendar->duration_minutes;
         $endsAt = $startsAt->addMinutes($duration);
         if ($simulate) {
@@ -140,8 +150,8 @@ class SchedulingService
                     'team_id' => $contact->team_id,
                     'schedulable_calendar_id' => $calendar->getKey(),
                     'google_event_id' => $eventId,
-                    'starts_at' => $startsAt,
-                    'ends_at' => $endsAt,
+                    'starts_at' => $startsAt->utc(),
+                    'ends_at' => $endsAt->utc(),
                     'reason' => trim($reason),
                     'status' => 'booked',
                 ]);
@@ -202,7 +212,7 @@ class SchedulingService
             $start = $this->eventDate($event, 'start') ?? $appointment->starts_at;
             $end = $this->eventDate($event, 'end') ?? $appointment->ends_at;
             if (! $start->equalTo($appointment->starts_at) || ! $end->equalTo($appointment->ends_at)) {
-                $appointment->update(['starts_at' => $start, 'ends_at' => $end]);
+                $appointment->update(['starts_at' => $start->utc(), 'ends_at' => $end->utc()]);
             }
             if ($start->isPast()) {
                 continue;
@@ -211,8 +221,8 @@ class SchedulingService
             $result[] = [
                 'compromisso_id' => $appointment->getKey(),
                 'google_event_id' => $appointment->google_event_id,
-                'inicio' => $start->toIso8601String(),
-                'fim' => $end->toIso8601String(),
+                'inicio' => $start->setTimezone($this->timezone($contact->team))->toIso8601String(),
+                'fim' => $end->setTimezone($this->timezone($contact->team))->toIso8601String(),
                 'motivo' => $appointment->reason,
                 'calendario' => $this->calendarLabel($calendar),
             ];
@@ -253,10 +263,10 @@ class SchedulingService
             $start = $this->eventDate($event, 'start');
             $end = $this->eventDate($event, 'end');
             if ($start !== null) {
-                $appointment->starts_at = $start;
+                $appointment->starts_at = $start->utc();
             }
             if ($end !== null) {
-                $appointment->ends_at = $end;
+                $appointment->ends_at = $end->utc();
             }
             if ($appointment->starts_at->isPast()) {
                 throw new SchedulingException('Só é possível cancelar Compromissos futuros deste Contato.');
@@ -267,6 +277,65 @@ class SchedulingService
         $appointment->update(['status' => 'cancelled']);
 
         return ['ok' => true, 'simulado' => false, 'compromisso_id' => $appointment->getKey(), 'cancelado' => true];
+    }
+
+    public function reschedule(Contact $contact, Collection $calendars, string $appointmentId, CarbonImmutable $startsAt, bool $simulate = false): array
+    {
+        $appointment = $contact->appointments()
+            ->where('team_id', $contact->team_id)
+            ->whereKey($appointmentId)
+            ->whereIn('schedulable_calendar_id', $calendars->modelKeys())
+            ->where('status', 'booked')
+            ->with('schedulableCalendar.integration')
+            ->first();
+
+        if ($appointment === null) {
+            throw new SchedulingException('Esse Compromisso não pertence a este Contato ou não pode ser remarcado por este Agente.');
+        }
+
+        $calendar = $appointment->schedulableCalendar;
+        $timezone = $this->timezone($contact->team);
+        $startsAt = $startsAt->setTimezone($timezone);
+        $endsAt = $startsAt->addMinutes($calendar->duration_minutes);
+        $this->assertSlotCanBeBooked($contact->team, $calendar, $startsAt, $endsAt, $timezone);
+
+        if ($simulate) {
+            return ['ok' => true, 'simulado' => true, 'inicio' => $startsAt->toIso8601String(), 'fim' => $endsAt->toIso8601String()];
+        }
+
+        return Cache::lock('schedulable-calendar:'.$calendar->getKey(), 15)->block(5, function () use ($appointment, $calendar, $startsAt, $endsAt, $timezone): array {
+            $client = new GoogleCalendarClient($calendar->integration);
+            $event = $client->event($calendar->google_calendar_id, $appointment->google_event_id);
+            $currentStart = $event === null ? null : $this->eventDate($event, 'start');
+            if ($event === null || ($event['status'] ?? null) === 'cancelled' || $currentStart === null || $currentStart->isPast()) {
+                throw new SchedulingException('Só é possível remarcar um Compromisso futuro ativo na Agenda Google.');
+            }
+
+            if ($client->hasConflictingEvent($calendar->google_calendar_id, $appointment->google_event_id, $startsAt, $endsAt)) {
+                throw new SchedulingException('O novo horário está ocupado. O Compromisso anterior foi mantido.');
+            }
+
+            $updatedEvent = $client->updateEvent($calendar->google_calendar_id, $appointment->google_event_id, [
+                'start' => ['dateTime' => $startsAt->toIso8601String(), 'timeZone' => $timezone],
+                'end' => ['dateTime' => $endsAt->toIso8601String(), 'timeZone' => $timezone],
+            ], $event['etag'] ?? null);
+
+            if (($updatedEvent['id'] ?? null) !== $appointment->google_event_id) {
+                throw new SchedulingException('Não foi possível confirmar a remarcação na Agenda Google.');
+            }
+
+            $appointment->update(['starts_at' => $startsAt->utc(), 'ends_at' => $endsAt->utc()]);
+
+            return [
+                'ok' => true,
+                'simulado' => false,
+                'compromisso_id' => $appointment->getKey(),
+                'inicio' => $startsAt->toIso8601String(),
+                'fim' => $endsAt->toIso8601String(),
+                'calendario' => $this->calendarLabel($calendar),
+                'motivo' => $appointment->reason,
+            ];
+        });
     }
 
     /** @param Collection<int, SchedulableCalendar> $calendars */
