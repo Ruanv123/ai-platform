@@ -43,6 +43,7 @@ Telefone: {$this->value($team->phone)}
 E-mail público: {$this->value($team->public_email)}
 Endereço: {$this->value($team->address)}
 Horário de atendimento: {$this->businessHours($team)}
+{$this->brandVoice($team)}
 
 ## Estilo
 Use um tom {$agent->tone->label()}.
@@ -139,6 +140,22 @@ PROMPT;
                 return "{$day}: ".($hours['open'] ?? 'não informado').' às '.($hours['close'] ?? 'não informado');
             })
             ->implode('; ');
+    }
+
+    private function brandVoice(Team $team): string
+    {
+        if (blank($team->brand_voice) && blank($team->brand_voice_examples)) {
+            return '';
+        }
+
+        $examples = collect($team->brand_voice_examples)
+            ->values()
+            ->map(fn (string $example, int $index): string => ($index + 1).'. '.$example)
+            ->implode("\n");
+
+        return "## Voz da marca\nDescrição: {$this->value($team->brand_voice)}\nFrases de exemplo:\n".
+            ($examples !== '' ? $examples : 'Não informado.').
+            "\nO Estilo do Agente prevalece sobre a Voz da marca quando houver divergência.";
     }
 
     /**

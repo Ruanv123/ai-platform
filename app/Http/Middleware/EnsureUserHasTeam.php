@@ -16,8 +16,9 @@ class EnsureUserHasTeam
     public function handle(Request $request, Closure $next): Response
     {
         $user = $request->user();
+        $team = $user?->company();
 
-        if ($user?->company() === null) {
+        if ($team === null || ! $team->isOnboardingComplete()) {
             return to_route('onboarding.company');
         }
 

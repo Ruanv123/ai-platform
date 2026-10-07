@@ -1,6 +1,7 @@
 import { Head, Link } from '@inertiajs/react';
 import {
     AlertCircle,
+    AlertTriangle,
     ArrowRight,
     Bot,
     Check,
@@ -12,6 +13,7 @@ import {
     Target,
 } from 'lucide-react';
 import Heading from '@/components/heading';
+import DashboardSiteReadPoller from '@/components/dashboard-site-read-poller';
 import { Badge } from '@/components/ui/badge';
 import {
     Card,
@@ -53,6 +55,11 @@ type Summary = {
 type Props = {
     checklist: ChecklistItem[];
     summary: Summary;
+    siteReadReminder: {
+        polling: boolean;
+        proposal: { origin: 'onboarding' | 'settings'; href: string } | null;
+        failure: { message: string; href: string } | null;
+    };
 };
 
 function formatBytes(bytes: number): string {
@@ -139,7 +146,11 @@ function WhatsAppStatus({ summary }: { summary: Summary }) {
     );
 }
 
-export default function Dashboard({ checklist, summary }: Props) {
+export default function Dashboard({
+    checklist,
+    summary,
+    siteReadReminder,
+}: Props) {
     const metrics = [
         { label: 'Conversas', icon: MessagesSquare },
         { label: 'Atendimentos resolvidos', icon: Check },
@@ -253,6 +264,56 @@ export default function Dashboard({ checklist, summary }: Props) {
                         </CardContent>
                     </Card>
                 </div>
+
+                {siteReadReminder.polling ? <DashboardSiteReadPoller /> : null}
+
+                {siteReadReminder.proposal ? (
+                    <Link
+                        href={siteReadReminder.proposal.href}
+                        prefetch
+                        className="group border-primary/20 bg-primary/5 hover:bg-primary/10 focus-visible:ring-ring flex items-center gap-4 rounded-xl border px-5 py-4 transition-colors focus-visible:ring-2 focus-visible:outline-none"
+                        aria-live="polite"
+                    >
+                        <span className="bg-primary/10 text-primary flex size-10 shrink-0 items-center justify-center rounded-lg">
+                            <FileCheck2 className="size-5" />
+                        </span>
+                        <span className="min-w-0 flex-1">
+                            <span className="block text-sm font-semibold">
+                                Confira os dados sugeridos pelo seu site
+                            </span>
+                            <span className="text-muted-foreground mt-0.5 block text-xs">
+                                {siteReadReminder.proposal.origin ===
+                                'onboarding'
+                                    ? 'Revise os dados pré-preenchidos e a origem de cada campo.'
+                                    : 'Revise os campos que mudaram em Configurações da Empresa.'}
+                            </span>
+                        </span>
+                        <ArrowRight className="text-muted-foreground size-4 shrink-0 transition-transform group-hover:translate-x-0.5" />
+                    </Link>
+                ) : null}
+
+                {siteReadReminder.failure ? (
+                    <Link
+                        href={siteReadReminder.failure.href}
+                        prefetch
+                        className="group border-destructive/20 bg-destructive/5 hover:bg-destructive/10 focus-visible:ring-ring flex items-center gap-4 rounded-xl border px-5 py-4 transition-colors focus-visible:ring-2 focus-visible:outline-none"
+                        aria-live="polite"
+                    >
+                        <span className="bg-destructive/10 text-destructive flex size-10 shrink-0 items-center justify-center rounded-lg">
+                            <AlertTriangle className="size-5" />
+                        </span>
+                        <span className="min-w-0 flex-1">
+                            <span className="block text-sm font-semibold">
+                                A Leitura do site falhou
+                            </span>
+                            <span className="text-muted-foreground mt-0.5 block text-xs">
+                                {siteReadReminder.failure.message} Preencha os
+                                dados da Empresa manualmente.
+                            </span>
+                        </span>
+                        <ArrowRight className="text-muted-foreground size-4 shrink-0 transition-transform group-hover:translate-x-0.5" />
+                    </Link>
+                ) : null}
 
                 <section
                     aria-labelledby="future-metrics-title"

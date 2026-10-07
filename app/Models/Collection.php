@@ -22,7 +22,7 @@ use Illuminate\Support\Carbon;
  * @property Carbon|null $updated_at
  * @property-read Team $team
  */
-#[Fillable(['team_id', 'name', 'description', 'is_default'])]
+#[Fillable(['team_id', 'name', 'description', 'is_default', 'is_site_collection'])]
 class Collection extends Model
 {
     /** @use HasFactory<CollectionFactory> */
@@ -35,7 +35,10 @@ class Collection extends Model
      */
     protected function casts(): array
     {
-        return ['is_default' => 'boolean'];
+        return [
+            'is_default' => 'boolean',
+            'is_site_collection' => 'boolean',
+        ];
     }
 
     /**
@@ -46,6 +49,11 @@ class Collection extends Model
     public function documents(): HasMany
     {
         return $this->hasMany(Document::class);
+    }
+
+    public function ignoredSiteUrls(): HasMany
+    {
+        return $this->hasMany(SiteCollectionIgnoredUrl::class);
     }
 
     /**

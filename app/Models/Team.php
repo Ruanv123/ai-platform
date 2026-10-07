@@ -3,15 +3,19 @@
 namespace App\Models;
 
 use App\Concerns\GeneratesUniqueTeamSlugs;
+use App\Enums\CompanyOnboardingStep;
+use App\Enums\SiteReadProposalStatus;
 use App\Enums\TeamRole;
 use App\Models\Collection as TeamCollection;
 use Database\Factories\TeamFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Support\Carbon;
 
@@ -58,6 +62,10 @@ use Illuminate\Support\Carbon;
     'phone',
     'public_email',
     'address',
+    'brand_voice',
+    'brand_voice_examples',
+    'onboarding_step',
+    'onboarding_completed_at',
     'agent_pause_duration_minutes',
     'slug',
 ])]
@@ -159,6 +167,42 @@ class Team extends Model
         return $this->hasMany(TeamCollection::class);
     }
 
+    public function siteCollection(): HasOne
+    {
+        return $this->hasOne(TeamCollection::class)->where('is_site_collection', true);
+    }
+
+    public function siteReads(): HasMany
+    {
+        return $this->hasMany(SiteRead::class);
+    }
+
+    public function siteReadProposals(): HasMany
+    {
+        return $this->hasMany(SiteReadProposal::class);
+    }
+
+    public function pendingOnboardingProposal(): ?SiteReadProposal
+    {
+        if ($this->onboarding_completed_at === null) {
+            return null;
+        }
+
+        return $this->siteReadProposals()
+            ->where('status', SiteReadProposalStatus::Pending->value)
+            ->whereHas('siteRead', fn (Builder $query) => $query
+                ->where('team_id', $this->getKey())
+                ->where('started_at', '<=', $this->onboarding_completed_at))
+            ->latest('id')
+            ->first();
+    }
+
+    public function isOnboardingComplete(): bool
+    {
+        return $this->onboarding_step === null
+            || $this->onboarding_step === CompanyOnboardingStep::Completed;
+    }
+
     /**
      * Get the Agents for this Empresa.
      *
@@ -221,7 +265,10 @@ class Team extends Model
     {
         return [
             'business_hours' => 'array',
+            'brand_voice_examples' => 'array',
             'agent_pause_duration_minutes' => 'integer',
+            'onboarding_step' => CompanyOnboardingStep::class,
+            'onboarding_completed_at' => 'datetime',
         ];
     }
 

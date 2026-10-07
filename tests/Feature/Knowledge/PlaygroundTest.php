@@ -77,6 +77,50 @@ it('uses the draft configuration instead of a saved Agent configuration', functi
     );
 });
 
+it('includes the company voice before the Agent style in Playground instructions', function () {
+    $user = User::factory()->withTeam()->create();
+    $user->company()->update([
+        'brand_voice' => 'A marca fala com leveza e clareza.',
+        'brand_voice_examples' => ['Vamos resolver isso juntos.', 'Pode deixar com a gente.'],
+    ]);
+    PlaygroundAgent::fake(['Resposta com a voz da marca.']);
+
+    $response = $this->actingAs($user)->postJson(
+        route('agents.playground.stream'),
+        playgroundDetails(),
+    );
+
+    $response->assertOk();
+    $response->streamedContent();
+    PlaygroundAgent::assertPrompted(function ($prompt): bool {
+        $instructions = (string) $prompt->agent->instructions();
+        $voicePosition = strpos($instructions, '## Voz da marca');
+        $stylePosition = strpos($instructions, '## Estilo');
+
+        return str_contains($instructions, 'A marca fala com leveza e clareza.')
+            && str_contains($instructions, 'Vamos resolver isso juntos.')
+            && str_contains($instructions, 'Pode deixar com a gente.')
+            && str_contains($instructions, 'O Estilo do Agente prevalece sobre a Voz da marca quando houver divergência.')
+            && $voicePosition !== false
+            && $stylePosition !== false
+            && $voicePosition < $stylePosition;
+    });
+});
+
+it('omits the company voice section when a company has no voice configured', function () {
+    $user = User::factory()->withTeam()->create();
+    PlaygroundAgent::fake(['Resposta sem voz de marca.']);
+
+    $response = $this->actingAs($user)->postJson(
+        route('agents.playground.stream'),
+        playgroundDetails(),
+    );
+
+    $response->assertOk();
+    $response->streamedContent();
+    PlaygroundAgent::assertPrompted(fn ($prompt): bool => ! str_contains((string) $prompt->agent->instructions(), '## Voz da marca'));
+});
+
 it('rejects a draft that references a Collection from another company', function () {
     $user = User::factory()->withTeam()->create();
     $otherCollection = Collection::factory()->create();

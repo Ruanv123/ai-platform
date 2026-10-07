@@ -8,6 +8,7 @@ return [
     'url' => [
         'connect_timeout' => 3,
         'timeout' => 10,
+        'firecrawl_timeout' => 45,
     ],
     'embedding_provider' => env('KNOWLEDGE_EMBEDDING_PROVIDER', 'openai'),
     'embedding_model' => env('KNOWLEDGE_EMBEDDING_MODEL', 'text-embedding-3-small'),
@@ -24,5 +25,8 @@ return [
     'product_search' => [
         'candidate_limit' => (int) env('PRODUCT_SEARCH_CANDIDATE_LIMIT', 30),
         'offer_limit' => (int) env('PRODUCT_SEARCH_OFFER_LIMIT', 5),
+    ],
+    'site_read' => [
+        'maximum_pages' => (int) env('SITE_READ_MAXIMUM_PAGES', 25),
     ],
 ];

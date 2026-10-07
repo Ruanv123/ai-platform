@@ -4,6 +4,8 @@ use App\Http\Controllers\Settings\BusinessHoursController;
 use App\Http\Controllers\Settings\CompanyController;
 use App\Http\Controllers\Settings\ProfileController;
 use App\Http\Controllers\Settings\SecurityController;
+use App\Http\Controllers\Settings\SiteReadController;
+use App\Http\Controllers\Settings\SiteReadProposalController;
 use App\Http\Controllers\Settings\TeamController;
 use App\Http\Controllers\Teams\TeamInvitationController;
 use App\Http\Controllers\Teams\TeamMemberController;
@@ -34,6 +36,15 @@ Route::middleware(['auth', EnsureUserHasTeam::class])->group(function () {
     Route::get('settings/team', [TeamController::class, 'edit'])->name('team.edit');
     Route::get('settings/company', [CompanyController::class, 'edit'])->name('company.edit');
     Route::patch('settings/company', [CompanyController::class, 'update'])->name('company.update');
+    Route::post('settings/company/site-read', [SiteReadController::class, 'store'])->name('company.site-read.store');
+    Route::post('settings/company/site-read-proposals/{proposal}/fields/{field}/accept', [SiteReadProposalController::class, 'acceptField'])
+        ->name('company.site-read-proposals.fields.accept');
+    Route::post('settings/company/site-read-proposals/{proposal}/accept-all', [SiteReadProposalController::class, 'acceptAll'])
+        ->name('company.site-read-proposals.accept-all');
+    Route::post('settings/company/site-read-proposals/{proposal}/discard', [SiteReadProposalController::class, 'discard'])
+        ->name('company.site-read-proposals.discard');
+    Route::post('settings/company/site-read/{siteRead}/agents', [SiteReadController::class, 'linkAgents'])
+        ->name('company.site-read.agents');
     Route::get('settings/business-hours', [BusinessHoursController::class, 'edit'])->name('business-hours.edit');
     Route::patch('settings/business-hours', [BusinessHoursController::class, 'update'])->name('business-hours.update');
     Route::patch('settings/team/members/{user}', [TeamMemberController::class, 'update'])->name('team.members.update');

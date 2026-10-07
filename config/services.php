@@ -62,4 +62,9 @@ return [
         'redirect' => env('GOOGLE_REDIRECT_URI', env('APP_URL').'/integrations/agenda/google/callback'),
     ],
 
+    'firecrawl' => [
+        'key' => env('FIRECRAWL_API_KEY'),
+        'base_url' => env('FIRECRAWL_API_URL', 'https://api.firecrawl.dev/v2'),
+    ],
+
 ];

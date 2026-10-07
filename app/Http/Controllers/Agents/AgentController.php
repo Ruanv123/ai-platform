@@ -97,7 +97,7 @@ class AgentController extends Controller
     /**
      * Show the editor for an existing Agent.
      */
-    public function edit(Agent $agent): Response
+    public function edit(Request $request, Agent $agent): Response
     {
         Gate::authorize('view', $agent);
 
@@ -107,6 +107,7 @@ class AgentController extends Controller
             $agent->team,
             $agent,
             Gate::allows('update', $agent),
+            $request->query('panel') === 'playground' ? 'playground' : 'config',
         ));
     }
 
@@ -226,6 +227,7 @@ class AgentController extends Controller
         Team $team,
         Agent $agent,
         bool $canManageAgents = false,
+        string $initialPanel = 'config',
     ): array {
         $publishedVersion = $agent->publishedVersion();
 
@@ -244,6 +246,7 @@ class AgentController extends Controller
                 'collectionIds' => $agent->collections->modelKeys(),
                 'schedulableCalendarIds' => $agent->schedulableCalendars->modelKeys(),
             ],
+            'initialPanel' => $initialPanel,
             'collections' => $team->collections()
                 ->orderBy('name')
                 ->get(['id', 'name'])
