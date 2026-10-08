@@ -1,0 +1,22 @@
+pre-commit:
+  parallel: true
+  jobs:
+    - name: pint
+      glob: "*.php"
+      run: vendor/bin/pint --test {staged_files}
+
+    - name: phpstan
+      glob: "*.php"
+      run: vendor/bin/phpstan analyse --no-progress {staged_files}
+
+    - name: frontend check
+      glob: "*.{js,jsx,ts,tsx,json,css}"
+      run: pnpm check {staged_files}
+
+pre-push:
+  jobs:
+    - name: backend tests
+      run: php artisan test --compact
+
+    - name: frontend tests
+      run: pnpm test
