@@ -2,16 +2,22 @@ pre-commit:
   parallel: true
   jobs:
     - name: pint
-      glob: "*.php"
+      glob:
+        - "*.php"
+        - "**/*.php"
       run: vendor/bin/pint --test {staged_files}
 
     - name: phpstan
-      glob: "*.php"
+      glob:
+        - "*.php"
+        - "**/*.php"
       run: vendor/bin/phpstan analyse --no-progress {staged_files}
 
     - name: frontend check
-      glob: "*.{js,jsx,ts,tsx,json,css}"
-      run: pnpm check {staged_files}
+      glob:
+        - "*.{js,jsx,ts,tsx,json,css}"
+        - "**/*.{js,jsx,ts,tsx,json,css}"
+      run: pnpm check --no-error-on-unmatched-pattern {staged_files}
 
 pre-push:
   jobs:

@@ -1,5 +1,10 @@
+packages:
+    - '.'
+
+publicHoistPattern:
+    - '@inertiajs/core'
 allowBuilds:
-  lefthook: true
+    lefthook: true
 minimumReleaseAgeExclude:
   - lefthook-darwin-arm64@2.2.0
   - lefthook-darwin-x64@2.2.0
