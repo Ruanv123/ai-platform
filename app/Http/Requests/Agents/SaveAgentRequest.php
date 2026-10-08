@@ -4,10 +4,17 @@ namespace App\Http\Requests\Agents;
 
 use App\Enums\AgentObjective;
 use App\Enums\AgentResponseLength;
+use App\Enums\AgentTemplateUsage;
 use App\Enums\AgentTone;
+use App\Enums\WhatsAppTemplateFormat;
+use App\Enums\WhatsAppTemplateStatus;
+use App\Models\WhatsAppAccount;
+use App\Models\WhatsAppTemplate;
+use Closure;
 use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\Validator;
 
 class SaveAgentRequest extends FormRequest
 {
@@ -50,7 +57,58 @@ class SaveAgentRequest extends FormRequest
                 'distinct',
                 Rule::exists('schedulable_calendars', 'id')->where('team_id', $this->user()?->company()?->getKey()),
             ],
+            'templates_configured' => ['nullable', 'boolean'],
+            'template_links' => ['nullable', 'array', 'max:50'],
+            'template_links.*.template_id' => [
+                'required',
+                'integer',
+                'distinct',
+                Rule::exists('whatsapp_templates', 'id')
+                    ->whereIn('whatsapp_account_id', $this->teamAccountIds())
+                    ->where('status', WhatsAppTemplateStatus::Approved->value)
+                    ->where('format', WhatsAppTemplateFormat::Standard->value),
+            ],
+            'template_links.*.usage' => ['required', Rule::enum(AgentTemplateUsage::class)],
+            'reminder_lead_hours' => ['nullable', 'integer', 'min:1', 'max:168'],
+            'follow_up_after_hours' => ['nullable', 'integer', 'min:1', 'max:168'],
         ];
+    }
+
+    /** @return array<int, Closure> */
+    public function after(): array
+    {
+        return [
+            function (Validator $validator): void {
+                $links = collect($this->input('template_links', []))
+                    ->filter(fn (mixed $link): bool => is_array($link)
+                        && AgentTemplateUsage::tryFrom((string) ($link['usage'] ?? ''))?->isAutomatic() === true);
+                if ($links->isEmpty()) {
+                    return;
+                }
+
+                $accounts = WhatsAppTemplate::query()
+                    ->whereKey($links->pluck('template_id')->filter()->all())
+                    ->pluck('whatsapp_account_id', 'id');
+                $duplicated = $links
+                    ->groupBy(fn (array $link): string => $link['usage'].':'.($accounts[(int) ($link['template_id'] ?? 0)] ?? ''))
+                    ->first(fn ($group): bool => $group->count() > 1);
+
+                if ($duplicated !== null) {
+                    $validator->errors()->add(
+                        'template_links',
+                        'Escolha só um Template para "'.AgentTemplateUsage::from($duplicated->first()['usage'])->label().'" em cada Conta do WhatsApp.',
+                    );
+                }
+            },
+        ];
+    }
+
+    /** @return array<int, int> */
+    private function teamAccountIds(): array
+    {
+        $teamId = $this->user()?->company()?->getKey();
+
+        return $teamId === null ? [] : WhatsAppAccount::query()->where('team_id', $teamId)->pluck('id')->all();
     }
 
     /**
@@ -92,6 +150,14 @@ class SaveAgentRequest extends FormRequest
             'schedulable_calendar_ids.*.uuid' => 'O Calendário selecionado é inválido.',
             'schedulable_calendar_ids.*.distinct' => 'Não selecione o mesmo Calendário mais de uma vez.',
             'schedulable_calendar_ids.*.exists' => 'Selecione apenas Calendários da sua Empresa.',
+            'template_links.max' => 'Escolha no máximo 50 Templates.',
+            'template_links.*.template_id.exists' => 'Escolha apenas Templates aprovados, no formato Personalizado, das Contas do WhatsApp da sua Empresa.',
+            'template_links.*.template_id.distinct' => 'Não escolha o mesmo Template mais de uma vez.',
+            'template_links.*.usage.required' => 'Diga para que o Agente usa cada Template.',
+            'reminder_lead_hours.min' => 'A antecedência do lembrete deve ser de pelo menos 1 hora.',
+            'reminder_lead_hours.max' => 'A antecedência do lembrete deve ser de no máximo 168 horas.',
+            'follow_up_after_hours.min' => 'O follow-up deve esperar pelo menos 1 hora.',
+            'follow_up_after_hours.max' => 'O follow-up deve esperar no máximo 168 horas.',
         ];
     }
 }

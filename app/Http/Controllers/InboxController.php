@@ -6,6 +6,7 @@ use App\Consent\ContactConsentService;
 use App\Enums\ChannelStatus;
 use App\Enums\ChannelType;
 use App\Enums\MessageDirection;
+use App\Enums\WhatsAppTemplateFormat;
 use App\Enums\WhatsAppTemplateStatus;
 use App\Http\Requests\SendHumanMessageRequest;
 use App\Inbox\AgentConversationService;
@@ -429,6 +430,7 @@ final class InboxController extends Controller
 
         return $account->templates()
             ->where('status', WhatsAppTemplateStatus::Approved)
+            ->where('format', WhatsAppTemplateFormat::Standard)
             ->with('components')
             ->orderBy('name')
             ->get()

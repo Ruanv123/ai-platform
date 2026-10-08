@@ -2,7 +2,6 @@ import { Head, Link, router } from '@inertiajs/react';
 import { Plus, RefreshCw, Search } from 'lucide-react';
 import { useState } from 'react';
 import Heading from '@/components/heading';
-import CreateTemplateDialog from '@/components/templates/create-template-dialog';
 import FilterSelect from '@/components/templates/filter-select';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -16,7 +15,7 @@ import {
     TableHeader,
     TableRow,
 } from '@/components/ui/table';
-import { index, show, sync } from '@/routes/templates';
+import { create, index, show, sync } from '@/routes/templates';
 
 type Template = {
     id: number;
@@ -26,6 +25,7 @@ type Template = {
     statusLabel: string;
     requestedCategoryLabel: string;
     assignedCategoryLabel: string | null;
+    formatLabel: string;
     accountLabel: string;
     showAccount: boolean;
 };
@@ -41,6 +41,7 @@ type Props = {
     filters: {
         status: string | null;
         category: string | null;
+        format: string | null;
         search: string;
         account: number | null;
     };
@@ -68,7 +69,6 @@ export default function TemplatesIndex({
     multipleAccounts,
     permissions,
 }: Props) {
-    const [createOpen, setCreateOpen] = useState(false);
     const [search, setSearch] = useState(filters.search);
 
     const applyFilters = (changes: Partial<typeof filters>) => {
@@ -98,8 +98,10 @@ export default function TemplatesIndex({
                             </Button>
                         )}
                         {permissions.canManage && (
-                            <Button onClick={() => setCreateOpen(true)}>
-                                <Plus /> Criar Template
+                            <Button asChild>
+                                <Link href={create.url()}>
+                                    <Plus /> Criar Template
+                                </Link>
                             </Button>
                         )}
                     </div>
@@ -152,6 +154,22 @@ export default function TemplatesIndex({
                             ['utility', 'Utilidade'],
                             ['marketing', 'Marketing'],
                             ['authentication', 'Autenticação'],
+                        ]}
+                    />
+                    <FilterSelect
+                        label="Formato"
+                        value={filters.format ?? ''}
+                        onChange={(value) =>
+                            applyFilters({ format: value || null })
+                        }
+                        options={[
+                            ['', 'Todos'],
+                            ['standard', 'Personalizado'],
+                            ['carousel', 'Carrossel de mídia'],
+                            ['coupon', 'Cupom de desconto'],
+                            ['limited_time_offer', 'Oferta por tempo limitado'],
+                            ['call_permission', 'Pedido de ligação'],
+                            ['authentication', 'Código de verificação'],
                         ]}
                     />
                     {multipleAccounts && (
@@ -220,6 +238,9 @@ export default function TemplatesIndex({
                                                     {template.assignedCategoryLabel ??
                                                         template.requestedCategoryLabel}
                                                 </span>
+                                                <span className="text-muted-foreground text-xs">
+                                                    {template.formatLabel}
+                                                </span>
                                                 {template.assignedCategoryLabel !==
                                                     null &&
                                                     template.assignedCategoryLabel !==
@@ -285,11 +306,6 @@ export default function TemplatesIndex({
                     </div>
                 )}
             </div>
-            <CreateTemplateDialog
-                open={createOpen}
-                onOpenChange={setCreateOpen}
-                accounts={accounts}
-            />
         </>
     );
 }

@@ -3,9 +3,11 @@
 namespace App\Jobs;
 
 use App\Ai\Agents\WhatsAppAgent;
+use App\Enums\AgentTemplateUsage;
 use App\Enums\MessageDeliveryStatus;
 use App\Enums\MessageDirection;
 use App\Inbox\AgentConversationService;
+use App\Inbox\AgentTemplateSender;
 use App\Knowledge\AgentInstructionTemplate;
 use App\Knowledge\KnowledgeBaseSearch;
 use App\Models\Channel;
@@ -105,6 +107,7 @@ class RespondToWhatsAppMessage implements ShouldQueue
         WhatsAppOutputAdapterFactory $outputAdapterFactory,
         WhatsAppCustomerCareWindow $customerCareWindow,
         AgentConversationService $agentConversations,
+        AgentTemplateSender $templateSender,
     ): void {
         $channel = Channel::query()
             ->with(['agent.collections', 'agent.schedulableCalendars.integration'])
@@ -161,6 +164,7 @@ class RespondToWhatsAppMessage implements ShouldQueue
             $instructionTemplate,
             $knowledgeBaseSearch,
             $contact,
+            channel: $channel,
         );
         $response = $agent->prompt(
             $this->promptFor($lastPendingMessage),
@@ -206,9 +210,24 @@ class RespondToWhatsAppMessage implements ShouldQueue
             $lastPendingMessage,
             $customerCareWindow,
             $outputAdapterFactory,
+            $templateSender,
         ): void {
             if ($customerCareWindow->hasExpired($channel, $lastPendingMessage)) {
-                $this->recordUndeliveredResponse($channel, $contact, $content, $pendingMessages);
+                $delivery = $templateSender->send(
+                    $channel->agent,
+                    $channel,
+                    $contact,
+                    AgentTemplateUsage::ResumeConversation,
+                    'A janela de 24 horas do WhatsApp fechou antes de o Agente responder. O Template retoma a conversa. Resposta que o Agente tinha preparado: '.$content,
+                );
+
+                if ($delivery->isNotConfigured()) {
+                    $this->recordUndeliveredResponse($channel, $contact, $content, $pendingMessages);
+
+                    return;
+                }
+
+                $this->markAsResponded($pendingMessages);
 
                 return;
             }

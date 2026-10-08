@@ -34,6 +34,7 @@ use Illuminate\Support\Carbon;
     'ends_at',
     'reason',
     'status',
+    'reminder_sent_at',
 ])]
 class Appointment extends Model
 {
@@ -57,6 +58,7 @@ class Appointment extends Model
         return [
             'starts_at' => 'immutable_datetime',
             'ends_at' => 'immutable_datetime',
+            'reminder_sent_at' => 'immutable_datetime',
         ];
     }
 }

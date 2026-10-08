@@ -4,6 +4,7 @@ namespace App\WhatsApp;
 
 use App\Enums\WhatsAppConnectionMethod;
 use App\Enums\WhatsAppTemplateCategory;
+use App\Enums\WhatsAppTemplateFormat;
 use App\Enums\WhatsAppTemplateStatus;
 use App\Models\WhatsAppAccount;
 use App\Models\WhatsAppTemplate;
@@ -13,6 +14,7 @@ use App\WhatsApp\Oficial\MetaGraphApiResponseHandler;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\PendingRequest;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;
@@ -157,6 +159,7 @@ final class WhatsAppTemplateService
             'meta_template_id' => $metaId,
             'name' => $name,
             'language' => $language,
+            'format' => $template?->format ?? $this->formatFromMeta($components, $assignedCategory),
             'status' => $status,
             'requested_category' => $requestedCategory,
             'assigned_category' => $assignedCategory,
@@ -238,45 +241,41 @@ final class WhatsAppTemplateService
     public function replaceComponents(WhatsAppTemplate $template, array $components): void
     {
         DB::transaction(function () use ($template, $components): void {
-            $existingHeader = $template->components()->where('type', 'header')->first();
+            $existingComponents = $template->components()->with('variables')->get();
+            $existingMedia = $existingComponents
+                ->whereNotNull('media_handle')
+                ->keyBy(fn (WhatsAppTemplateComponent $component): string => $this->mediaKey($component->card_index, $component->type));
+            $existingDescriptions = $existingComponents
+                ->mapWithKeys(fn (WhatsAppTemplateComponent $component): array => [
+                    $this->mediaKey($component->card_index, $component->type) => $component->variables
+                        ->whereNotNull('description')
+                        ->mapWithKeys(fn ($variable): array => [(int) $variable->position => $variable->description])
+                        ->all(),
+                ]);
             $template->components()->delete();
 
-            foreach (array_values($components) as $position => $componentData) {
+            $position = 0;
+            foreach (array_values($components) as $componentData) {
                 if (! is_array($componentData)) {
                     continue;
                 }
 
-                $type = $this->componentType($componentData['type'] ?? null);
-                if ($type === null) {
-                    continue;
-                }
-
-                $example = is_array($componentData['example'] ?? null) ? $componentData['example'] : [];
-                $mediaHandle = $this->scalar($componentData['media_handle'] ?? $this->componentMediaHandle($example));
-                $mediaPath = $this->scalar($componentData['media_path'] ?? null);
-                if ($type === 'header'
-                    && $mediaPath === null
-                    && $mediaHandle !== null
-                    && $existingHeader?->media_handle === $mediaHandle) {
-                    $mediaPath = $existingHeader->media_path;
-                }
-
-                $component = $template->components()->create([
-                    'type' => $type,
-                    'format' => $this->format($componentData['format'] ?? null),
-                    'text' => $this->scalar($componentData['text'] ?? null),
-                    'media_path' => $mediaPath,
-                    'media_handle' => $mediaHandle,
-                    'position' => $position,
-                ]);
-
-                if ($type === 'buttons') {
-                    $this->replaceButtons($component, $componentData['buttons'] ?? []);
+                if ($this->componentType($componentData['type'] ?? null) !== 'carousel') {
+                    $this->createComponent($template, $componentData, null, $position++, $existingMedia, $existingDescriptions);
 
                     continue;
                 }
 
-                $this->replaceVariables($component, $componentData);
+                $this->createComponent($template, ['type' => 'carousel'], null, $position++, $existingMedia, $existingDescriptions);
+                $cards = is_array($componentData['cards'] ?? null) ? array_values($componentData['cards']) : [];
+                foreach ($cards as $cardIndex => $card) {
+                    $cardComponents = is_array($card['components'] ?? null) ? array_values($card['components']) : [];
+                    foreach ($cardComponents as $cardPosition => $cardComponent) {
+                        if (is_array($cardComponent)) {
+                            $this->createComponent($template, $cardComponent, $cardIndex, $cardPosition, $existingMedia, $existingDescriptions);
+                        }
+                    }
+                }
             }
         });
     }
@@ -300,15 +299,37 @@ final class WhatsAppTemplateService
     public function metaPayload(WhatsAppTemplate $template): array
     {
         $template->loadMissing('components.variables', 'components.buttons');
+        $components = [];
+
+        foreach ($template->topLevelComponents() as $component) {
+            if ($component->type === 'carousel') {
+                $components[] = [
+                    'type' => 'CAROUSEL',
+                    'cards' => array_map(fn (array $card): array => [
+                        'components' => collect($card)
+                            ->sortBy('position')
+                            ->map(fn (WhatsAppTemplateComponent $cardComponent): array => $this->metaComponent($cardComponent))
+                            ->values()
+                            ->all(),
+                    ], $template->carouselCards()),
+                ];
+
+                continue;
+            }
+
+            $metaComponent = $this->metaComponent($component);
+            if ($template->format === WhatsAppTemplateFormat::Authentication && $component->type === 'body') {
+                unset($metaComponent['text'], $metaComponent['example']);
+            }
+
+            $components[] = $metaComponent;
+        }
 
         return [
             'name' => $template->name,
             'language' => $template->language,
             'category' => Str::upper($template->requested_category->value),
-            'components' => $template->components
-                ->map(fn (WhatsAppTemplateComponent $component): array => $this->metaComponent($component))
-                ->values()
-                ->all(),
+            'components' => $components,
         ];
     }
 
@@ -318,21 +339,22 @@ final class WhatsAppTemplateService
             throw new RuntimeException('O nome precisa usar apenas letras minúsculas, números e sublinhados.');
         }
 
-        $body = $template->bodyText();
-        if (blank($body)) {
-            throw new RuntimeException('O corpo do Template é obrigatório.');
+        if (! $template->format->allowsCategory($template->requested_category)) {
+            throw new RuntimeException('O formato escolhido não está disponível para a categoria do Template.');
         }
 
-        $positions = $this->positions($body);
-        if ($positions !== [] && $positions !== range(1, count($positions))) {
-            throw new RuntimeException('As variáveis do corpo precisam ser posicionais e sequenciais, começando em {{1}}.');
+        if ($template->format === WhatsAppTemplateFormat::Authentication) {
+            $this->assertValidAuthentication($template);
+
+            return;
         }
-        if (count($positions) > 10) {
-            throw new RuntimeException('O corpo pode ter no máximo 10 variáveis.');
-        }
-        if (mb_strlen($body) > 1024) {
-            throw new RuntimeException('O corpo do Template pode ter no máximo 1.024 caracteres.');
-        }
+
+        $this->assertValidText(
+            $template->bodyText(),
+            'corpo',
+            $template->format === WhatsAppTemplateFormat::LimitedTimeOffer ? 600 : 1024,
+            true,
+        );
 
         foreach ($template->variableDefinitions() as $variable) {
             if (blank($variable['example'] ?? null)) {
@@ -342,32 +364,18 @@ final class WhatsAppTemplateService
 
         $header = $template->componentByType('header');
         if ($header !== null
-            && in_array($header->format, ['image', 'document'], true)
+            && in_array($header->format, ['image', 'video', 'document'], true)
             && blank($header->media_handle)) {
             throw new RuntimeException('Envie um arquivo de exemplo para o cabeçalho de mídia do Template.');
         }
 
-        $buttons = $template->buttonDefinitions();
-        if (count($buttons) > 3) {
-            throw new RuntimeException('O Template pode ter no máximo três botões.');
-        }
-        if (count(array_filter($buttons, fn (array $button): bool => $button['type'] === 'COPY_CODE')) > 1) {
-            throw new RuntimeException('O Template pode ter apenas um botão de copiar código.');
-        }
-        foreach ($buttons as $button) {
-            if ($button['type'] !== 'COPY_CODE' && blank($button['text'] ?? null)) {
-                throw new RuntimeException('Informe o texto de cada botão do Template.');
-            }
-            if ($button['type'] === 'URL' && blank($button['url'] ?? null)) {
-                throw new RuntimeException('Informe o endereço do botão de URL.');
-            }
-            if ($button['type'] === 'PHONE_NUMBER' && blank($button['phone_number'] ?? null)) {
-                throw new RuntimeException('Informe o telefone do botão de chamada.');
-            }
-            if ($button['type'] === 'COPY_CODE' && blank($button['example'] ?? null)) {
-                throw new RuntimeException('Informe um código de exemplo para o botão de copiar código.');
-            }
-        }
+        match ($template->format) {
+            WhatsAppTemplateFormat::Carousel => $this->assertValidCarousel($template),
+            WhatsAppTemplateFormat::Coupon => $this->assertValidCoupon($template),
+            WhatsAppTemplateFormat::LimitedTimeOffer => $this->assertValidLimitedTimeOffer($template),
+            WhatsAppTemplateFormat::CallPermission => $this->assertValidCallPermission($template),
+            default => $this->assertValidButtons($template->buttonDefinitions(), 3),
+        };
     }
 
     public function explainRejection(?string $reason): ?string
@@ -389,10 +397,27 @@ final class WhatsAppTemplateService
         if ($component->type === 'buttons') {
             return [
                 'type' => 'BUTTONS',
-                'buttons' => $component->buttons->map(fn ($button): array => $this->metaButton($button->type, $button->text, $button->url, $button->phone_number, $button->example))
+                'buttons' => $component->buttons->map(fn ($button): array => [
+                    ...$this->metaButton($button->type, $button->text, $button->url, $button->phone_number, $button->example),
+                    ...($button->settings ?? []),
+                ])
                     ->values()
                     ->all(),
             ];
+        }
+
+        if ($component->type === 'limited_time_offer') {
+            return [
+                'type' => 'LIMITED_TIME_OFFER',
+                'limited_time_offer' => [
+                    'text' => (string) $component->text,
+                    'has_expiration' => (bool) ($component->settings['has_expiration'] ?? false),
+                ],
+            ];
+        }
+
+        if ($component->type === 'call_permission_request') {
+            return ['type' => 'CALL_PERMISSION_REQUEST'];
         }
 
         $metaComponent = ['type' => Str::upper($component->type)];
@@ -420,6 +445,10 @@ final class WhatsAppTemplateService
             }
         }
 
+        foreach ($component->settings ?? [] as $setting => $value) {
+            $metaComponent[$setting] = $value;
+        }
+
         return $metaComponent;
     }
 
@@ -430,6 +459,7 @@ final class WhatsAppTemplateService
             'url' => 'URL',
             'phone_number' => 'PHONE_NUMBER',
             'copy_code' => 'COPY_CODE',
+            'otp' => 'OTP',
             default => Str::upper($type),
         }];
 
@@ -476,6 +506,7 @@ final class WhatsAppTemplateService
                 'url' => $this->scalar($buttonData['url'] ?? null),
                 'phone_number' => $this->scalar($buttonData['phone_number'] ?? null),
                 'example' => $this->scalar($example),
+                'settings' => $type === 'otp' ? $this->otpSettings($buttonData) : null,
                 'position' => $position,
             ]);
 
@@ -492,8 +523,10 @@ final class WhatsAppTemplateService
         }
     }
 
-    private function replaceVariables(WhatsAppTemplateComponent $component, array $componentData): void
+    /** @param array<int, string> $existingDescriptions */
+    private function replaceVariables(WhatsAppTemplateComponent $component, array $componentData, array $existingDescriptions = []): void
     {
+        $providedDescriptions = is_array($componentData['variable_descriptions'] ?? null) ? $componentData['variable_descriptions'] : null;
         $examples = match ($component->type) {
             'body' => data_get($componentData, 'example.body_text.0', []),
             'header' => data_get($componentData, 'example.header_text', []),
@@ -507,6 +540,9 @@ final class WhatsAppTemplateService
             $component->variables()->create([
                 'position' => $position,
                 'example' => $this->scalar($examples[$position - 1] ?? null),
+                'description' => $providedDescriptions === null
+                    ? ($existingDescriptions[$position] ?? null)
+                    : $this->scalar($providedDescriptions[$position] ?? null),
             ]);
         }
     }
@@ -518,6 +554,9 @@ final class WhatsAppTemplateService
             'body' => 'body',
             'footer' => 'footer',
             'buttons' => 'buttons',
+            'carousel' => 'carousel',
+            'limited_time_offer' => 'limited_time_offer',
+            'call_permission_request' => 'call_permission_request',
             default => null,
         };
     }
@@ -529,6 +568,7 @@ final class WhatsAppTemplateService
             'url' => 'url',
             'phone_number' => 'phone_number',
             'copy_code' => 'copy_code',
+            'otp' => 'otp',
             default => null,
         };
     }
@@ -720,6 +760,315 @@ final class WhatsAppTemplateService
     private function scalar(mixed $value): ?string
     {
         return is_scalar($value) && filled($value) ? (string) $value : null;
+    }
+
+    /**
+     * @param  Collection<string, WhatsAppTemplateComponent>  $existingMedia
+     * @param  Collection<string, array<int, string>>  $existingDescriptions
+     */
+    private function createComponent(
+        WhatsAppTemplate $template,
+        array $componentData,
+        ?int $cardIndex,
+        int $position,
+        Collection $existingMedia,
+        Collection $existingDescriptions,
+    ): void {
+        $type = $this->componentType($componentData['type'] ?? null);
+        if ($type === null) {
+            return;
+        }
+
+        $example = is_array($componentData['example'] ?? null) ? $componentData['example'] : [];
+        $mediaHandle = $this->scalar($componentData['media_handle'] ?? $this->componentMediaHandle($example));
+        $mediaPath = $this->scalar($componentData['media_path'] ?? null);
+        $existing = $existingMedia->get($this->mediaKey($cardIndex, $type));
+        if ($type === 'header'
+            && $mediaPath === null
+            && $mediaHandle !== null
+            && $existing?->media_handle === $mediaHandle) {
+            $mediaPath = $existing->media_path;
+        }
+
+        $text = $type === 'limited_time_offer'
+            ? data_get($componentData, 'limited_time_offer.text', $componentData['text'] ?? null)
+            : ($componentData['text'] ?? null);
+
+        $component = $template->components()->create([
+            'card_index' => $cardIndex,
+            'type' => $type,
+            'format' => $this->format($componentData['format'] ?? null),
+            'text' => $this->scalar($text),
+            'media_path' => $mediaPath,
+            'media_handle' => $mediaHandle,
+            'settings' => $this->componentSettings($type, $componentData),
+            'position' => $position,
+        ]);
+
+        if ($type === 'buttons') {
+            $this->replaceButtons($component, $componentData['buttons'] ?? []);
+
+            return;
+        }
+
+        $this->replaceVariables($component, $componentData, $existingDescriptions->get($this->mediaKey($cardIndex, $type), []));
+    }
+
+    private function mediaKey(?int $cardIndex, string $type): string
+    {
+        return ($cardIndex === null ? 'template' : 'card-'.$cardIndex).':'.$type;
+    }
+
+    /** @return array<string, bool|int>|null */
+    private function componentSettings(string $type, array $componentData): ?array
+    {
+        $settings = match ($type) {
+            'body' => array_key_exists('add_security_recommendation', $componentData)
+                ? ['add_security_recommendation' => filter_var($componentData['add_security_recommendation'], FILTER_VALIDATE_BOOL)]
+                : [],
+            'footer' => filled($componentData['code_expiration_minutes'] ?? null)
+                ? ['code_expiration_minutes' => (int) $componentData['code_expiration_minutes']]
+                : [],
+            'limited_time_offer' => [
+                'has_expiration' => filter_var(
+                    data_get($componentData, 'limited_time_offer.has_expiration', $componentData['has_expiration'] ?? false),
+                    FILTER_VALIDATE_BOOL,
+                ),
+            ],
+            default => [],
+        };
+
+        return $settings === [] ? null : $settings;
+    }
+
+    /** @return array<string, mixed> */
+    private function otpSettings(array $buttonData): array
+    {
+        $supportedApps = collect(is_array($buttonData['supported_apps'] ?? null) ? $buttonData['supported_apps'] : [])
+            ->filter(fn (mixed $app): bool => is_array($app) && filled($app['package_name'] ?? null))
+            ->map(fn (array $app): array => [
+                'package_name' => (string) $app['package_name'],
+                'signature_hash' => (string) ($app['signature_hash'] ?? ''),
+            ])
+            ->values()
+            ->all();
+        $otpType = Str::lower((string) ($buttonData['otp_type'] ?? 'copy_code'));
+
+        return array_filter([
+            'otp_type' => $otpType,
+            'autofill_text' => $this->scalar($buttonData['autofill_text'] ?? null),
+            'supported_apps' => $supportedApps === [] ? null : $supportedApps,
+            'zero_tap_terms_accepted' => $otpType === 'zero_tap' ? true : null,
+        ], fn (mixed $value): bool => $value !== null);
+    }
+
+    private function formatFromMeta(array $components, ?WhatsAppTemplateCategory $category): WhatsAppTemplateFormat
+    {
+        $types = collect($components)
+            ->filter(fn (mixed $component): bool => is_array($component))
+            ->map(fn (array $component): string => Str::upper((string) ($component['type'] ?? '')));
+        $buttonTypes = collect($components)
+            ->filter(fn (mixed $component): bool => is_array($component) && Str::upper((string) ($component['type'] ?? '')) === 'BUTTONS')
+            ->flatMap(fn (array $component): array => is_array($component['buttons'] ?? null) ? $component['buttons'] : [])
+            ->map(fn (mixed $button): string => is_array($button) ? Str::upper((string) ($button['type'] ?? '')) : '');
+
+        return match (true) {
+            $types->contains('CAROUSEL') => WhatsAppTemplateFormat::Carousel,
+            $types->contains('LIMITED_TIME_OFFER') => WhatsAppTemplateFormat::LimitedTimeOffer,
+            $types->contains('CALL_PERMISSION_REQUEST') => WhatsAppTemplateFormat::CallPermission,
+            $category === WhatsAppTemplateCategory::Authentication => WhatsAppTemplateFormat::Authentication,
+            $category === WhatsAppTemplateCategory::Marketing && $buttonTypes->contains('COPY_CODE') => WhatsAppTemplateFormat::Coupon,
+            default => WhatsAppTemplateFormat::Standard,
+        };
+    }
+
+    private function assertValidText(string $text, string $label, int $maxLength, bool $required): void
+    {
+        if ($required && blank($text)) {
+            throw new RuntimeException('O '.$label.' do Template é obrigatório.');
+        }
+
+        $positions = $this->positions($text);
+        if ($positions !== [] && $positions !== range(1, count($positions))) {
+            throw new RuntimeException('As variáveis do '.$label.' precisam ser posicionais e sequenciais, começando em {{1}}.');
+        }
+        if (count($positions) > 10) {
+            throw new RuntimeException('O '.$label.' pode ter no máximo 10 variáveis.');
+        }
+        if (mb_strlen($text) > $maxLength) {
+            throw new RuntimeException('O '.$label.' do Template pode ter no máximo '.number_format($maxLength, 0, ',', '.').' caracteres.');
+        }
+    }
+
+    /** @param array<int, array<string, mixed>> $buttons */
+    private function assertValidButtons(array $buttons, int $maxButtons): void
+    {
+        if (count($buttons) > $maxButtons) {
+            throw new RuntimeException($maxButtons === 3
+                ? 'O Template pode ter no máximo três botões.'
+                : 'O Template pode ter no máximo '.$maxButtons.' botões.');
+        }
+        if (count(array_filter($buttons, fn (array $button): bool => $button['type'] === 'COPY_CODE')) > 1) {
+            throw new RuntimeException('O Template pode ter apenas um botão de copiar código.');
+        }
+        foreach ($buttons as $button) {
+            if ($button['type'] !== 'COPY_CODE' && blank($button['text'] ?? null)) {
+                throw new RuntimeException('Informe o texto de cada botão do Template.');
+            }
+            if ($button['type'] === 'URL' && blank($button['url'] ?? null)) {
+                throw new RuntimeException('Informe o endereço do botão de URL.');
+            }
+            if ($button['type'] === 'PHONE_NUMBER' && blank($button['phone_number'] ?? null)) {
+                throw new RuntimeException('Informe o telefone do botão de chamada.');
+            }
+            if ($button['type'] === 'COPY_CODE' && blank($button['example'] ?? null)) {
+                throw new RuntimeException('Informe um código de exemplo para o botão de copiar código.');
+            }
+        }
+    }
+
+    private function assertValidCarousel(WhatsAppTemplate $template): void
+    {
+        if ($template->componentByType('header') !== null || $template->componentByType('footer') !== null) {
+            throw new RuntimeException('O carrossel não aceita cabeçalho nem rodapé fora dos cards.');
+        }
+
+        $cards = $template->carouselCards();
+        if (count($cards) < 2 || count($cards) > 10) {
+            throw new RuntimeException('O carrossel precisa ter de 2 a 10 cards.');
+        }
+
+        $headerFormats = [];
+        $withBody = [];
+        $buttonTypes = [];
+        foreach ($cards as $card) {
+            $header = $card['header'] ?? null;
+            if ($header === null || ! in_array($header->format, ['image', 'video'], true) || blank($header->media_handle)) {
+                throw new RuntimeException('Envie a imagem ou o vídeo de cada card do carrossel.');
+            }
+            $headerFormats[] = $header->format;
+
+            $body = $card['body'] ?? null;
+            $withBody[] = $body !== null;
+            if ($body !== null) {
+                $this->assertValidText((string) $body->text, 'texto do card', 160, true);
+                foreach ($body->variables as $variable) {
+                    if (blank($variable->example)) {
+                        throw new RuntimeException('Informe um exemplo para cada variável dos cards.');
+                    }
+                }
+            }
+
+            $buttons = $card['buttons'] ?? null;
+            $definitions = $buttons === null ? [] : $buttons->buttons->map(fn ($button): array => array_filter([
+                'type' => Str::upper($button->type),
+                'text' => $button->text,
+                'url' => $button->url,
+                'phone_number' => $button->phone_number,
+                'example' => $button->example,
+            ], fn (mixed $value): bool => $value !== null))->values()->all();
+            if ($definitions === []) {
+                throw new RuntimeException('Cada card do carrossel precisa de pelo menos um botão.');
+            }
+            if (collect($definitions)->contains(fn (array $button): bool => ! in_array($button['type'], ['QUICK_REPLY', 'URL', 'PHONE_NUMBER'], true))) {
+                throw new RuntimeException('Os cards aceitam apenas botões de resposta rápida, URL ou telefone.');
+            }
+            $this->assertValidButtons($definitions, 2);
+            $buttonTypes[] = array_column($definitions, 'type');
+        }
+
+        if (count(array_unique($headerFormats)) > 1) {
+            throw new RuntimeException('Todos os cards precisam usar o mesmo tipo de mídia.');
+        }
+        if (count(array_unique($withBody)) > 1) {
+            throw new RuntimeException('Se um card tiver texto, todos os cards precisam ter texto.');
+        }
+        if (count(array_unique(array_map('serialize', $buttonTypes))) > 1) {
+            throw new RuntimeException('Todos os cards precisam ter os mesmos botões, na mesma ordem.');
+        }
+    }
+
+    private function assertValidCoupon(WhatsAppTemplate $template): void
+    {
+        $header = $template->componentByType('header');
+        if ($header !== null && $header->format !== 'text') {
+            throw new RuntimeException('O cupom aceita apenas cabeçalho de texto.');
+        }
+        if ($template->componentByType('footer') !== null) {
+            throw new RuntimeException('O cupom não aceita rodapé.');
+        }
+
+        $buttons = $template->buttonDefinitions();
+        $this->assertValidButtons($buttons, 2);
+        if (count(array_filter($buttons, fn (array $button): bool => $button['type'] === 'COPY_CODE')) !== 1) {
+            throw new RuntimeException('O cupom precisa de um botão de copiar código.');
+        }
+        if (collect($buttons)->contains(fn (array $button): bool => ! in_array($button['type'], ['COPY_CODE', 'QUICK_REPLY'], true))) {
+            throw new RuntimeException('O cupom aceita apenas o botão de copiar código e uma resposta rápida.');
+        }
+    }
+
+    private function assertValidLimitedTimeOffer(WhatsAppTemplate $template): void
+    {
+        $offer = $template->componentByType('limited_time_offer');
+        if ($offer === null || blank($offer->text)) {
+            throw new RuntimeException('Informe o título da oferta.');
+        }
+        if (mb_strlen((string) $offer->text) > 16) {
+            throw new RuntimeException('O título da oferta pode ter no máximo 16 caracteres.');
+        }
+
+        $header = $template->componentByType('header');
+        if ($header !== null && ! in_array($header->format, ['image', 'video'], true)) {
+            throw new RuntimeException('A oferta aceita apenas cabeçalho de imagem ou vídeo.');
+        }
+        if ($template->componentByType('footer') !== null) {
+            throw new RuntimeException('A oferta por tempo limitado não aceita rodapé.');
+        }
+
+        $buttons = $template->buttonDefinitions();
+        $this->assertValidButtons($buttons, 2);
+        if (array_column($buttons, 'type') !== ['COPY_CODE', 'URL']) {
+            throw new RuntimeException('A oferta precisa do botão de copiar código e de um botão de URL.');
+        }
+    }
+
+    private function assertValidCallPermission(WhatsAppTemplate $template): void
+    {
+        if ($template->componentByType('call_permission_request') === null) {
+            throw new RuntimeException('O pedido de permissão de ligação está faltando no Template.');
+        }
+
+        foreach (['header', 'footer', 'buttons'] as $type) {
+            if ($template->componentByType($type) !== null) {
+                throw new RuntimeException('O pedido de ligação aceita apenas o corpo da mensagem.');
+            }
+        }
+    }
+
+    private function assertValidAuthentication(WhatsAppTemplate $template): void
+    {
+        $buttons = $template->buttonDefinitions();
+        $otpButtons = array_values(array_filter($buttons, fn (array $button): bool => $button['type'] === 'OTP'));
+        if (count($buttons) !== 1 || count($otpButtons) !== 1) {
+            throw new RuntimeException('O Template de autenticação precisa de um único botão de código.');
+        }
+
+        $otpType = $otpButtons[0]['otp_type'] ?? null;
+        if (! in_array($otpType, ['copy_code', 'one_tap', 'zero_tap'], true)) {
+            throw new RuntimeException('Escolha como o Contato vai usar o código.');
+        }
+        if ($otpType !== 'copy_code') {
+            $apps = $otpButtons[0]['supported_apps'] ?? [];
+            if ($apps === [] || collect($apps)->contains(fn (array $app): bool => blank($app['package_name'] ?? null) || blank($app['signature_hash'] ?? null))) {
+                throw new RuntimeException('Informe o pacote e o hash da assinatura do app Android.');
+            }
+        }
+
+        $minutes = $template->componentByType('footer')?->settings['code_expiration_minutes'] ?? null;
+        if ($minutes !== null && ($minutes < 1 || $minutes > 90)) {
+            throw new RuntimeException('A validade do código precisa ficar entre 1 e 90 minutos.');
+        }
     }
 
     private function recordChange(

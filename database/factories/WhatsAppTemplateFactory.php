@@ -3,6 +3,7 @@
 namespace Database\Factories;
 
 use App\Enums\WhatsAppTemplateCategory;
+use App\Enums\WhatsAppTemplateFormat;
 use App\Enums\WhatsAppTemplateStatus;
 use App\Models\WhatsAppAccount;
 use App\Models\WhatsAppTemplate;
@@ -34,6 +35,7 @@ class WhatsAppTemplateFactory extends Factory
             'meta_template_id' => (string) fake()->unique()->numberBetween(100000, 999999),
             'name' => 'consulta_'.Str::lower(Str::random(6)),
             'language' => 'pt_BR',
+            'format' => WhatsAppTemplateFormat::Standard,
             'status' => WhatsAppTemplateStatus::Approved,
             'requested_category' => WhatsAppTemplateCategory::Utility,
             'assigned_category' => WhatsAppTemplateCategory::Utility,

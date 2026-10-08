@@ -50,6 +50,11 @@ final class ContactConsentService
         return $this->latest($contact, $purpose)?->action === ConsentAction::Granted;
     }
 
+    public function isRevoked(Contact $contact, ConsentPurpose $purpose): bool
+    {
+        return $this->latest($contact, $purpose)?->action === ConsentAction::Revoked;
+    }
+
     /**
      * @return array<string, array{purpose: string, label: string, granted: bool, action: string|null, source: string|null, at: string|null}>
      */

@@ -1,39 +1,20 @@
-import { Form, Head, Link, router } from '@inertiajs/react';
-import { ArrowLeft, Check, Upload } from 'lucide-react';
+import { Head, Link, router } from '@inertiajs/react';
+import { ArrowLeft, Pencil, Upload } from 'lucide-react';
+import { initialDraft } from '@/components/templates/template-draft';
+import type { SavedTemplate } from '@/components/templates/template-draft';
+import WhatsappPreview from '@/components/templates/whatsapp-preview';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { index, submit, update } from '@/routes/templates';
+import { edit, index, submit } from '@/routes/templates';
 
-type Template = {
-    id: number;
-    name: string;
-    language: string;
+type Template = SavedTemplate & {
     status: string;
     statusLabel: string;
-    requestedCategory: string;
+    formatLabel: string;
     requestedCategoryLabel: string;
     assignedCategory: string | null;
     assignedCategoryLabel: string | null;
-    body: string;
-    headerType: string | null;
-    headerText: string | null;
     headerMediaHandleAvailable: boolean;
-    footer: string | null;
-    buttons: {
-        type: string;
-        text?: string;
-        url?: string;
-        phone_number?: string;
-        example?: string;
-    }[];
-    variables: {
-        position: number;
-        component: string;
-        example: string | null;
-        buttonIndex?: number;
-    }[];
     qualityRating: string | null;
     rejectionReason: string | null;
     rejectionExplanation: string | null;
@@ -57,11 +38,6 @@ type Template = {
 type Props = { template: Template; permissions: { canManage: boolean } };
 
 export default function TemplateShow({ template, permissions }: Props) {
-    const preview = template.body.replace(
-        /{{\s*(\d+)\s*}}/g,
-        (_match, position: string) => `valor ${position}`,
-    );
-
     return (
         <>
             <Head title={`Template · ${template.name}`} />
@@ -91,20 +67,28 @@ export default function TemplateShow({ template, permissions }: Props) {
                             </Badge>
                         </div>
                         <p className="text-muted-foreground text-sm">
-                            {template.language} · {template.accountLabel}
+                            {template.formatLabel} · {template.language} ·{' '}
+                            {template.accountLabel}
                         </p>
                     </div>
                     {permissions.canManage &&
                         template.status !== 'approved' &&
                         template.status !== 'pending' &&
                         template.status !== 'deleted' && (
-                            <Button
-                                onClick={() =>
-                                    router.post(submit.url(template.id))
-                                }
-                            >
-                                <Upload /> Enviar para a Meta
-                            </Button>
+                            <div className="flex flex-wrap gap-2">
+                                <Button variant="outline" asChild>
+                                    <Link href={edit.url(template.id)}>
+                                        <Pencil /> Editar Template
+                                    </Link>
+                                </Button>
+                                <Button
+                                    onClick={() =>
+                                        router.post(submit.url(template.id))
+                                    }
+                                >
+                                    <Upload /> Enviar para a Meta
+                                </Button>
+                            </div>
                         )}
                 </div>
 
@@ -120,54 +104,12 @@ export default function TemplateShow({ template, permissions }: Props) {
                                     preenchidos no envio.
                                 </p>
                             </div>
-                            <div className="bg-muted/50 max-w-md rounded-2xl p-4">
-                                {template.headerType === 'IMAGE' && (
-                                    <p className="mb-2 font-semibold">Imagem</p>
+                            <WhatsappPreview
+                                draft={initialDraft(
+                                    template,
+                                    template.accountId,
                                 )}
-                                {template.headerType === 'DOCUMENT' && (
-                                    <p className="mb-2 font-semibold">
-                                        Documento
-                                    </p>
-                                )}
-                                {template.headerType === 'VIDEO' && (
-                                    <p className="text-signal-attention mb-2 text-sm font-medium">
-                                        Cabeçalho de vídeo sincronizado da Meta.
-                                        O envio pela conversa ainda não está
-                                        disponível.
-                                    </p>
-                                )}
-                                {template.headerText && (
-                                    <p className="mb-2 font-semibold">
-                                        {template.headerText}
-                                    </p>
-                                )}
-                                <p className="text-sm leading-6 whitespace-pre-wrap">
-                                    {preview}
-                                </p>
-                                {template.footer && (
-                                    <p className="text-muted-foreground mt-3 text-xs">
-                                        {template.footer}
-                                    </p>
-                                )}
-                                {template.buttons.length > 0 && (
-                                    <div className="mt-4 grid gap-2">
-                                        {template.buttons.map(
-                                            (button, index) => (
-                                                <div
-                                                    key={`${button.text}-${index}`}
-                                                    className="text-primary border-primary/20 bg-background rounded-md border px-3 py-2 text-center text-sm"
-                                                >
-                                                    {button.text ??
-                                                        (button.type ===
-                                                        'COPY_CODE'
-                                                            ? 'Copiar código'
-                                                            : button.type)}
-                                                </div>
-                                            ),
-                                        )}
-                                    </div>
-                                )}
-                            </div>
+                            />
                         </section>
 
                         {template.rejectionExplanation && (
@@ -186,151 +128,12 @@ export default function TemplateShow({ template, permissions }: Props) {
                                 </p>
                                 {permissions.canManage && (
                                     <p className="text-muted-foreground mt-4 text-sm">
-                                        Corrija o conteúdo abaixo e reenvie sem
-                                        perder o histórico.
+                                        Edite o Template e reenvie sem perder o
+                                        histórico.
                                     </p>
                                 )}
                             </section>
                         )}
-
-                        {permissions.canManage &&
-                            template.status !== 'approved' &&
-                            template.status !== 'pending' &&
-                            template.status !== 'deleted' && (
-                                <section className="bg-card rounded-xl border p-6">
-                                    <h2 className="mb-5 font-semibold">
-                                        Corrigir e reenviar
-                                    </h2>
-                                    <Form
-                                        action={update.url(template.id)}
-                                        method="put"
-                                        className="grid gap-4"
-                                    >
-                                        {({ errors, processing }) => (
-                                            <>
-                                                <input
-                                                    type="hidden"
-                                                    name="whatsapp_account_id"
-                                                    value={template.accountId}
-                                                />
-                                                <input
-                                                    type="hidden"
-                                                    name="name"
-                                                    value={template.name}
-                                                />
-                                                <input
-                                                    type="hidden"
-                                                    name="language"
-                                                    value={template.language}
-                                                />
-                                                <input
-                                                    type="hidden"
-                                                    name="requested_category"
-                                                    value={
-                                                        template.requestedCategory
-                                                    }
-                                                />
-                                                <input
-                                                    type="hidden"
-                                                    name="header_type"
-                                                    value={
-                                                        template.headerType ??
-                                                        'TEXT'
-                                                    }
-                                                />
-                                                <div className="grid gap-2">
-                                                    <Label htmlFor="body">
-                                                        Corpo
-                                                    </Label>
-                                                    <textarea
-                                                        id="body"
-                                                        name="body"
-                                                        defaultValue={
-                                                            template.body
-                                                        }
-                                                        className="border-input bg-background min-h-28 rounded-md border px-3 py-2 text-sm"
-                                                    />
-                                                    {errors.body && (
-                                                        <p className="text-destructive text-xs">
-                                                            {errors.body}
-                                                        </p>
-                                                    )}
-                                                </div>
-                                                {template.headerType ===
-                                                    'IMAGE' ||
-                                                template.headerType ===
-                                                    'DOCUMENT' ? (
-                                                    <div className="grid gap-2">
-                                                        <Label htmlFor="header_media">
-                                                            {template.headerType ===
-                                                            'IMAGE'
-                                                                ? 'Novo exemplo de imagem · JPEG ou PNG · até 5 MB'
-                                                                : 'Novo exemplo de documento · PDF, DOC, DOCX, XLS, XLSX, PPT, PPTX ou TXT · até 100 MB'}
-                                                        </Label>
-                                                        <input
-                                                            id="header_media"
-                                                            name="header_media"
-                                                            type="file"
-                                                            required={
-                                                                !template.headerMediaHandleAvailable
-                                                            }
-                                                            accept={
-                                                                template.headerType ===
-                                                                'IMAGE'
-                                                                    ? '.jpg,.jpeg,.png,image/jpeg,image/png'
-                                                                    : '.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt'
-                                                            }
-                                                            className="border-input file:bg-muted file:text-foreground rounded-md border px-3 py-2 text-xs file:mr-3 file:rounded file:border-0 file:px-2 file:py-1"
-                                                        />
-                                                        {errors.header_media && (
-                                                            <p className="text-destructive text-xs">
-                                                                {
-                                                                    errors.header_media
-                                                                }
-                                                            </p>
-                                                        )}
-                                                    </div>
-                                                ) : template.headerType ===
-                                                  'TEXT' ? (
-                                                    <div className="grid gap-2">
-                                                        <Label htmlFor="header">
-                                                            Cabeçalho
-                                                        </Label>
-                                                        <Input
-                                                            id="header"
-                                                            name="header_text"
-                                                            defaultValue={
-                                                                template.headerText ??
-                                                                ''
-                                                            }
-                                                        />
-                                                    </div>
-                                                ) : null}
-                                                <div className="grid gap-2">
-                                                    <Label htmlFor="footer">
-                                                        Rodapé
-                                                    </Label>
-                                                    <Input
-                                                        id="footer"
-                                                        name="footer"
-                                                        defaultValue={
-                                                            template.footer ??
-                                                            ''
-                                                        }
-                                                    />
-                                                </div>
-                                                <Button
-                                                    type="submit"
-                                                    variant="outline"
-                                                    disabled={processing}
-                                                >
-                                                    <Check /> Salvar correção
-                                                </Button>
-                                            </>
-                                        )}
-                                    </Form>
-                                </section>
-                            )}
                     </div>
 
                     <aside className="grid gap-6">
@@ -386,9 +189,14 @@ export default function TemplateShow({ template, permissions }: Props) {
                                                       ? `URL do botão ${(variable.buttonIndex ?? 0) + 1}`
                                                       : 'Corpo'}
                                             </span>
+                                            {variable.description && (
+                                                <span>
+                                                    {variable.description}
+                                                </span>
+                                            )}
                                             {variable.example && (
                                                 <span className="text-muted-foreground">
-                                                    {variable.example}
+                                                    Exemplo: {variable.example}
                                                 </span>
                                             )}
                                         </div>

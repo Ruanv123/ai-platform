@@ -8,7 +8,8 @@ import type { AppLayoutProps } from '@/types';
 
 export default function AppSidebarLayout({ children }: AppLayoutProps) {
     const { component } = usePage();
-    const isInbox = component === 'inbox/index';
+    const hasFixedHeight =
+        component === 'inbox/index' || component === 'templates/form';
 
     return (
         <AppShell variant="sidebar">
@@ -17,7 +18,7 @@ export default function AppSidebarLayout({ children }: AppLayoutProps) {
                 variant="sidebar"
                 className={cn(
                     'min-w-0',
-                    isInbox
+                    hasFixedHeight
                         ? 'h-svh min-h-0 overflow-hidden'
                         : 'overflow-x-clip',
                 )}
@@ -26,7 +27,7 @@ export default function AppSidebarLayout({ children }: AppLayoutProps) {
                     <SidebarTrigger className="size-10" />
                     <span className="text-sm font-medium">Menu</span>
                 </div>
-                {isInbox ? (
+                {hasFixedHeight ? (
                     <div className="flex min-h-0 flex-1 flex-col">
                         {children}
                     </div>

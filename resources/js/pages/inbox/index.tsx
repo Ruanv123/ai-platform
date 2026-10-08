@@ -151,6 +151,11 @@ function failureReasonLabel(failureReason: string | null): string {
             'Janela de 24 h encerrada · use um Template',
         agent_response_failed: 'Falha na resposta do Agente · pausa mantida',
         provider_error: 'Falha no envio · tente novamente',
+        template_consent_missing:
+            'Template não enviado · Contato sem consentimento para esta finalidade',
+        template_variables_unfilled:
+            'Template não enviado · a IA não conseguiu preencher as variáveis',
+        template_send_failed: 'Falha no envio do Template · tente novamente',
     };
 
     return (

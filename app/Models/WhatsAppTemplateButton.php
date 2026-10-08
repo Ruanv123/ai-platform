@@ -13,6 +13,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
     'url',
     'phone_number',
     'example',
+    'settings',
     'position',
 ])]
 class WhatsAppTemplateButton extends Model
@@ -22,5 +23,12 @@ class WhatsAppTemplateButton extends Model
     public function component(): BelongsTo
     {
         return $this->belongsTo(WhatsAppTemplateComponent::class, 'whatsapp_template_component_id');
+    }
+
+    protected function casts(): array
+    {
+        return [
+            'settings' => 'array',
+        ];
     }
 }

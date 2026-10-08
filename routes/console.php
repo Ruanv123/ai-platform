@@ -5,6 +5,8 @@ use Illuminate\Support\Facades\Schedule;
 
 Schedule::command('horizon:snapshot')->everyFiveMinutes();
 Schedule::command('agents:resume-expired')->everyMinute()->withoutOverlapping();
+Schedule::command('agents:send-appointment-reminders')->everyFiveMinutes()->withoutOverlapping();
+Schedule::command('agents:send-follow-ups')->everyTenMinutes()->withoutOverlapping();
 
 Schedule::call(function () {
     TeamInvitation::query()

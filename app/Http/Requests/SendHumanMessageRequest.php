@@ -71,6 +71,9 @@ class SendHumanMessageRequest extends FormRequest
                 if ($value !== null && $template !== null && ! $template->status->canSend()) {
                     $fail('Escolha um Template aprovado da Conta do WhatsApp deste Canal.');
                 }
+                if ($value !== null && $template !== null && ! $template->format->canSendFromConversation()) {
+                    $fail('Este formato de Template ainda não pode ser enviado pelo Atendimento.');
+                }
                 if ($value !== null && $this->templateHeaderType() === 'VIDEO') {
                     $fail('O envio de Templates com cabeçalho de vídeo ainda não está disponível.');
                 }

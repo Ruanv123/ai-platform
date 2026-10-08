@@ -4,7 +4,10 @@ namespace App\Http\Controllers\Agents;
 
 use App\Enums\AgentObjective;
 use App\Enums\AgentResponseLength;
+use App\Enums\AgentTemplateUsage;
 use App\Enums\AgentTone;
+use App\Enums\WhatsAppTemplateFormat;
+use App\Enums\WhatsAppTemplateStatus;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Agents\CreateAgentRequest;
 use App\Http\Requests\Agents\SaveAgentRequest;
@@ -13,6 +16,7 @@ use App\Models\Channel;
 use App\Models\Collection;
 use App\Models\SchedulableCalendar;
 use App\Models\Team;
+use App\Models\WhatsAppTemplate;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -101,7 +105,7 @@ class AgentController extends Controller
     {
         Gate::authorize('view', $agent);
 
-        $agent->loadMissing(['collections', 'schedulableCalendars']);
+        $agent->loadMissing(['collections', 'schedulableCalendars', 'whatsappTemplates']);
 
         return Inertia::render('agents/edit', $this->editorProps(
             $agent->team,
@@ -245,7 +249,25 @@ class AgentController extends Controller
                 'rules' => $agent->rules,
                 'collectionIds' => $agent->collections->modelKeys(),
                 'schedulableCalendarIds' => $agent->schedulableCalendars->modelKeys(),
+                'templateLinks' => $agent->whatsappTemplates
+                    ->map(fn (WhatsAppTemplate $template): array => [
+                        'templateId' => $template->getKey(),
+                        'usage' => $template->pivot->usage,
+                    ])
+                    ->values()
+                    ->all(),
+                'reminderLeadHours' => $agent->reminder_lead_hours ?? 24,
+                'followUpAfterHours' => $agent->follow_up_after_hours ?? 24,
             ],
+            'whatsappTemplates' => $this->templateOptions($team, $agent),
+            'templateUsages' => collect(AgentTemplateUsage::cases())
+                ->map(fn (AgentTemplateUsage $usage): array => [
+                    'value' => $usage->value,
+                    'label' => $usage->label(),
+                    'automatic' => $usage->isAutomatic(),
+                ])
+                ->values()
+                ->all(),
             'initialPanel' => $initialPanel,
             'collections' => $team->collections()
                 ->orderBy('name')
@@ -278,14 +300,69 @@ class AgentController extends Controller
         ];
     }
 
+    /** @return array<int, array<string, mixed>> */
+    private function templateOptions(Team $team, Agent $agent): array
+    {
+        $linkedIds = $agent->relationLoaded('whatsappTemplates') ? $agent->whatsappTemplates->modelKeys() : [];
+
+        return WhatsAppTemplate::query()
+            ->whereHas('account', fn ($query) => $query->where('team_id', $team->getKey()))
+            ->where(fn ($query) => $query
+                ->where(fn ($query) => $query
+                    ->where('status', WhatsAppTemplateStatus::Approved)
+                    ->where('format', WhatsAppTemplateFormat::Standard))
+                ->orWhereIn('id', $linkedIds))
+            ->with(['account.phoneNumbers', 'components.variables'])
+            ->orderBy('name')
+            ->get()
+            ->map(fn (WhatsAppTemplate $template): array => [
+                'id' => $template->getKey(),
+                'name' => $template->name,
+                'language' => $template->language,
+                'body' => $template->bodyText(),
+                'categoryLabel' => ($template->assigned_category ?? $template->requested_category)->label(),
+                'accountId' => $template->whatsapp_account_id,
+                'accountLabel' => collect([
+                    $template->account->phoneNumbers->first()?->verified_name,
+                    $template->account->phoneNumbers->first()?->display_phone_number,
+                ])->filter()->join(' · ') ?: 'Conta do WhatsApp',
+                'statusLabel' => $template->status->label(),
+                'usable' => $template->status === WhatsAppTemplateStatus::Approved
+                    && $template->format === WhatsAppTemplateFormat::Standard,
+                'variablesWithoutDescription' => collect($template->variableDefinitions())
+                    ->filter(fn (array $variable): bool => in_array($variable['component'], ['header', 'body'], true)
+                        && blank($variable['description'] ?? null))
+                    ->count(),
+            ])
+            ->values()
+            ->all();
+    }
+
     private function saveDraft(Agent $agent, array $validated): void
     {
         $collectionIds = $validated['collection_ids'] ?? [];
         $calendarIds = $validated['schedulable_calendar_ids'] ?? [];
-        unset($validated['collection_ids'], $validated['schedulable_calendar_ids']);
+        $templatesConfigured = (bool) ($validated['templates_configured'] ?? false);
+        $templateLinks = collect($validated['template_links'] ?? [])
+            ->mapWithKeys(fn (array $link): array => [(int) $link['template_id'] => ['usage' => $link['usage']]])
+            ->all();
+        unset(
+            $validated['collection_ids'],
+            $validated['schedulable_calendar_ids'],
+            $validated['templates_configured'],
+            $validated['template_links'],
+        );
+        $validated = array_filter(
+            $validated,
+            fn (mixed $value, string $key): bool => $value !== null || ! in_array($key, ['reminder_lead_hours', 'follow_up_after_hours'], true),
+            ARRAY_FILTER_USE_BOTH,
+        );
 
         $agent->update($validated);
         $agent->collections()->sync($collectionIds);
         $agent->schedulableCalendars()->sync($calendarIds);
+        if ($templatesConfigured) {
+            $agent->whatsappTemplates()->sync($templateLinks);
+        }
     }
 }

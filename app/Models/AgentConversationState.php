@@ -42,6 +42,7 @@ use Illuminate\Support\Carbon;
     'return_requested_by_user_id',
     'return_attempted_message_id',
     'return_action',
+    'follow_up_message_id',
 ])]
 class AgentConversationState extends Model
 {

@@ -48,6 +48,8 @@ use Illuminate\Support\Carbon;
     'instructions',
     'rules',
     'is_active',
+    'reminder_lead_hours',
+    'follow_up_after_hours',
 ])]
 
 class Agent extends Model
@@ -102,6 +104,14 @@ class Agent extends Model
         return $this->hasMany(Channel::class);
     }
 
+    /** @return BelongsToMany<WhatsAppTemplate, $this> */
+    public function whatsappTemplates(): BelongsToMany
+    {
+        return $this->belongsToMany(WhatsAppTemplate::class, 'agent_whatsapp_template', 'agent_id', 'whatsapp_template_id')
+            ->withPivot('usage')
+            ->withTimestamps();
+    }
+
     public function versions(): HasMany
     {
         return $this->hasMany(AgentVersion::class);
@@ -132,6 +142,8 @@ class Agent extends Model
             'instructions' => 'array',
             'rules' => 'array',
             'is_active' => 'boolean',
+            'reminder_lead_hours' => 'integer',
+            'follow_up_after_hours' => 'integer',
         ];
     }
 }

@@ -9,11 +9,13 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 
 #[Fillable([
     'whatsapp_template_id',
+    'card_index',
     'type',
     'format',
     'text',
     'media_path',
     'media_handle',
+    'settings',
     'position',
 ])]
 class WhatsAppTemplateComponent extends Model
@@ -37,5 +39,13 @@ class WhatsAppTemplateComponent extends Model
         return $this->hasMany(WhatsAppTemplateButton::class, 'whatsapp_template_component_id')
             ->orderBy('position')
             ->orderBy('id');
+    }
+
+    protected function casts(): array
+    {
+        return [
+            'card_index' => 'integer',
+            'settings' => 'array',
+        ];
     }
 }

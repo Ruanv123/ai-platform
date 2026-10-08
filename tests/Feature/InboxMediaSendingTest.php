@@ -2,6 +2,7 @@
 
 use App\Enums\ChannelType;
 use App\Enums\MessageDirection;
+use App\Enums\WhatsAppTemplateFormat;
 use App\Models\Agent;
 use App\Models\AgentConversationState;
 use App\Models\Channel;
@@ -525,4 +526,32 @@ it('blocks direct media sends after the customer care window closes', function (
         'delivery_status' => 'failed',
         'failure_reason' => 'customer_care_window_closed',
     ]);
+});
+
+it('hides template formats the conversation cannot send and rejects them', function () {
+    Http::preventStrayRequests();
+    $user = User::factory()->withTeam()->create(['is_platform_admin' => true]);
+    $execution = mediaSendingConversation($user, ChannelType::WhatsApp);
+    $account = $execution->channel->whatsappPhoneNumber->whatsappAccount;
+    WhatsAppTemplate::factory()->for($account, 'account')->create(['name' => 'aviso_simples']);
+    $carousel = WhatsAppTemplate::factory()->for($account, 'account')->create([
+        'name' => 'colecao_carrossel',
+        'requested_category' => 'marketing',
+        'format' => WhatsAppTemplateFormat::Carousel,
+    ]);
+
+    $this->actingAs($user)
+        ->get(route('inbox.show', mediaSendingConversationParams($execution)))
+        ->assertInertia(fn ($page) => $page
+            ->where('selected.templates.0.name', 'aviso_simples')
+            ->missing('selected.templates.1'));
+
+    $this->actingAs($user)
+        ->post(route('inbox.messages.store', mediaSendingConversationParams($execution)), [
+            'type' => 'template',
+            'template' => $carousel->name,
+        ])
+        ->assertSessionHasErrors(['template' => 'Este formato de Template ainda não pode ser enviado pelo Atendimento.']);
+
+    Http::assertNothingSent();
 });

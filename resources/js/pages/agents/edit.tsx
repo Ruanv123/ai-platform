@@ -4,6 +4,12 @@ import { useState } from 'react';
 import AgentPlayground, {
     type AgentDraft,
 } from '@/components/agent-playground';
+import AgentTemplatesField from '@/components/agent-templates-field';
+import type {
+    AgentTemplateLink,
+    AgentTemplateOption,
+    AgentTemplateUsageOption,
+} from '@/components/agent-templates-field';
 import Heading from '@/components/heading';
 import InputError from '@/components/input-error';
 import { Button } from '@/components/ui/button';
@@ -45,6 +51,9 @@ type SchedulableCalendarOption = {
 type Agent = AgentDraft & {
     id: string;
     description: string | null;
+    templateLinks: AgentTemplateLink[];
+    reminderLeadHours: number;
+    followUpAfterHours: number;
 };
 
 type Props = {
@@ -52,6 +61,8 @@ type Props = {
     initialPanel: 'config' | 'playground';
     collections: CollectionOption[];
     schedulableCalendars: SchedulableCalendarOption[];
+    whatsappTemplates: AgentTemplateOption[];
+    templateUsages: AgentTemplateUsageOption[];
     agendaConnected: boolean;
     publishedVersion: {
         number: number;
@@ -254,6 +265,8 @@ function AgentForm({
     responseLengths,
     permissions,
     schedulableCalendars,
+    whatsappTemplates,
+    templateUsages,
     agendaConnected,
     publishedVersion,
 }: Props) {
@@ -274,6 +287,13 @@ function AgentForm({
     );
     const [selectedSchedulableCalendarIds, setSelectedSchedulableCalendarIds] =
         useState(agent.schedulableCalendarIds);
+    const [templateLinks, setTemplateLinks] = useState(agent.templateLinks);
+    const [reminderLeadHours, setReminderLeadHours] = useState(
+        String(agent.reminderLeadHours),
+    );
+    const [followUpAfterHours, setFollowUpAfterHours] = useState(
+        String(agent.followUpAfterHours),
+    );
     const [welcomeMessage, setWelcomeMessage] = useState(agent.welcomeMessage);
     const [activePanel, setActivePanel] = useState<'config' | 'playground'>(
         initialPanel,
@@ -307,6 +327,13 @@ function AgentForm({
                 rules,
                 collection_ids: selectedCollectionIds,
                 schedulable_calendar_ids: selectedSchedulableCalendarIds,
+                templates_configured: true,
+                template_links: templateLinks.map((link) => ({
+                    template_id: link.templateId,
+                    usage: link.usage,
+                })),
+                reminder_lead_hours: reminderLeadHours,
+                follow_up_after_hours: followUpAfterHours,
             },
             {
                 preserveScroll: true,
@@ -405,6 +432,35 @@ function AgentForm({
                                             />
                                         ),
                                     )}
+                                    <input
+                                        type="hidden"
+                                        name="templates_configured"
+                                        value="1"
+                                    />
+                                    {templateLinks.map((link, position) => (
+                                        <span key={link.templateId}>
+                                            <input
+                                                type="hidden"
+                                                name={`template_links[${position}][template_id]`}
+                                                value={link.templateId}
+                                            />
+                                            <input
+                                                type="hidden"
+                                                name={`template_links[${position}][usage]`}
+                                                value={link.usage}
+                                            />
+                                        </span>
+                                    ))}
+                                    <input
+                                        type="hidden"
+                                        name="reminder_lead_hours"
+                                        value={reminderLeadHours}
+                                    />
+                                    <input
+                                        type="hidden"
+                                        name="follow_up_after_hours"
+                                        value={followUpAfterHours}
+                                    />
                                     {selectedSchedulableCalendarIds.map(
                                         (calendarId) => (
                                             <input
@@ -689,6 +745,29 @@ function AgentForm({
                                             )}
                                         />
                                     </section>
+
+                                    <AgentTemplatesField
+                                        templates={whatsappTemplates}
+                                        usages={templateUsages}
+                                        links={templateLinks}
+                                        reminderLeadHours={reminderLeadHours}
+                                        followUpAfterHours={followUpAfterHours}
+                                        error={
+                                            nestedError(
+                                                errors,
+                                                'template_links',
+                                            ) ??
+                                            errors.reminder_lead_hours ??
+                                            errors.follow_up_after_hours
+                                        }
+                                        onLinksChange={setTemplateLinks}
+                                        onReminderLeadHoursChange={
+                                            setReminderLeadHours
+                                        }
+                                        onFollowUpAfterHoursChange={
+                                            setFollowUpAfterHours
+                                        }
+                                    />
 
                                     {permissions.canManageAgents && (
                                         <div className="flex flex-col-reverse gap-3 border-t pt-6 sm:flex-row sm:justify-end">

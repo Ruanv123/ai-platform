@@ -10,6 +10,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
     'whatsapp_template_component_id',
     'position',
     'example',
+    'description',
 ])]
 class WhatsAppTemplateVariable extends Model
 {

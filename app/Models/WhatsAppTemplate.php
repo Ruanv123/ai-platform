@@ -3,11 +3,14 @@
 namespace App\Models;
 
 use App\Enums\WhatsAppTemplateCategory;
+use App\Enums\WhatsAppTemplateFormat;
 use App\Enums\WhatsAppTemplateStatus;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
+use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Str;
 
@@ -16,6 +19,8 @@ use Illuminate\Support\Str;
     'meta_template_id',
     'name',
     'language',
+    'format',
+    'library_key',
     'status',
     'requested_category',
     'assigned_category',
@@ -28,6 +33,10 @@ use Illuminate\Support\Str;
 class WhatsAppTemplate extends Model
 {
     protected $table = 'whatsapp_templates';
+
+    protected $attributes = [
+        'format' => 'standard',
+    ];
 
     use HasFactory;
 
@@ -43,6 +52,14 @@ class WhatsAppTemplate extends Model
             ->orderBy('id');
     }
 
+    /** @return BelongsToMany<Agent, $this> */
+    public function agents(): BelongsToMany
+    {
+        return $this->belongsToMany(Agent::class, 'agent_whatsapp_template', 'whatsapp_template_id', 'agent_id')
+            ->withPivot('usage')
+            ->withTimestamps();
+    }
+
     public function history(): HasMany
     {
         return $this->hasMany(WhatsAppTemplateHistory::class, 'whatsapp_template_id')->latest('created_at');
@@ -50,9 +67,28 @@ class WhatsAppTemplate extends Model
 
     public function componentByType(string $type): ?WhatsAppTemplateComponent
     {
+        return $this->topLevelComponents()->firstWhere('type', Str::lower($type));
+    }
+
+    /** @return Collection<int, WhatsAppTemplateComponent> */
+    public function topLevelComponents(): Collection
+    {
         $this->loadMissing('components');
 
-        return $this->components->firstWhere('type', Str::lower($type));
+        return $this->components->whereNull('card_index')->values();
+    }
+
+    /** @return array<int, array<string, WhatsAppTemplateComponent>> */
+    public function carouselCards(): array
+    {
+        $this->loadMissing('components');
+        $cards = [];
+
+        foreach ($this->components->whereNotNull('card_index')->sortBy('card_index') as $component) {
+            $cards[(int) $component->card_index][$component->type] = $component;
+        }
+
+        return array_values($cards);
     }
 
     public function bodyText(): string
@@ -92,12 +128,14 @@ class WhatsAppTemplate extends Model
                 'url' => 'URL',
                 'phone_number' => 'PHONE_NUMBER',
                 'copy_code' => 'COPY_CODE',
+                'otp' => 'OTP',
                 default => Str::upper($button->type),
             },
             'text' => $button->text,
             'url' => $button->url,
             'phone_number' => $button->phone_number,
             'example' => $button->example,
+            ...($button->settings ?? []),
         ], fn (mixed $value): bool => $value !== null))->values()->all();
     }
 
@@ -106,14 +144,15 @@ class WhatsAppTemplate extends Model
         $this->loadMissing('components.variables', 'components.buttons');
         $definitions = [];
 
-        foreach ($this->components as $component) {
+        foreach ($this->topLevelComponents() as $component) {
             if ($component->type !== 'buttons') {
                 foreach ($component->variables as $variable) {
-                    $definitions[] = [
+                    $definitions[] = array_filter([
                         'position' => (int) $variable->position,
                         'component' => $component->type,
                         'example' => $variable->example,
-                    ];
+                        'description' => $variable->description,
+                    ], fn (mixed $value, string $key): bool => $key !== 'description' || $value !== null, ARRAY_FILTER_USE_BOTH);
                 }
 
                 continue;
@@ -154,6 +193,7 @@ class WhatsAppTemplate extends Model
     protected function casts(): array
     {
         return [
+            'format' => WhatsAppTemplateFormat::class,
             'status' => WhatsAppTemplateStatus::class,
             'requested_category' => WhatsAppTemplateCategory::class,
             'assigned_category' => WhatsAppTemplateCategory::class,

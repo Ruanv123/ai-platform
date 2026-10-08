@@ -8,10 +8,14 @@ use App\Ai\Tools\ConsultAvailableTimes;
 use App\Ai\Tools\ListAppointments;
 use App\Ai\Tools\RescheduleAppointment;
 use App\Ai\Tools\SearchKnowledgeBase;
+use App\Ai\Tools\SendWhatsAppTemplate;
+use App\Enums\AgentTemplateUsage;
 use App\Enums\MessageDirection;
+use App\Inbox\AgentTemplateSender;
 use App\Knowledge\AgentInstructionTemplate;
 use App\Knowledge\KnowledgeBaseSearch;
 use App\Models\Agent as ConfiguredAgent;
+use App\Models\Channel;
 use App\Models\Contact;
 use App\Models\Message as ConversationMessage;
 use App\Scheduling\SchedulingService;
@@ -41,6 +45,7 @@ class WhatsAppAgent implements Agent, Conversational, HasTools
         private KnowledgeBaseSearch $knowledgeBaseSearch,
         private ?Contact $contact = null,
         private ?SchedulingService $scheduling = null,
+        private ?Channel $channel = null,
     ) {}
 
     /**
@@ -113,6 +118,14 @@ class WhatsAppAgent implements Agent, Conversational, HasTools
                 new CancelAppointment($this->contact, $scheduling),
                 new RescheduleAppointment($this->contact, $calendars, $scheduling),
             ];
+        }
+
+        if ($this->channel !== null && $this->contact !== null) {
+            $sender = app(AgentTemplateSender::class);
+            $templates = $sender->templatesFor($this->configuredAgent, $this->channel, AgentTemplateUsage::OnDemand);
+            if ($templates->isNotEmpty()) {
+                $tools[] = new SendWhatsAppTemplate($this->configuredAgent, $this->channel, $this->contact, $templates, $sender);
+            }
         }
 
         return $tools;

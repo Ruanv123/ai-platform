@@ -120,8 +120,12 @@ Route::middleware(['auth', EnsureUserHasTeam::class])->group(function () {
         ->name('templates.store');
     Route::post('templates/sync', [WhatsAppTemplateController::class, 'sync'])
         ->name('templates.sync');
+    Route::get('templates/create', [WhatsAppTemplateController::class, 'create'])
+        ->name('templates.create');
     Route::get('templates/{template}', [WhatsAppTemplateController::class, 'show'])
         ->name('templates.show');
+    Route::get('templates/{template}/edit', [WhatsAppTemplateController::class, 'edit'])
+        ->name('templates.edit');
     Route::put('templates/{template}', [WhatsAppTemplateController::class, 'update'])
         ->name('templates.update');
     Route::post('templates/{template}/submit', [WhatsAppTemplateController::class, 'submit'])
